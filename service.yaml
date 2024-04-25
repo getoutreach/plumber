@@ -1,0 +1,25 @@
+name: plumber
+arguments:
+  description: Orchestration library to construct application dependency graph and manage service tasks.
+  lintroller: platinum
+  metrics: datadog
+  oss: true
+  ciOptions:
+    skipDocker: true
+    skipE2e: true
+  releaseOptions:
+    allowMajorVersions: true
+  opslevel:
+    lifecycle: public_ga
+  reportingTeam: ce-ecs
+  slack: ecs-team
+  tracing: opentelemetry
+modules:
+  - name: github.com/getoutreach/stencil-base
+  - name: github.com/getoutreach/stencil-golang
+  - name: github.com/getoutreach/devbase
+  - name: github.com/getoutreach/stencil-outreach
+  - name: github.com/getoutreach/stencil-circleci
+  - name: github.com/getoutreach/stencil-actions
+  - name: github.com/getoutreach/stencil-discovery
+migrated: true

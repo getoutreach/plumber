@@ -1,0 +1,16 @@
+# This file contains tool versions for use with asdf
+# Note: Versions in this block override the default versions below.
+# Be EXTREMELY CAREFUL with this. If you override a standard version
+# you are reducing compatibility guarantees.
+## <<Stencil::Block(toolverOverride)>>
+## <</Stencil::Block>>
+golang 1.22.0
+nodejs 18.17.1
+protoc 21.5
+terraform 1.5.7
+# Note: Versions in this block do not override the default versions above
+# but sometimes you have to declare additional versions of the same tool
+# while leaving the 'default' version intact for the infra.
+# The most common case is nodejs.
+## <<Stencil::Block(toolver)>>
+## <</Stencil::Block>>

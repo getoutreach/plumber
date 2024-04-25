@@ -1,0 +1,125 @@
+# Please re-run stencil after any changes to this file as invalid
+# syntax, such as anchors, will be fixed automatically.
+version: 2.1
+orbs:
+  shared: getoutreach/shared@2.26.2
+  queue: eddiewebb/queue@2.2.1
+
+parameters:
+  rebuild_cache:
+    type: boolean
+    default: false
+
+# Extra contexts to expose to all jobs below
+contexts: &contexts
+  - aws-credentials
+  - ghaccesstoken
+  - docker-registry
+  - npm-credentials
+  - vault-dev
+  - confluence
+  - circleci-credentials
+  - tray-webhooks
+  - wizcli
+  ## <<Stencil::Block(extraContexts)>>
+
+  ## <</Stencil::Block>>
+
+# Test configs to pass to test and cache jobs
+test: &test
+  context: *contexts
+  app_name: plumber
+  ### Start parameters inserted by other modules
+  ### End parameters inserted by other modules
+  ## <<Stencil::Block(circleTestExtra)>>
+
+  ## <</Stencil::Block>>
+
+# Branches used for releasing code, pre-release or not
+release_branches: &release_branches
+  - "main"
+
+jobs:
+  {}
+  ## <<Stencil::Block(circleJobs)>>
+
+  ## <</Stencil::Block>>
+
+  ### Start jobs inserted by other modules
+  ### End jobs inserted by other modules
+
+workflows:
+  version: 2
+  ## <<Stencil::Block(circleWorkflows)>>
+
+  ## <</Stencil::Block>>
+
+  ### Start workflows inserted by other modules
+  ### End workflows inserted by other modules
+
+  rebuild-cache:
+    triggers:
+      - schedule:
+          # Every day at 00:00 UTC.
+          cron: "0 0 * * *"
+          filters:
+            branches:
+              only:
+                - main
+    jobs:
+      - shared/save_cache: *test
+
+  manual-rebuild-cache:
+    when: << pipeline.parameters.rebuild_cache >>
+    jobs:
+      - shared/save_cache: *test
+
+  release:
+    when:
+      not: << pipeline.parameters.rebuild_cache >>
+    jobs:
+      ## <<Stencil::Block(circleWorkflowJobs)>>
+
+      ## <</Stencil::Block>>
+      ### Start jobs inserted by other modules
+      ### End jobs inserted by other modules
+      - shared/release: &release
+          dryrun: false
+          context: *contexts
+          ## <<Stencil::Block(circleReleaseExtra)>>
+
+          ## <</Stencil::Block>>
+          requires:
+            ## <<Stencil::Block(circleReleaseRequires)>>
+
+            ## <</Stencil::Block>>
+            - shared/test
+          filters:
+            branches:
+              only: *release_branches
+
+      # Dryrun release for PRs.
+      - shared/release:
+          <<: *release
+          dryrun: true
+          filters:
+            branches:
+              ignore: *release_branches
+      - shared/test:
+          <<: *test
+          ## <<Stencil::Block(circleSharedTestExtra)>>
+
+          ## <</Stencil::Block>>
+      - shared/publish_docs:
+          context: *contexts
+          filters:
+            branches:
+              only:
+                - main
+            tags:
+              only: /v\d+(\.\d+)*(-.*)*/
+      - shared/e2e:
+          context: *contexts
+          ## <<Stencil::Block(circleE2EExtra)>>
+
+          ## <</Stencil::Block>>

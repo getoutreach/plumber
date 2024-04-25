@@ -1,0 +1,111 @@
+version: v1.38.0
+modules:
+    - name: github.com/getoutreach/devbase
+      url: https://github.com/getoutreach/devbase
+      version: v2.26.2
+    - name: github.com/getoutreach/stencil-actions
+      url: https://github.com/getoutreach/stencil-actions
+      version: v0.4.0
+    - name: github.com/getoutreach/stencil-base
+      url: https://github.com/getoutreach/stencil-base
+      version: v0.15.2
+    - name: github.com/getoutreach/stencil-circleci
+      url: https://github.com/getoutreach/stencil-circleci
+      version: v1.12.1
+    - name: github.com/getoutreach/stencil-discovery
+      url: https://github.com/getoutreach/stencil-discovery
+      version: v1.8.2
+    - name: github.com/getoutreach/stencil-golang
+      url: https://github.com/getoutreach/stencil-golang
+      version: v1.22.0
+    - name: github.com/getoutreach/stencil-outreach
+      url: https://github.com/getoutreach/stencil-outreach
+      version: v0.21.1
+    - name: github.com/getoutreach/stencil-pipeline
+      url: https://github.com/getoutreach/stencil-pipeline
+      version: v1.1.0
+files:
+    - name: .circleci/config.yml
+      template: .circleci/config.yml.tpl
+      module: github.com/getoutreach/stencil-circleci
+    - name: .editorconfig
+      template: .editorconfig.tpl
+      module: github.com/getoutreach/stencil-base
+    - name: .gitattributes
+      template: .gitattributes.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: .github/CODEOWNERS
+      template: .github/CODEOWNERS.tpl
+      module: github.com/getoutreach/stencil-base
+    - name: .github/dependabot.yml
+      template: .github/dependabot.yml.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: .github/pull_request_template.md
+      template: .github/pull_request_template.md.tpl
+      module: github.com/getoutreach/stencil-base
+    - name: .github/workflows/pull_request-shared-actions.yaml
+      template: .github/workflows/pull_request-shared-actions.yaml.tpl
+      module: github.com/getoutreach/stencil-actions
+    - name: .gitignore
+      template: .gitignore.tpl
+      module: github.com/getoutreach/stencil-base
+    - name: .prettierignore
+      template: .prettierignore.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: .prettierrc.yaml
+      template: .prettierrc.yaml.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: .releaserc.yaml
+      template: .releaserc.yaml.tpl
+      module: github.com/getoutreach/stencil-base
+    - name: .tool-versions
+      template: .tool-versions.tpl
+      module: github.com/getoutreach/stencil-base
+    - name: .vscode/extensions.json
+      template: .vscode/extensions.json.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: .vscode/launch.json
+      template: .vscode/launch.json.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: .vscode/outreach.code-snippets
+      template: .vscode/outreach.code-snippets.tpl
+      module: github.com/getoutreach/stencil-outreach
+    - name: .vscode/private.env
+      template: .vscode/private.env.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: .vscode/settings.json
+      template: .vscode/settings.json.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: CONTRIBUTING.md
+      template: CONTRIBUTING.md.tpl
+      module: github.com/getoutreach/stencil-base
+    - name: LICENSE
+      template: LICENSE.tpl
+      module: github.com/getoutreach/stencil-base
+    - name: Makefile
+      template: Makefile.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: README.md
+      template: README.md.tpl
+      module: github.com/getoutreach/stencil-base
+    - name: cortex.yaml
+      template: cortex.yaml.tpl
+      module: github.com/getoutreach/stencil-outreach
+    - name: devenv.yaml
+      template: devenv.yaml.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: go.mod
+      template: go.mod.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: package.json
+      template: package.json.tpl
+      module: github.com/getoutreach/stencil-base
+    - name: scripts/devbase.sh
+      template: scripts/devbase.sh.tpl
+      module: github.com/getoutreach/devbase
+    - name: scripts/golangci.yml
+      template: scripts/golangci.yml.tpl
+      module: github.com/getoutreach/stencil-golang
+    - name: scripts/shell-wrapper.sh
+      template: scripts/shell-wrapper.sh.tpl
+      module: github.com/getoutreach/devbase
