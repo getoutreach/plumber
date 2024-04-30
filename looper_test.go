@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/outreach/plumber"
+	"github.com/getoutreach/plumber"
 )
 
 func ExampleLooper() {

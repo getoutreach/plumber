@@ -1,4 +1,4 @@
-module github.com/outreach/plumber
+module github.com/getoutreach/plumber
 
 go 1.19
 
