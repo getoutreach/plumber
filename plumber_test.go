@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/outreach/plumber"
+	"github.com/getoutreach/plumber"
 	"gotest.tools/v3/assert"
 )
 
