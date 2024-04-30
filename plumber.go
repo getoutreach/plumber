@@ -90,6 +90,13 @@ func (d *D[T]) Const(v T) *D[T] {
 	return d
 }
 
+// Use overwrites defined value with specific instance. Should be used only for testings
+func (d *D[T]) Use(v T) *D[T] {
+	d.resolved = true
+	d.value = v
+	return d
+}
+
 // Must returns a value or panics in case of the error
 func (d *D[T]) Must() T {
 	v, err := d.InstanceError()
