@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -89,21 +90,29 @@ func TestRequireOk(t *testing.T) {
 }
 
 func TestRequireNotOk(t *testing.T) {
-	type dep struct{}
+	type notresolved struct{}
+	type middle struct{}
 	a := struct {
 		D1          plumber.D[int]
 		D2          plumber.D[int]
-		NotResolved plumber.D[*dep]
+		NotResolved plumber.D[*notresolved]
+		Middle      plumber.D[middle]
 	}{}
 	a.D1.Const(1)
+	a.Middle.Resolve(func(r *plumber.Resolution[middle]) {
+		r.Require(&a.NotResolved).Then(func() {
+			r.Resolve(middle{})
+		})
+	})
 	a.D2.Resolve(func(r *plumber.Resolution[int]) {
-		r.Require(&a.D1, &a.NotResolved).Then(func() {
+		r.Require(&a.D1, &a.Middle).Then(func() {
 			r.Resolve(1)
 		})
 	})
 	v, err := a.D2.InstanceError()
 	assert.Equal(t, v, 0)
-	assert.Error(t, err, "dependency not resolved, int requires *plumber_test.dep")
+	//nolint: lll //Why: error is long
+	assert.Error(t, err, `dependency not resolved, int requires plumber_test.middle (dependency not resolved, plumber_test.middle requires *plumber_test.notresolved (instance *plumber_test.notresolved not resolved))`)
 }
 
 func TestRequireNotOkCycle(t *testing.T) {
@@ -119,7 +128,40 @@ func TestRequireNotOkCycle(t *testing.T) {
 	})
 	v, err := a.D2.InstanceError()
 	assert.Equal(t, v, 0)
-	assert.Error(t, err, "dependency not resolved, int requires int")
+	assert.Error(t, err, "dependency not resolved, int requires int (circular dependency)")
+}
+
+func TestRequireConcurrentOk(t *testing.T) {
+	type concurrent struct{}
+	a := struct {
+		D1         plumber.D[int]
+		D2         plumber.D[int]
+		Concurrent plumber.D[concurrent]
+	}{}
+	a.D1.Const(1)
+	a.D2.Resolve(func(r *plumber.Resolution[int]) {
+		r.Require(&a.D1, &a.Concurrent).Then(func() {
+			r.Resolve(1)
+		})
+	})
+	a.Concurrent.Define(func() concurrent {
+		time.Sleep(100 * time.Millisecond)
+		return concurrent{}
+	})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		v, err := a.D2.InstanceError()
+		assert.NilError(t, err)
+		assert.Equal(t, v, 1)
+	}()
+	go func() {
+		defer wg.Done()
+		_, err := a.Concurrent.InstanceError()
+		assert.NilError(t, err)
+	}()
+	wg.Wait()
 }
 
 func TestExamplePipeline(t *testing.T) {

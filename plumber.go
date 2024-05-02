@@ -13,25 +13,50 @@ import (
 	"sync"
 )
 
-// ErrNotResolved is returned when a dependency hasn't been resolved but it is requested
-var ErrNotResolved = errors.New("not resolved value")
+// Errors
+var (
+	// ErrCircularDependency error indicating circular dependency
+	ErrCircularDependency = errors.New("circular dependency")
+)
 
-// ErrRunnableNotResolved is returned when a runnable dependency hasn't been resolved but it is requested usually within the pipeline
-var ErrRunnableNotResolved = errors.New("not resolved runnable")
+// Dependency represent a dependency that can be supplied into Require method
+type Dependency interface {
+	Iterate(func(dep Dependency) bool)
+	Error() error
+}
 
 // Future represents a struct that will help with dependency evaluation
 type Future[T any] struct {
-	deps []Dependency
-	d    *D[T]
+	d *D[T]
 }
 
 // Then evaluates a dependencies and trigger callback when all good
 func (f *Future[T]) Then(callback func()) {
-	for _, d := range f.deps {
-		if !d.Resolved() {
-			f.d.err = fmt.Errorf("dependency not resolved, %s requires %s", f.d, d)
-			return
+	var errs []error
+	for _, d := range f.d.deps {
+		var (
+			circular bool
+			err      error
+		)
+		d.Iterate(func(dep Dependency) bool {
+			if f.d == dep {
+				circular = true
+			}
+			return !circular
+		})
+		if circular {
+			err = ErrCircularDependency
 		}
+		if err == nil {
+			err = d.Error()
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("dependency not resolved, %s requires %s (%w)", f.d, d, err))
+		}
+	}
+	if len(errs) != 0 {
+		f.d.err = errors.Join(errs...)
+		return
 	}
 	callback()
 }
@@ -46,12 +71,13 @@ type D[T any] struct {
 	once      sync.Once
 	mx        sync.Mutex
 	resolve   func()
+	deps      []Dependency
 }
 
 // String return names of underlaying type
 func (d *D[T]) String() string {
-	rv := reflect.ValueOf(d.value)
-	return rv.Type().String()
+	var v T
+	return reflect.TypeOf(&v).Elem().String()
 }
 
 // define sets resolution function but only once
@@ -126,7 +152,7 @@ func (d *D[T]) InstanceError() (T, error) {
 	v := d.Instance()
 	err := d.err
 	if !d.defined {
-		err = ErrNotResolved
+		err = fmt.Errorf("instance %s not resolved", d)
 	}
 	return v, err
 }
@@ -137,14 +163,14 @@ func (d *D[T]) Error() error {
 	return err
 }
 
-// Resolved return true if current value was resolved and is valid
-// In case that current value is just being resolved it return false to not trigger infinite loop during cyclic dependency
-func (d *D[T]) Resolved() bool {
-	if d.resolving {
-		return false
+// Iterate iterates dependency graph, when callback returns true iterator will continue down stream
+func (d *D[T]) Iterate(callback func(dep Dependency) bool) {
+	for _, dep := range d.deps {
+		if !callback(dep) {
+			break
+		}
+		dep.Iterate(callback)
 	}
-	_, err := d.InstanceError()
-	return err == nil
 }
 
 // Resolve returns a callback providing a resolution orchestrator
@@ -187,7 +213,7 @@ func (r *R[T]) Run(ctx context.Context, done DoneFunc) error {
 		//go func() {
 		done.Success()
 		//}()
-		return ErrRunnableNotResolved
+		return fmt.Errorf("Runnable %s not resolved", &r.D)
 	}
 	return r.runnable.Run(ctx, done)
 }
@@ -198,7 +224,7 @@ func (r *R[T]) Close(ctx context.Context) error {
 		return err
 	}
 	if r.runnable == nil {
-		return ErrRunnableNotResolved
+		return fmt.Errorf("Runnable %s not resolved", &r.D)
 	}
 	return r.runnable.Close(ctx)
 }
@@ -218,12 +244,18 @@ func (r *Resolution[T]) Error(err error) {
 	r.d.err = err
 }
 
+// ResolveError ends the resolution with given value and error
+func (r *Resolution[T]) ResolveError(v T, err error) {
+	r.Resolve(v)
+	r.Error(err)
+}
+
 // Require allows to define a dependant for the current value
 // It is a necessary to call Then to trigger a dependency evaluation
 func (r *Resolution[T]) Require(deps ...Dependency) *Future[T] {
+	r.d.deps = deps
 	return &Future[T]{
-		d:    r.d,
-		deps: deps,
+		d: r.d,
 	}
 }
 
@@ -256,9 +288,4 @@ func (rr *ResolutionR[T]) ResolveAdapter(v T, runnable RunnerCloser) {
 // It is a necessary to call Then to trigger a dependency evaluation
 func (rr *ResolutionR[T]) Require(deps ...Dependency) *Future[T] {
 	return rr.resolution.Require(deps...)
-}
-
-// Dependency represent a dependency that can be supplied into Require method
-type Dependency interface {
-	Resolved() bool
 }
