@@ -15,6 +15,9 @@ import (
 // DoneFunc is a func used to report that worker has finished
 type DoneFunc func(error)
 
+// ReadyFunc is a func used to report that worker is ready
+type ReadyFunc func()
+
 // Done reports back runner status using given error
 func (f DoneFunc) Done(do func() error) {
 	f(do())
@@ -27,10 +30,9 @@ func (f DoneFunc) Success() {
 
 // RunnerCloser describes a runnable task
 type RunnerCloser interface {
-	// Run is responsible for initializing and starting a task.
-	// When method returns orchestrator might decided to start another RunnerCloser.
-	// Runner must spawn goroutine when task should be running after Run method finishes.
-	Run(ctx context.Context, done DoneFunc) error
+	// Run executes runners workload. Pipelines are starting Run method in separated goroutine.
+	// Runner must report its readiness using given callback
+	Run(ctx context.Context, ready ReadyFunc) error
 
 	// Close method triggers graceful shutdown on the task. It should block till task is properly closed.
 	// When Close timeout is exceeded then given context is canceled.
@@ -79,13 +81,13 @@ type CallbackFunc func(context.Context) error
 
 // gracefulRunner struct
 type gracefulRunner struct {
-	run   func(ctx context.Context, done DoneFunc) error
+	run   func(ctx context.Context, ready ReadyFunc) error
 	close func(ctx context.Context) error
 }
 
 // GracefulRunner provides easy way to construct simple graceful runner providing run and close functions
 func GracefulRunner(
-	runFunc func(ctx context.Context, done DoneFunc) error,
+	runFunc func(ctx context.Context, ready ReadyFunc) error,
 	closeFunc func(ctx context.Context) error,
 ) RunnerCloser {
 	return &gracefulRunner{
@@ -96,8 +98,8 @@ func GracefulRunner(
 
 // Run executes internal run callback
 // It partially implement RunnerCloser interface
-func (r *gracefulRunner) Run(ctx context.Context, done DoneFunc) error {
-	return r.run(ctx, done)
+func (r *gracefulRunner) Run(ctx context.Context, ready ReadyFunc) error {
+	return r.run(ctx, ready)
 }
 
 // Close executes internal close callback
@@ -109,15 +111,17 @@ func (r *gracefulRunner) Close(ctx context.Context) error {
 // Loop is a looper controlling struct
 type Loop struct {
 	closeCh chan DoneFunc
-	done    DoneFunc
+	ready   ReadyFunc
 }
 
 // Run invokes given callback in the detached goroutine. The error returned from the callback will be returned when Close method is invoked
-func (l *Loop) Run(run func(done DoneFunc)) error {
-	go func() {
-		run(l.done)
-	}()
-	return nil
+func (l *Loop) Run(run func(ready ReadyFunc) error) error {
+	return run(l.ready)
+}
+
+// Ready reports runner's readiness
+func (l *Loop) Ready() {
+	l.ready()
 }
 
 // Closing returns a channel that's closed when cancellation is requested
@@ -153,22 +157,36 @@ func (l *Loop) Closing() <-chan DoneFunc {
 //	    })
 //	})
 func Looper(run func(ctx context.Context, loop *Loop) error) RunnerCloser {
-	l := &Loop{
-		closeCh: make(chan DoneFunc),
-	}
+	var (
+		once sync.Once
+		l    = &Loop{
+			closeCh: make(chan DoneFunc, 1),
+		}
+	)
 	return &gracefulRunner{
-		run: func(ctx context.Context, done DoneFunc) error {
-			l.done = done
-			return run(ctx, l)
+		run: func(ctx context.Context, ready ReadyFunc) error {
+			var err error
+			once.Do(func() {
+				l.ready = ready
+				defer close(l.closeCh)
+				err = run(ctx, l)
+			})
+			return err
 		},
 		close: func(ctx context.Context) error {
 			var (
 				errCh             = make(chan error, 1)
 				canceled DoneFunc = func(err error) {
 					errCh <- err
+					close(errCh)
 				}
 			)
 			l.closeCh <- canceled
+			// if hasn't been started, lets close it
+			once.Do(func() {
+				close(errCh)
+				close(l.closeCh)
+			})
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -180,9 +198,22 @@ func Looper(run func(ctx context.Context, loop *Loop) error) RunnerCloser {
 }
 
 // Runner creates a RunnerCloser based on supplied run function with noop Clone method
-func Runner(run func(ctx context.Context, done DoneFunc) error) RunnerCloser {
+func Runner(run func(ctx context.Context, ready ReadyFunc) error) RunnerCloser {
 	return &gracefulRunner{
 		run: run,
+		close: func(ctx context.Context) error {
+			return nil
+		},
+	}
+}
+
+// SimpleRunner creates a RunnerCloser based on supplied run function with noop Clone method, ready state is reported automatically
+func SimpleRunner(run func(ctx context.Context) error) RunnerCloser {
+	return &gracefulRunner{
+		run: func(ctx context.Context, ready ReadyFunc) error {
+			ready()
+			return run(ctx)
+		},
 		close: func(ctx context.Context) error {
 			return nil
 		},
@@ -193,8 +224,9 @@ func Runner(run func(ctx context.Context, done DoneFunc) error) RunnerCloser {
 func Closer(closeFunc CallbackFunc) RunnerCloser {
 	return &gracefulRunner{
 		close: closeFunc,
-		run: func(ctx context.Context, done DoneFunc) error {
-			defer done.Success()
+		run: func(ctx context.Context, ready ReadyFunc) error {
+			ready()
+			<-ctx.Done()
 			return nil
 		},
 	}
@@ -223,37 +255,50 @@ func Parallel(runners ...RunnerCloser) *ParallelPipeline {
 // Run executes Run method on internal runners in parallel.
 // It partially implement RunnerCloser interface.
 // The it returns when all runner's Run methods are returned.
-func (r *ParallelPipeline) Run(ctx context.Context, done DoneFunc) error {
-	r.wg.Add(len(r.runners))
-	errs := make(ErrorCh, len(r.runners))
-
+func (r *ParallelPipeline) Run(ctx context.Context, ready ReadyFunc) error {
+	var (
+		readyCh = make(chan struct{}, len(r.runners))
+		errs    = make(ErrorCh, len(r.runners))
+	)
 	go func() {
+		var counter = 0
+		var isReady bool
+		for {
+			select {
+			case <-readyCh:
+				counter++
+			case <-ctx.Done():
+				break
+			}
+			if counter == len(r.runners) {
+				isReady = true
+				break
+			}
+		}
+		if isReady {
+			ready()
+		}
 		r.wg.Wait()
 		close(errs)
-		er := errors.Join(errs.Errors()...)
-		done(er)
 	}()
 
+	r.wg.Add(len(r.runners))
 	for _, runner := range r.runners {
 		go func(runner RunnerCloser) {
-			var once = sync.Once{}
-			if err := runner.Run(ctx, func(err error) {
-				once.Do(func() {
-					if r.options.ErrorSignaler != nil && !r.closing.Load() {
-						r.options.ErrorSignaler(err)
-					}
-					if err != nil {
-						errs <- err
-					}
-					r.wg.Done()
-				})
+			defer r.wg.Done()
+			if err := runner.Run(ctx, func() {
+				// Signal that runner is ready
+				readyCh <- struct{}{}
 			}); err != nil {
+				if r.options.ErrorSignaler != nil && !r.closing.Load() {
+					r.options.ErrorSignaler(err)
+				}
 				errs <- err
 			}
 		}(runner)
 	}
 
-	return nil
+	return errors.Join(errs.Errors()...)
 }
 
 // Close executes Close method on internal runners in in parallel.
@@ -307,46 +352,58 @@ func Pipeline(runners ...RunnerCloser) *SerialPipeline {
 
 // Run executes Run method on internal runners one by one with given order.
 // It partially implement RunnerCloser interface
-func (r *SerialPipeline) Run(ctx context.Context, done DoneFunc) error {
+func (r *SerialPipeline) Run(ctx context.Context, ready ReadyFunc) error {
 	var (
-		wg sync.WaitGroup
+		wg      sync.WaitGroup
+		errs    = make(ErrorCh, len(r.runners))
+		readyCh = make(chan struct{}, 1)
 	)
 	wg.Add(len(r.runners))
 
-	errs := make(ErrorCh, len(r.runners))
-
-	// Wait first since we might get blocked
+	// started go routine
 	go func() {
-		wg.Wait()
-		close(errs)
-		er := errors.Join(errs.Errors()...)
-		done(er)
-	}()
-
-	for _, runner := range r.runners {
-		err := func(runner RunnerCloser) error {
-			var once = sync.Once{}
-			if err := runner.Run(ctx, func(err error) {
-				once.Do(func() {
+		var index = 0
+		for {
+			select {
+			case <-readyCh:
+				// when all runners are running we cal report that pipeline is ready
+				if index == len(r.runners) {
+					ready()
+					return
+				}
+				// when we are closing we need to mark remaining workers as finished
+				if r.closing.Load() {
+					for i := index; i < len(r.runners); i++ {
+						wg.Done()
+					}
+					return
+				}
+				runner := r.runners[index]
+				index++
+				// runner go routine
+				go func() {
+					defer wg.Done()
+					err := runner.Run(ctx, func() {
+						// worker is ready we can start with next one
+						readyCh <- struct{}{}
+					})
 					if r.options.ErrorSignaler != nil && !r.closing.Load() {
 						r.options.ErrorSignaler(err)
 					}
-					if err != nil {
-						errs <- err
-					}
-					wg.Done()
-				})
-			}); err != nil {
-				return err
+					errs <- err
+				}()
+			case <-ctx.Done():
+				return
 			}
-			return nil
-		}(runner)
-		if err != nil {
-			return err
 		}
-	}
+	}()
+	// Lets start first worker
+	readyCh <- struct{}{}
 
-	return nil
+	wg.Wait()
+	close(errs)
+
+	return errors.Join(errs.Errors()...)
 }
 
 // Close executes Close method on internal runners in revered order to achieve graceful shutdown sequence
@@ -387,9 +444,15 @@ func Start(ctx context.Context, runner RunnerCloser, opts ...Option) error {
 		closeCh     = make(chan struct{}, 1)
 		once        sync.Once
 		closerGroup sync.WaitGroup
-		closeRunner = func(ctx context.Context, runner RunnerCloser) {
+		closeRunner = func(ctx context.Context, initiateClose bool) {
 			once.Do(func() {
-				defer closerGroup.Done()
+				if !initiateClose {
+					closerCancel()
+					closerGroup.Wait()
+					// We can really terminate since all channel writers are done
+					close(errorCh)
+					return
+				}
 				closeCtx, closeCancel := context.WithCancel(ctx)
 				defer closeCancel()
 				if options.CloseTimeout > 0 {
@@ -398,6 +461,7 @@ func Start(ctx context.Context, runner RunnerCloser, opts ...Option) error {
 				}
 				go func() {
 					err := runner.Close(closeCtx)
+					startCancel(closeCtx.Err())
 					errorCh <- err
 					closerCancel()
 					close(closeCh)
@@ -405,29 +469,26 @@ func Start(ctx context.Context, runner RunnerCloser, opts ...Option) error {
 					// We can really terminate since all channel writers are done
 					close(errorCh)
 				}()
-				defer func() {
-					startCancel(closeCtx.Err())
-				}()
 				select {
 				// Wait for close to finish
 				case <-closeCh:
 					break
 				// Wait for close context to be canceled
 				case <-closeCtx.Done():
+					startCancel(closeCtx.Err())
 					if err := closeCtx.Err(); err != nil {
 						errorCh <- err
 					}
 					break
 				}
-				// Close the channel so we can terminate
 			})
 		}
 	)
-	closerGroup.Add(3)
+	closerGroup.Add(2)
 
 	options.close = func() {
 		go func() {
-			closeRunner(ctx, runner)
+			closeRunner(ctx, true)
 		}()
 	}
 	options.Apply(opts...)
@@ -439,38 +500,26 @@ func Start(ctx context.Context, runner RunnerCloser, opts ...Option) error {
 		})
 	}
 
+	// closers go routine
 	go func() {
+		defer closerGroup.Done()
 		err := erg.Wait()
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			errorCh <- err
 		}
-		closerGroup.Done()
 	}()
 
+	// runner go routine
 	go func() {
-		var (
-			once      sync.Once
-			callClose = func(err error) {
-				if err != nil {
-					errorCh <- err
-				}
-				closerGroup.Done()
-				once.Do(func() {
-					closeRunner(ctx, runner)
-				})
-			}
-		)
-
-		err := runner.Run(startCtx, func(err error) {
-			// We need to wait for runners to finish before closing errorCh
-			// runner finished calling close
-			callClose(err)
+		defer closerGroup.Done()
+		err := runner.Run(startCtx, func() {
+			// We might expose ready callback later via pipeline options
 		})
 		if err != nil {
-			closerGroup.Add(1)
 			// runner sequence had a problems calling close
-			callClose(err)
+			errorCh <- err
 		}
+		go closeRunner(ctx, false)
 	}()
 
 	return errors.Join(errorCh.Wait(ctx)...)

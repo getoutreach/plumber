@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -89,21 +90,29 @@ func TestRequireOk(t *testing.T) {
 }
 
 func TestRequireNotOk(t *testing.T) {
-	type dep struct{}
+	type notresolved struct{}
+	type middle struct{}
 	a := struct {
 		D1          plumber.D[int]
 		D2          plumber.D[int]
-		NotResolved plumber.D[*dep]
+		NotResolved plumber.D[*notresolved]
+		Middle      plumber.D[middle]
 	}{}
 	a.D1.Const(1)
+	a.Middle.Resolve(func(r *plumber.Resolution[middle]) {
+		r.Require(&a.NotResolved).Then(func() {
+			r.Resolve(middle{})
+		})
+	})
 	a.D2.Resolve(func(r *plumber.Resolution[int]) {
-		r.Require(&a.D1, &a.NotResolved).Then(func() {
+		r.Require(&a.D1, &a.Middle).Then(func() {
 			r.Resolve(1)
 		})
 	})
 	v, err := a.D2.InstanceError()
 	assert.Equal(t, v, 0)
-	assert.Error(t, err, "dependency not resolved, int requires *plumber_test.dep")
+	//nolint: lll //Why: error is long
+	assert.Error(t, err, `dependency not resolved, int requires plumber_test.middle (dependency not resolved, plumber_test.middle requires *plumber_test.notresolved (instance *plumber_test.notresolved not resolved))`)
 }
 
 func TestRequireNotOkCycle(t *testing.T) {
@@ -119,7 +128,40 @@ func TestRequireNotOkCycle(t *testing.T) {
 	})
 	v, err := a.D2.InstanceError()
 	assert.Equal(t, v, 0)
-	assert.Error(t, err, "dependency not resolved, int requires int")
+	assert.Error(t, err, "dependency not resolved, int requires int (circular dependency)")
+}
+
+func TestRequireConcurrentOk(t *testing.T) {
+	type concurrent struct{}
+	a := struct {
+		D1         plumber.D[int]
+		D2         plumber.D[int]
+		Concurrent plumber.D[concurrent]
+	}{}
+	a.D1.Const(1)
+	a.D2.Resolve(func(r *plumber.Resolution[int]) {
+		r.Require(&a.D1, &a.Concurrent).Then(func() {
+			r.Resolve(1)
+		})
+	})
+	a.Concurrent.Define(func() concurrent {
+		time.Sleep(100 * time.Millisecond)
+		return concurrent{}
+	})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		v, err := a.D2.InstanceError()
+		assert.NilError(t, err)
+		assert.Equal(t, v, 1)
+	}()
+	go func() {
+		defer wg.Done()
+		_, err := a.Concurrent.InstanceError()
+		assert.NilError(t, err)
+	}()
+	wg.Wait()
 }
 
 func TestExamplePipeline(t *testing.T) {
@@ -158,65 +200,66 @@ func TestExamplePipeline(t *testing.T) {
 	signaler := plumber.NewErrorSignaler()
 
 	err := plumber.Start(ctx,
+		// Serial pipeline. Task are started sequentially and closed in reverse order.
 		plumber.Pipeline(
 			plumber.Closer(func(ctx context.Context) error {
 				fmt.Println("pipeline is closing")
 				return nil
 			}),
-			plumber.GracefulRunner(func(ctx context.Context, done plumber.DoneFunc) error {
-				defer done.Success()
+			plumber.GracefulRunner(func(ctx context.Context, ready plumber.ReadyFunc) error {
+				ready()
 				fmt.Println("Task 1 starting")
+				<-ctx.Done()
 				return nil
 			}, func(ctx context.Context) error {
 				fmt.Println("Task 1 closing")
 				return nil
 			}),
+			// The parallel pipeline all task are stared and closed in parallel.
 			plumber.Parallel(
-				plumber.Runner(func(ctx context.Context, done plumber.DoneFunc) error {
-					defer done.Success()
+				plumber.SimpleRunner(func(ctx context.Context) error {
 					fmt.Println("Task 2 starting")
+					<-ctx.Done()
 					return nil
 				}),
-				plumber.Runner(func(ctx context.Context, done plumber.DoneFunc) error {
-					defer done.Success()
+				plumber.SimpleRunner(func(ctx context.Context) error {
 					fmt.Println("Task 3 starting")
+					<-ctx.Done()
 					return nil
 				}),
 				plumber.Looper(func(ctx context.Context, l *plumber.Loop) error {
-					return l.Run(func(done plumber.DoneFunc) {
-						tick := time.Tick(500 * time.Millisecond)
-						done.Done(func() error {
-							for {
-								select {
-								case <-tick:
-									// Work
-									fmt.Println("Work")
-								case closeDone := <-l.Closing():
-									closeDone.Success()
-									fmt.Println("Lopper closing")
-									// Graceful shutdown
-									return nil
-								case <-ctx.Done():
-									// Cancel / Timeout
-									return ctx.Err()
-								}
-							}
-						})
-					})
+					l.Ready()
+					tick := time.Tick(500 * time.Millisecond)
+					for {
+						select {
+						case <-tick:
+							// Work
+							fmt.Println("Work")
+						case closeDone := <-l.Closing():
+							closeDone.Success()
+							// Graceful shutdown
+							return nil
+						case <-ctx.Done():
+							// Cancel / Timeout
+							return ctx.Err()
+						}
+					}
 				}),
 			),
+			// Dependency graph based runner
 			&a.D4,
 			&a.HTTP.Server,
 		).With(plumber.Signaler(signaler)),
-		plumber.Readiness(30*time.Second),
+		// The pipeline needs to finish startup phase within 30 seconds. If not, run context is canceled. Close is initiated.
+		plumber.Readiness(2*time.Second),
+		// The pipeline needs to gracefully close with 120 seconds. If not, internal run and close contexts are canceled.
+		plumber.CloseTimeout(2*time.Second),
+		// The pipeline will run for 120 seconds then will be closed gracefully.
 		plumber.TTL(2*time.Second),
-		plumber.CloseTimeout(120*time.Second),
+		// When given signals will be received pipeline will be closed gracefully.
 		plumber.SignalCloser(),
-		plumber.CloserFunc(func(close func()) {
-
-		}),
+		// When some tasks covered with signaler reports and error pipeline will be closed.
 		plumber.Closing(signaler),
-		plumber.ContextCloser(ctx),
 	)
 
 	if err != nil {
@@ -252,24 +295,21 @@ func fitHTTP(a *App) {
 			http.HandleFunc("/hello", a.HTTP.HelloHandler.Instance())
 			http.HandleFunc("/echo", a.HTTP.EchoHandler.Instance())
 
-			r.ResolveAdapter(httpServer, plumber.GracefulRunner(func(ctx context.Context, done plumber.DoneFunc) error {
-				go func() {
-					done.Done(func() error {
-						fmt.Println("HTTP server is starting")
-						if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-							err = fmt.Errorf("HTTP server ListenAndServe Error: %w", err)
-							return err
-						}
-						fmt.Println("HTTP server is closed")
-						return nil
-					})
-				}()
+			r.ResolveAdapter(httpServer, plumber.GracefulRunner(func(ctx context.Context, ready plumber.ReadyFunc) error {
+				// ready is async to give time to server start
+				go ready()
+				fmt.Println("HTTP server is starting")
+				if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+					err = fmt.Errorf("HTTP server ListenAndServe Error: %w", err)
+					return err
+				}
+				fmt.Println("HTTP server is closed")
 				return nil
 			}, func(ctx context.Context) error {
-				fmt.Println("Closing HTTP server")
 				if err := httpServer.Shutdown(ctx); err != nil {
 					return fmt.Errorf("HTTP Server Shutdown Error: %w", err)
 				}
+				fmt.Println("Closed HTTP server")
 				return nil
 			}))
 		})

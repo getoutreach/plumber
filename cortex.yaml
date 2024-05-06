@@ -4,7 +4,7 @@ openapi: 3.0.0
 info:
   title: plumber
   description: >
-    A collection of libraries that are useful for implementing Go services, libraries, and more.
+    Orchestration library to construct application dependency graph and manage service tasks.
   x-cortex-type: service
   x-cortex-slack:
     channels:
