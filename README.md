@@ -100,45 +100,51 @@ err := plumber.Start(ctx,
     // Serial pipeline. Task are started sequentially and closed in reverse order.
     plumber.Pipeline(
         plumber.Closer(func(ctx context.Context) error {
-            fmt.Println("The pipeline is closing")
+            fmt.Println("pipeline is closing")
             return nil
         }),
-        plumber.GracefulRunner(func(ctx context.Context, done plumber.DoneFunc) error {
-            go func() {
-                defer done.Success()
-                fmt.Println("Task is starting")
-            }()
+        plumber.GracefulRunner(func(ctx context.Context, ready plumber.ReadyFunc) error {
+            ready()
+            fmt.Println("Task 1 starting")
+            <-ctx.Done()
             return nil
         }, func(ctx context.Context) error {
-            fmt.Println("Task is closing")
+            fmt.Println("Task 1 closing")
             return nil
         }),
         // The parallel pipeline all task are stared and closed in parallel.
         plumber.Parallel(
-            plumber.Runner(func(ctx context.Context, done plumber.DoneFunc) error {
-                defer done.Success()
+            plumber.SimpleRunner(func(ctx context.Context) error {
+                fmt.Println("Task 2 starting")
+                <-ctx.Done()
+                return nil
+            }),
+            plumber.SimpleRunner(func(ctx context.Context) error {
+                fmt.Println("Task 3 starting")
+                <-ctx.Done()
                 return nil
             }),
             plumber.Looper(func(ctx context.Context, l *plumber.Loop) error {
-                return l.Run(func() error {
-                    tick := time.Tick(1 * time.Second)
-                    for {
-                        select {
-                        case <-l.Closing():
-                            // Gracelfull shutdown
-                            return nil
-                        case <-tick:
-                            // Work
-                            fmt.Println("Work")
-                        case <-ctx.Done():
-                            // Cancel / Timeout
-                            return ctx.Err()
-                        }
+                l.Ready()
+                tick := time.Tick(500 * time.Millisecond)
+                for {
+                    select {
+                    case <-tick:
+                        // Work
+                        fmt.Println("Work")
+                    case closeDone := <-l.Closing():
+                        closeDone.Success()
+                        // Graceful shutdown
+                        return nil
+                    case <-ctx.Done():
+                        // Cancel / Timeout
+                        return ctx.Err()
                     }
-                })
+                }
             }),
         ),
         // Dependency graph based runner
+        &a.D4,
         &a.HTTP.Server,
     ).With(plumber.Signaler(signaler)),
     // The pipeline needs to finish startup phase within 30 seconds. If not, run context is canceled. Close is initiated.

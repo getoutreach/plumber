@@ -201,21 +201,14 @@ func (r *R[T]) Resolve(callback func(*ResolutionR[T])) *R[T] {
 }
 
 // Run executes Run method on value and satisfies partially the RunnerCloser interface
-func (r *R[T]) Run(ctx context.Context, done DoneFunc) error {
+func (r *R[T]) Run(ctx context.Context, ready ReadyFunc) error {
 	if err := r.D.Error(); err != nil {
-		//go func() {
-		done.Success()
-		//}()
 		return err
 	}
 	if r.runnable == nil {
-		// Le's report back that task has finished so we don't wait
-		//go func() {
-		done.Success()
-		//}()
 		return fmt.Errorf("Runnable %s not resolved", &r.D)
 	}
-	return r.runnable.Run(ctx, done)
+	return r.runnable.Run(ctx, ready)
 }
 
 // Close executes Close method on value and satisfies partially the RunnerCloser interface

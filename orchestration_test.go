@@ -11,14 +11,38 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func reportingRunner(name string) plumber.RunnerCloser {
-	return plumber.GracefulRunner(func(ctx context.Context, done plumber.DoneFunc) error {
-		defer done.Success()
+func reportingRunner(name string, fce ...func()) plumber.RunnerCloser {
+	return plumber.GracefulRunner(func(ctx context.Context, ready plumber.ReadyFunc) error {
+		ready()
 		fmt.Println("runner", name, "started")
+		for _, f := range fce {
+			f()
+		}
 		return nil
 	}, func(ctx context.Context) error {
 		fmt.Println("runner", name, "closed")
 		return nil
+	})
+}
+
+func reportingBlockingRunner(name string, fce ...func()) plumber.RunnerCloser {
+	return plumber.GracefulRunner(func(ctx context.Context, ready plumber.ReadyFunc) error {
+		ready()
+		fmt.Println("runner", name, "started")
+		for _, f := range fce {
+			f()
+		}
+		<-ctx.Done()
+		return nil
+	}, func(ctx context.Context) error {
+		fmt.Println("runner", name, "closed")
+		return nil
+	})
+}
+
+func erroringRunner(name string) plumber.RunnerCloser {
+	return plumber.SimpleRunner(func(ctx context.Context) error {
+		return errors.New("runner " + name + " failed")
 	})
 }
 
@@ -33,9 +57,9 @@ func ExamplePipeline() {
 
 	err := plumber.Start(ctx,
 		plumber.Pipeline(
-			reportingRunner("runner 1"),
-			reportingRunner("runner 2"),
-			reportingRunner("runner 3"),
+			reportingBlockingRunner("runner 1"),
+			reportingBlockingRunner("runner 2"),
+			reportingBlockingRunner("runner 3"),
 		),
 		plumber.TTL(10*time.Millisecond),
 	)
@@ -56,11 +80,11 @@ func TestPipelineErrors(t *testing.T) {
 
 	err := plumber.Start(ctx,
 		plumber.Pipeline(
-			erroringCloser("runner 1"),
-			erroringCloser("runner 2"),
-			erroringCloser("runner 3"),
+			erroringRunner("runner 1"),
+			erroringRunner("runner 2"),
+			erroringRunner("runner 3"),
 		),
-		plumber.TTL(10*time.Millisecond),
+		plumber.TTL(100*time.Millisecond),
 		func(o *plumber.Options) {
 			o.Closer(func(ctx context.Context) error {
 				return errors.New("Closer error")
@@ -80,19 +104,18 @@ func TestPipelineSignalerClosing(t *testing.T) {
 
 	err := plumber.Start(ctx,
 		plumber.Pipeline(
-			reportingRunner("runner 1"),
-			plumber.Runner(func(ctx context.Context, done plumber.DoneFunc) error {
-				go func() {
-					select {
-					case <-ctx.Done():
-						done(ctx.Err())
-						break
-					case <-time.After(10 * time.Millisecond):
-						done(errors.New("runner failed"))
-						break
-					}
-				}()
-				return nil
+			reportingRunner("runner 1", func() {
+				// Let other job to start as well
+				time.Sleep(10 * time.Millisecond)
+			}),
+			plumber.Runner(func(ctx context.Context, ready plumber.ReadyFunc) error {
+				ready()
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(25 * time.Second):
+					return errors.New("runner failed")
+				}
 			}),
 		).With(plumber.Signaler(signaler)),
 		plumber.TTL(50*time.Millisecond),
@@ -103,6 +126,7 @@ func TestPipelineSignalerClosing(t *testing.T) {
 	// - close sequence is initiated
 	// - closing is immediately done
 	// - start context is canceled
+	fmt.Println(err)
 	assert.Assert(t, errors.Is(err, context.Canceled))
 }
 
@@ -113,19 +137,15 @@ func TestPipelineRunnerContextCanceled(t *testing.T) {
 
 	err := plumber.Start(ctx,
 		plumber.Pipeline(
-			reportingRunner("runner 1"),
-			plumber.Runner(func(ctx context.Context, done plumber.DoneFunc) error {
-				go func() {
-					select {
-					case <-ctx.Done():
-						done(ctx.Err())
-						break
-					case <-time.After(2 * time.Second):
-						done(errors.New("runner failed"))
-						break
-					}
-				}()
-				return nil
+			reportingBlockingRunner("runner 1"),
+			plumber.Runner(func(ctx context.Context, ready plumber.ReadyFunc) error {
+				ready()
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(2 * time.Second):
+					return errors.New("runner failed")
+				}
 			}),
 		).With(plumber.Signaler(signaler)),
 		plumber.TTL(10*time.Millisecond),
@@ -138,11 +158,9 @@ func TestPipelineRunnerContextCanceled(t *testing.T) {
 func TestParallelPipeline(t *testing.T) {
 	ctx := context.Background()
 
-	runner := plumber.Runner(func(ctx context.Context, done plumber.DoneFunc) error {
+	runner := plumber.Runner(func(ctx context.Context, ready plumber.ReadyFunc) error {
+		ready()
 		time.Sleep(10 * time.Millisecond)
-		go func() {
-			done.Success()
-		}()
 		return nil
 	})
 
