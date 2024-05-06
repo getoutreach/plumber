@@ -36,7 +36,9 @@ test: &test
   ## <</Stencil::Block>>
 
 # Branches used for releasing code, pre-release or not
-release_branches: &release_branches
+release_branches: &release_branches # Release branch
+  - release
+  # Pre-releases branch
   - "main"
 
 jobs:
@@ -118,8 +120,3 @@ workflows:
                 - main
             tags:
               only: /v\d+(\.\d+)*(-.*)*/
-      - shared/e2e:
-          context: *contexts
-          ## <<Stencil::Block(circleE2EExtra)>>
-
-          ## <</Stencil::Block>>

@@ -9,6 +9,7 @@ arguments:
     skipE2e: true
   releaseOptions:
     allowMajorVersions: true
+    enablePrereleases: true
   opslevel:
     lifecycle: public_ga
   reportingTeam: ce-ecs
