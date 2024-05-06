@@ -251,11 +251,11 @@ func TestExamplePipeline(t *testing.T) {
 			&a.HTTP.Server,
 		).With(plumber.Signaler(signaler)),
 		// The pipeline needs to finish startup phase within 30 seconds. If not, run context is canceled. Close is initiated.
-		plumber.Readiness(30*time.Second),
+		plumber.Readiness(2*time.Second),
 		// The pipeline needs to gracefully close with 120 seconds. If not, internal run and close contexts are canceled.
-		plumber.CloseTimeout(120*time.Second),
+		plumber.CloseTimeout(2*time.Second),
 		// The pipeline will run for 120 seconds then will be closed gracefully.
-		plumber.TTL(120*time.Second),
+		plumber.TTL(2*time.Second),
 		// When given signals will be received pipeline will be closed gracefully.
 		plumber.SignalCloser(),
 		// When some tasks covered with signaler reports and error pipeline will be closed.

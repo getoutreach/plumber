@@ -25,6 +25,7 @@ func reportingRunner(name string, fce ...func()) plumber.RunnerCloser {
 	})
 }
 
+// nolint: unparam //Why: not yet
 func reportingBlockingRunner(name string, fce ...func()) plumber.RunnerCloser {
 	return plumber.GracefulRunner(func(ctx context.Context, ready plumber.ReadyFunc) error {
 		ready()
@@ -46,6 +47,7 @@ func erroringRunner(name string) plumber.RunnerCloser {
 	})
 }
 
+// nolint: unused //Why: not yet
 func erroringCloser(name string) plumber.RunnerCloser {
 	return plumber.Closer(func(ctx context.Context) error {
 		return errors.New("runner " + name + " failed")
