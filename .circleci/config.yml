@@ -36,9 +36,7 @@ test: &test
   ## <</Stencil::Block>>
 
 # Branches used for releasing code, pre-release or not
-release_branches: &release_branches # Release branch
-  - release
-  # Pre-releases branch
+release_branches: &release_branches
   - "main"
 
 jobs:
