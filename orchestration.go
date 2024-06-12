@@ -365,14 +365,14 @@ func (r *SerialPipeline) Run(ctx context.Context, ready ReadyFunc) error {
 		var index = 0
 		for {
 			select {
-			case <-readyCh:
+			case _, ok := <-readyCh:
 				// when all runners are running we cal report that pipeline is ready
 				if index == len(r.runners) {
 					ready()
 					return
 				}
 				// when we are closing we need to mark remaining workers as finished
-				if r.closing.Load() {
+				if !ok || r.closing.Load() {
 					for i := index; i < len(r.runners); i++ {
 						wg.Done()
 					}
@@ -389,6 +389,9 @@ func (r *SerialPipeline) Run(ctx context.Context, ready ReadyFunc) error {
 					})
 					if r.options.ErrorSignaler != nil && !r.closing.Load() {
 						r.options.ErrorSignaler(err)
+					}
+					if err != nil {
+						close(readyCh)
 					}
 					errs <- err
 				}()
