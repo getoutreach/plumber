@@ -12,7 +12,15 @@ type Container struct {
 }
 
 // Cleanup registers a cleanup function
-func (c *Container) Cleanup(fn func() error) {
+func (c *Container) Cleanup(fn func()) {
+	c.cleanup = append(c.cleanup, func() error {
+		fn()
+		return nil
+	})
+}
+
+// CleanupError registers a cleanup function returning an error
+func (c *Container) CleanupError(fn func() error) {
 	c.cleanup = append(c.cleanup, fn)
 }
 
