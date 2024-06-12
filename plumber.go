@@ -72,6 +72,7 @@ type D[T any] struct {
 	mx        sync.Mutex
 	resolve   func()
 	deps      []Dependency
+	listeners []func()
 }
 
 // String return names of underlaying type
@@ -88,6 +89,9 @@ func (d *D[T]) define(resolve func()) {
 			resolve()
 			d.resolved = true
 			d.resolving = false
+			for _, l := range d.listeners {
+				l()
+			}
 		}
 	})
 }
@@ -180,6 +184,12 @@ func (d *D[T]) Resolve(callback func(*Resolution[T])) *D[T] {
 		r := Resolution[T]{d: d}
 		callback(&r)
 	})
+	return d
+}
+
+// WhenResolved registers a callback that will be triggered when dependency is resolved
+func (d *D[T]) WhenResolved(callback func()) *D[T] {
+	d.listeners = append(d.listeners, callback)
 	return d
 }
 
