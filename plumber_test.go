@@ -115,6 +115,36 @@ func TestRequireNotOk(t *testing.T) {
 	assert.Error(t, err, `dependency not resolved, int requires plumber_test.middle (dependency not resolved, plumber_test.middle requires *plumber_test.notresolved (instance *plumber_test.notresolved not resolved))`)
 }
 
+func TestRequireNotOkError(t *testing.T) {
+	type notresolved struct{}
+	type middle struct{}
+	a := struct {
+		D2        plumber.D[int]
+		WithError plumber.D[*notresolved]
+		Middle    plumber.D[middle]
+	}{}
+
+	a.WithError.Resolve(func(r *plumber.Resolution[*notresolved]) {
+		r.Require().Then(func() {
+			r.ResolveError(nil, errors.New("Error"))
+		})
+	})
+	a.Middle.Resolve(func(r *plumber.Resolution[middle]) {
+		r.Require(&a.WithError).Then(func() {
+			r.Resolve(middle{})
+		})
+	})
+	a.D2.Resolve(func(r *plumber.Resolution[int]) {
+		r.Require(&a.Middle).Then(func() {
+			r.Resolve(1)
+		})
+	})
+	v, err := a.D2.InstanceError()
+	assert.Equal(t, v, 0)
+	//nolint: lll //Why: error is long
+	assert.Error(t, err, `dependency not resolved, int requires plumber_test.middle (dependency not resolved, plumber_test.middle requires *plumber_test.notresolved (Error))`)
+}
+
 func TestRequireNotOkCycle(t *testing.T) {
 	a := struct {
 		D1 plumber.D[int]

@@ -357,14 +357,24 @@ func (r *SerialPipeline) Run(ctx context.Context, ready ReadyFunc) error {
 		wg      sync.WaitGroup
 		errs    = make(ErrorCh, len(r.runners))
 		readyCh = make(chan struct{}, 1)
+		closeCh = make(chan struct{})
 	)
 	wg.Add(len(r.runners))
+
+	drain := func(index int) {
+		for i := index; i < len(r.runners); i++ {
+			wg.Done()
+		}
+	}
 
 	// started go routine
 	go func() {
 		var index = 0
 		for {
 			select {
+			case <-closeCh:
+				drain(index)
+				return
 			case <-readyCh:
 				// when all runners are running we cal report that pipeline is ready
 				if index == len(r.runners) {
@@ -373,22 +383,27 @@ func (r *SerialPipeline) Run(ctx context.Context, ready ReadyFunc) error {
 				}
 				// when we are closing we need to mark remaining workers as finished
 				if r.closing.Load() {
-					for i := index; i < len(r.runners); i++ {
-						wg.Done()
-					}
+					drain(index)
 					return
 				}
 				runner := r.runners[index]
 				index++
 				// runner go routine
 				go func() {
+					var once sync.Once
 					defer wg.Done()
 					err := runner.Run(ctx, func() {
 						// worker is ready we can start with next one
-						readyCh <- struct{}{}
+						once.Do(func() {
+							readyCh <- struct{}{}
+						})
 					})
 					if r.options.ErrorSignaler != nil && !r.closing.Load() {
 						r.options.ErrorSignaler(err)
+					}
+					if err != nil {
+						r.closing.Store(true)
+						close(closeCh)
 					}
 					errs <- err
 				}()
