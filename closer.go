@@ -27,6 +27,14 @@ func (o *Options) Apply(oo ...Option) *Options {
 	return o
 }
 
+// closeContext returns ready made close context with or without timeout
+func (o *Options) closeContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if o.CloseTimeout > 0 {
+		return context.WithTimeout(ctx, o.CloseTimeout)
+	}
+	return context.WithCancel(ctx)
+}
+
 // Closer registers new closer
 func (o *Options) Closer(closer func(context.Context) error) *Options {
 	o.closers = append(o.closers, closer)
