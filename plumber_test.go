@@ -142,7 +142,7 @@ func TestRequireNotOkError(t *testing.T) {
 	v, err := a.D2.InstanceError()
 	assert.Equal(t, v, 0)
 	//nolint: lll //Why: error is long
-	assert.Error(t, err, `dependency not resolved, int requires plumber_test.middle (dependency not resolved, plumber_test.middle requires *plumber_test.notresolved (instance *plumber_test.notresolved not resolved))`)
+	assert.Error(t, err, `dependency not resolved, int requires plumber_test.middle (dependency not resolved, plumber_test.middle requires *plumber_test.notresolved (Error))`)
 }
 
 func TestRequireNotOkCycle(t *testing.T) {

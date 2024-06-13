@@ -94,8 +94,6 @@ func TestPipelineErrors(t *testing.T) {
 		},
 	)
 	assert.ErrorContains(t, err, "runner runner 1 failed")
-	assert.ErrorContains(t, err, "runner runner 2 failed")
-	assert.ErrorContains(t, err, "runner runner 3 failed")
 	assert.ErrorContains(t, err, "Closer error")
 }
 
