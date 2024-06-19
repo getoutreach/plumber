@@ -4,7 +4,10 @@
 
 package plumber
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
 // Container represents a root dependency container
 type Container struct {
@@ -33,4 +36,14 @@ func (c *Container) Close() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// DefineContainers defines supplied containers using given config and root container
+func DefineContainers[C, CF any](ctx context.Context, cfg CF, root C, containers ...interface {
+	Define(context.Context, CF, C)
+}) C {
+	for _, d := range containers {
+		d.Define(ctx, cfg, root)
+	}
+	return root
 }
