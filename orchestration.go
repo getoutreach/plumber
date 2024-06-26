@@ -402,8 +402,9 @@ func (r *SerialPipeline) Run(ctx context.Context, ready ReadyFunc) error {
 						r.options.ErrorSignaler(err)
 					}
 					if err != nil {
-						r.closing.Store(true)
-						close(closeCh)
+						if r.closing.CompareAndSwap(false, true) {
+							close(closeCh)
+						}
 					}
 					errs <- err
 				}()
