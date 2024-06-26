@@ -39,9 +39,12 @@ func (c *Container) Close() error {
 }
 
 // DefineContainers defines supplied containers using given config and root container
-func DefineContainers[C, CF any](ctx context.Context, cfg CF, root C, containers ...interface {
+func DefineContainers[C, CF any](ctx context.Context, cfg CF, definers []func(context.Context, CF, C), root C, containers ...interface {
 	Define(context.Context, CF, C)
 }) C {
+	for _, d := range definers {
+		d(ctx, cfg, root)
+	}
 	for _, d := range containers {
 		d.Define(ctx, cfg, root)
 	}

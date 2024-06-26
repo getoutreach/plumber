@@ -73,6 +73,7 @@ type D[T any] struct {
 	resolve   func()
 	deps      []Dependency
 	listeners []func()
+	wrappers  []func(T) T
 }
 
 // String return names of underlaying type
@@ -89,6 +90,9 @@ func (d *D[T]) define(resolve func()) {
 			resolve()
 			d.resolved = true
 			d.resolving = false
+			for _, w := range d.wrappers {
+				d.value = w(d.value)
+			}
 			for _, l := range d.listeners {
 				l()
 			}
@@ -190,6 +194,14 @@ func (d *D[T]) Resolve(callback func(*Resolution[T])) *D[T] {
 // WhenResolved registers a callback that will be triggered when dependency is resolved
 func (d *D[T]) WhenResolved(callback func()) *D[T] {
 	d.listeners = append(d.listeners, callback)
+	return d
+}
+
+// Wrap registers a wrapping callback that will be triggered when dependency is resolved
+// The callback allows to augment the original value. Wrapping should be used mostly to
+// redefine the dependency for a different test environments
+func (d *D[T]) Wrap(wrappers ...func(T) T) *D[T] {
+	d.wrappers = append(d.wrappers, wrappers...)
 	return d
 }
 
