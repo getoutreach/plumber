@@ -304,3 +304,15 @@ func (rr *ResolutionR[T]) ResolveAdapter(v T, runnable RunnerCloser) {
 func (rr *ResolutionR[T]) Require(deps ...Dependency) *Future[T] {
 	return rr.resolution.Require(deps...)
 }
+
+// Resolved checks given dependencies and checks whether they are resolved or not.
+// Multi error is returned.
+func Resolved(deps ...interface{ Error() error }) error {
+	var errs []error
+	for _, d := range deps {
+		if err := d.Error(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
