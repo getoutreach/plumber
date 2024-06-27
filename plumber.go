@@ -305,9 +305,9 @@ func (rr *ResolutionR[T]) Require(deps ...Dependency) *Future[T] {
 	return rr.resolution.Require(deps...)
 }
 
-// IsResolved check given dependencies and checks wether are resolved or not.
+// Resolved check given dependencies and checks wether are resolved or not.
 // Multi error is returned.
-func IsResolved(deps ...interface{ Error() error }) error {
+func Resolved(deps ...interface{ Error() error }) error {
 	var errs []error
 	for _, d := range deps {
 		if err := d.Error(); err != nil {
