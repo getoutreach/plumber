@@ -8,7 +8,7 @@ import (
 	"io"
 )
 
-// AsyncRunner provides a compability adapter with async.Runner interface
+// AsyncRunner provides a compatibility adapter with async.Runner interface
 func AsyncRunner(runner interface {
 	Run(ctx context.Context) error
 }) RunnerCloser {
