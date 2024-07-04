@@ -236,8 +236,7 @@ func TestExamplePipeline(t *testing.T) {
 				fmt.Println("pipeline is closing")
 				return nil
 			}),
-			plumber.GracefulRunner(func(ctx context.Context, ready plumber.ReadyFunc) error {
-				ready()
+			plumber.GracefulRunner(func(ctx context.Context) error {
 				fmt.Println("Task 1 starting")
 				<-ctx.Done()
 				return nil
@@ -247,12 +246,12 @@ func TestExamplePipeline(t *testing.T) {
 			}),
 			// The parallel pipeline all task are stared and closed in parallel.
 			plumber.Parallel(
-				plumber.SimpleRunner(func(ctx context.Context) error {
+				plumber.NewRunner(func(ctx context.Context) error {
 					fmt.Println("Task 2 starting")
 					<-ctx.Done()
 					return nil
 				}),
-				plumber.SimpleRunner(func(ctx context.Context) error {
+				plumber.NewRunner(func(ctx context.Context) error {
 					fmt.Println("Task 3 starting")
 					<-ctx.Done()
 					return nil
@@ -325,9 +324,8 @@ func fitHTTP(a *App) {
 			http.HandleFunc("/hello", a.HTTP.HelloHandler.Instance())
 			http.HandleFunc("/echo", a.HTTP.EchoHandler.Instance())
 
-			r.ResolveAdapter(httpServer, plumber.GracefulRunner(func(ctx context.Context, ready plumber.ReadyFunc) error {
+			r.ResolveAdapter(httpServer, plumber.GracefulRunner(func(ctx context.Context) error {
 				// ready is async to give time to server start
-				go ready()
 				fmt.Println("HTTP server is starting")
 				if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 					err = fmt.Errorf("HTTP server ListenAndServe Error: %w", err)
