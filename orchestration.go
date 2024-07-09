@@ -262,6 +262,10 @@ func (r *ParallelPipeline) Run(ctx context.Context) error {
 		close(errs)
 	}()
 
+	if !r.options.KeepRunningOnError {
+		closeOnError(ctx, r.errSignal, r)
+	}
+
 	for _, runner := range r.runners {
 		go func(runner Runner) {
 			defer r.wg.Done()
@@ -364,6 +368,10 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 		readyCh = make(chan struct{}, 1)
 		errored atomic.Bool
 	)
+
+	if !r.options.KeepRunningOnError {
+		closeOnError(ctx, r.errSignal, r)
+	}
 
 	// orchestration go routine
 	go func() {
@@ -595,7 +603,7 @@ func (c *closerContext) start(errorCh chan error, chanWriters *sync.WaitGroup, c
 
 // PipelineOptions holds a pipeline options
 type PipelineOptions struct {
-	ErrorSignaler func(error)
+	KeepRunningOnError bool
 }
 
 // PipelineOption is a option patter struct for PipelineOptions
@@ -609,11 +617,9 @@ func (o *PipelineOptions) Apply(oo ...PipelineOption) *PipelineOptions {
 	return o
 }
 
-// Signaler is a pipeline options setting given signaler.
-// The signaler is used to inform signaler listeners that certain task has finished with that pipeline.
-// This might get handy to broadcast an error and close the whole pipeline when it occur.
-func Signaler(s *ErrorSignaler) func(*PipelineOptions) {
+// KeepWhenErrored make the pipeline
+func KeepRunningOnError() func(*PipelineOptions) {
 	return func(o *PipelineOptions) {
-		o.ErrorSignaler = s.Signal
+		o.KeepRunningOnError = true
 	}
 }

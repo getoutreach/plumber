@@ -46,3 +46,15 @@ func forwardErrorSignal(ctx context.Context, runner Runner, closed <-chan struct
 		}
 	}
 }
+
+// closeOnError when given signal reports error that runner is closed
+func closeOnError(ctx context.Context, signal *Signal, runner Closeble) {
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-signal.C():
+			runner.Close(ctx)
+		}
+	}()
+}
