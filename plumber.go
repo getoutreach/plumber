@@ -209,7 +209,7 @@ func (d *D[T]) Wrap(wrappers ...func(T) T) *D[T] {
 // It is meant to be supplied into the Pipeline()
 type R[T any] struct {
 	D[T]
-	runnable RunnerCloser
+	runnable Runner
 }
 
 // Resolve returns a callback providing a resolution orchestrator
@@ -223,14 +223,14 @@ func (r *R[T]) Resolve(callback func(*ResolutionR[T])) *R[T] {
 }
 
 // Run executes Run method on value and satisfies partially the RunnerCloser interface
-func (r *R[T]) Run(ctx context.Context, ready ReadyFunc) error {
+func (r *R[T]) Run(ctx context.Context) error {
 	if err := r.D.Error(); err != nil {
 		return err
 	}
 	if r.runnable == nil {
 		return fmt.Errorf("Runnable %s not resolved", &r.D)
 	}
-	return r.runnable.Run(ctx, ready)
+	return r.runnable.Run(ctx)
 }
 
 // Close executes Close method on value and satisfies partially the RunnerCloser interface
@@ -241,7 +241,7 @@ func (r *R[T]) Close(ctx context.Context) error {
 	if r.runnable == nil {
 		return fmt.Errorf("Runnable %s not resolved", &r.D)
 	}
-	return r.runnable.Close(ctx)
+	return RunnerClose(ctx, r.runnable)
 }
 
 // Resolution is value resolution orchestrator
@@ -287,14 +287,14 @@ func (rr *ResolutionR[T]) Error(err error) {
 
 // Resolved ends the resolution with given runnable value
 // This instance will be executed once a R included int the started pipeline
-func (rr *ResolutionR[T]) Resolve(v RunnerCloser) {
+func (rr *ResolutionR[T]) Resolve(v Runner) {
 	rr.resolution.Resolve(v.(T))
 	rr.r.runnable = v
 }
 
 // ResolveAdapter ends the resolution with given value and runnable adapter
 // that will be executed once a R is included int the started pipeline
-func (rr *ResolutionR[T]) ResolveAdapter(v T, runnable RunnerCloser) {
+func (rr *ResolutionR[T]) ResolveAdapter(v T, runnable Runner) {
 	rr.resolution.Resolve(v)
 	rr.r.runnable = runnable
 }
