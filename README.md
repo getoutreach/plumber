@@ -5,6 +5,8 @@
 
 A library to manage application dependency graph and orchestrate service tasks.
 
+<img src="plumber.png" width="300"/>
+
 ## Contributing
 
 Please read the [CONTRIBUTING.md](CONTRIBUTING.md) document for guidelines on developing and contributing changes.
