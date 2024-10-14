@@ -33,6 +33,11 @@ func (l *BaseLooper) Close(ctx context.Context) error {
 	return RunnerClose(ctx, l.runner)
 }
 
+// Ready signals that runner is ready
+func (l *BaseLooper) Ready() (<-chan struct{}, error) {
+	return RunnerReady(l.runner)
+}
+
 func NewBaseLooper(looper func(ctx context.Context, loop *Loop) error) *BaseLooper {
 	return &BaseLooper{
 		runner: Looper(looper),

@@ -27,7 +27,7 @@ func (c *Container) CleanupError(fn func() error) {
 	c.cleanup = append(c.cleanup, fn)
 }
 
-// Close calls all clenaup functions
+// Close calls all cleanup functions
 func (c *Container) Close() error {
 	errs := []error{}
 	for _, cleanup := range c.cleanup {

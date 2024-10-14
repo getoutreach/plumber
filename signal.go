@@ -15,6 +15,7 @@ type Signal struct {
 	ch chan struct{}
 }
 
+// Notify send a signal to listener. Signal is send just once.
 func (s *Signal) Notify() {
 	s.Once.Do(
 		func() {
@@ -23,10 +24,12 @@ func (s *Signal) Notify() {
 	)
 }
 
+// C returns a channel that can be used to received
 func (s *Signal) C() <-chan struct{} {
 	return s.ch
 }
 
+// NewSignal returns a signal notifier
 func NewSignal() *Signal {
 	return &Signal{
 		ch: make(chan struct{}),
@@ -48,7 +51,7 @@ func forwardErrorSignal(ctx context.Context, runner Runner, closed <-chan struct
 }
 
 // closeOnError when given signal reports error that runner is closed
-func closeOnError(ctx context.Context, signal *Signal, runner Closeble) {
+func closeOnError(ctx context.Context, signal *Signal, runner Closeable) {
 	go func() {
 		select {
 		case <-ctx.Done():

@@ -6,7 +6,6 @@ package plumber
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -228,8 +227,8 @@ func (r *ParallelPipeline) Errored() <-chan struct{} {
 	return r.errSignal.C()
 }
 
-func (r *ParallelPipeline) Ready() <-chan struct{} {
-	return r.signal.C()
+func (r *ParallelPipeline) Ready() (<-chan struct{}, error) {
+	return r.signal.C(), nil
 }
 
 // Run executes Run method on internal runners in parallel.
@@ -272,8 +271,14 @@ func (r *ParallelPipeline) Run(ctx context.Context) error {
 
 			// Wait for the runner to be ready
 			go func() {
+				ready, err := RunnerReady(runner)
+				if err != nil {
+					errs <- err
+					r.Close(ctx)
+					return
+				}
 				select {
-				case <-RunnerReady(runner):
+				case <-ready:
 					readyCh <- struct{}{}
 				case <-ctx.Done():
 				}
@@ -355,8 +360,8 @@ func (r *SerialPipeline) Errored() <-chan struct{} {
 	return r.errSignal.C()
 }
 
-func (r *SerialPipeline) Ready() <-chan struct{} {
-	return r.signal.C()
+func (r *SerialPipeline) Ready() (<-chan struct{}, error) {
+	return r.signal.C(), nil
 }
 
 // Run executes Run method on internal runners one by one with given order.
@@ -412,10 +417,18 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 						// ready checking goroutine
 						go func() {
 							defer wg.Done()
+
+							ready, err := RunnerReady(runner)
+							if err != nil {
+								errs <- err
+								r.Close(ctx)
+								return
+							}
+
 							select {
 							case <-r.closed:
 							case <-ctx.Done():
-							case <-RunnerReady(runner):
+							case <-ready:
 								readyCh <- struct{}{}
 							}
 						}()
@@ -424,7 +437,6 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 
 						err := runner.Run(ctx)
 						if err != nil && !r.closing.Load() {
-							fmt.Println("ERROER", err)
 							r.errSignal.Notify()
 						}
 						if err != nil {

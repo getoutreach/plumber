@@ -96,7 +96,7 @@ Also when doing graceful shutdown the tasks needs to be closed in reversed order
 ctx, cancel := context.WithCancel(context.Background())
 defer cancel()
 
-signaler := plumber.NewErrorSignaler()
+signal := plumber.NewSignal()
 
 err := plumber.Start(ctx,
     // Serial pipeline. Task are started sequentially and closed in reverse order.
@@ -105,8 +105,7 @@ err := plumber.Start(ctx,
             fmt.Println("pipeline is closing")
             return nil
         }),
-        plumber.GracefulRunner(func(ctx context.Context, ready plumber.ReadyFunc) error {
-            ready()
+        plumber.GracefulRunner(func(ctx context.Context) error {
             fmt.Println("Task 1 starting")
             <-ctx.Done()
             return nil
@@ -116,12 +115,28 @@ err := plumber.Start(ctx,
         }),
         // The parallel pipeline all task are stared and closed in parallel.
         plumber.Parallel(
-            plumber.SimpleRunner(func(ctx context.Context) error {
-                fmt.Println("Task 2 starting")
-                <-ctx.Done()
+            // Runner that implements Runner, Readier, Closeable
+            plumber.NewRunner(
+                func(ctx context.Context) error {
+                    go func() {
+                        time.Sleep(1 * time.Second)
+                        fmt.Println("Task 2 is ready")
+                        signal.Notify()
+                    }()
+                    fmt.Println("Task 2 starting")
+                    <-ctx.Done()
+                    return nil
+                },
+                plumber.WithClose(func(ctx context.Context) error {
+                    fmt.Println("Task 2 closing")
+                    return nil
+                }),
+                plumber.WithReady(signal),
+            )
+            plumber.NewRunner(func(ctx context.Context) error {
                 return nil
             }),
-            plumber.SimpleRunner(func(ctx context.Context) error {
+            plumber.NewRunner(func(ctx context.Context) error {
                 fmt.Println("Task 3 starting")
                 <-ctx.Done()
                 return nil
@@ -148,7 +163,7 @@ err := plumber.Start(ctx,
         // Dependency graph based runner
         &a.D4,
         &a.HTTP.Server,
-    ).With(plumber.Signaler(signaler)),
+    ),
     // The pipeline needs to finish startup phase within 30 seconds. If not, run context is canceled. Close is initiated.
     plumber.Readiness(30*time.Second),
     // The pipeline needs to gracefully close with 120 seconds. If not, internal run and close contexts are canceled.
@@ -157,7 +172,5 @@ err := plumber.Start(ctx,
     plumber.TTL(120*time.Second),
     // When given signals will be received pipeline will be closed gracefully.
     plumber.SignalCloser(),
-    // When some tasks covered with signaler reports and error pipeline will be closed.
-    plumber.Closing(signaler),
 )
 ```

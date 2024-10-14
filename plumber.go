@@ -17,6 +17,9 @@ import (
 var (
 	// ErrCircularDependency error indicating circular dependency
 	ErrCircularDependency = errors.New("circular dependency")
+
+	// ErrRunnerNotDefined error indicates that ResolutionR doesn't have runner set
+	ErrRunnerNotDefined = errors.New("runner not defined")
 )
 
 // Dependency represent a dependency that can be supplied into Require method
@@ -222,6 +225,19 @@ func (r *R[T]) Resolve(callback func(*ResolutionR[T])) *R[T] {
 	return r
 }
 
+// Define allows to define value using callback that returns a value
+func (r *R[T]) Define(resolve func() T) *R[T] {
+	r.D.Define(func() T {
+		rv := resolve()
+		var v any = rv
+		if runner, ok := v.(Runner); ok {
+			r.runnable = runner
+		}
+		return rv
+	})
+	return r
+}
+
 // Run executes Run method on value and satisfies partially the RunnerCloser interface
 func (r *R[T]) Run(ctx context.Context) error {
 	if err := r.D.Error(); err != nil {
@@ -242,6 +258,16 @@ func (r *R[T]) Close(ctx context.Context) error {
 		return fmt.Errorf("Runnable %s not resolved", &r.D)
 	}
 	return RunnerClose(ctx, r.runnable)
+}
+
+func (r *R[T]) Ready() (<-chan struct{}, error) {
+	if err := r.D.Error(); err != nil {
+		return nil, err
+	}
+	if r.runnable == nil {
+		return nil, fmt.Errorf("Runnable %s not resolved", &r.D)
+	}
+	return RunnerReady(r.runnable)
 }
 
 // Resolution is value resolution orchestrator
@@ -290,6 +316,12 @@ func (rr *ResolutionR[T]) Error(err error) {
 func (rr *ResolutionR[T]) Resolve(v Runner) {
 	rr.resolution.Resolve(v.(T))
 	rr.r.runnable = v
+}
+
+// ResolveError ends the resolution with given value and error
+func (rr *ResolutionR[T]) ResolveError(v Runner, err error) {
+	rr.Resolve(v)
+	rr.Error(err)
 }
 
 // ResolveAdapter ends the resolution with given value and runnable adapter

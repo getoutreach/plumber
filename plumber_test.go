@@ -263,6 +263,7 @@ func TestExamplePipeline(t *testing.T) {
 							// Work
 							fmt.Println("Work")
 						case closeDone := <-l.Closing():
+							fmt.Println("Close is requested")
 							closeDone.Success()
 							// Graceful shutdown
 							return nil
@@ -296,7 +297,7 @@ func TestExamplePipeline(t *testing.T) {
 func fitHTTP(a *App) {
 	a.HTTP.EchoHandler.Define(func() http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(w, "back")
+			fmt.Fprintln(w, "back")
 		}
 	})
 	a.HTTP.HelloHandler.Resolve(func(r *plumber.Resolution[http.HandlerFunc]) {
@@ -305,7 +306,7 @@ func fitHTTP(a *App) {
 		).Then(func() {
 			message := a.Config.HelloMessage().Instance()
 			r.Resolve(func(w http.ResponseWriter, r *http.Request) {
-				fmt.Fprintf(w, "message: "+message)
+				fmt.Fprintln(w, "message:"+message)
 			})
 		})
 	})
