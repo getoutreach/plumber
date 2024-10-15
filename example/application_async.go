@@ -16,7 +16,7 @@ type Async struct {
 
 // Define resolves dependencies
 func (c *Async) Define(ctx context.Context, cf *Config, a *Container) {
-	c.Publisher.Resolve(func(rr *plumber.ResolutionR[*async.Publisher]) {
-		rr.Resolve(async.NewPublisher(cf.AsyncBroker))
+	c.Publisher.Define(func() *async.Publisher {
+		return async.NewPublisher(cf.AsyncBroker)
 	})
 }

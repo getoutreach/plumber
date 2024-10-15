@@ -28,17 +28,6 @@ func (f DoneFunc) Success() {
 	f(nil)
 }
 
-// // RunnerCloser describes a runnable task
-// type RunnerCloser interface {
-// 	// Run executes runners workload. Pipelines are starting Run method in separated goroutine.
-// 	// Runner must report its readiness using given callback
-// 	Run(ctx context.Context, ready ReadyFunc) error
-
-// 	// Close method triggers graceful shutdown on the task. It should block till task is properly closed.
-// 	// When Close timeout is exceeded then given context is canceled.
-// 	Close(ctx context.Context) error
-// }
-
 // ErrorCh is a channel of errors
 type ErrorCh chan error
 
@@ -79,104 +68,6 @@ func (ec ErrorCh) Wait(ctx context.Context) []error {
 // CallbackFunc a callback function type for graceful runner
 type CallbackFunc func(context.Context) error
 
-// Loop is a looper controlling struct
-type Loop struct {
-	closeCh chan DoneFunc
-	ready   ReadyFunc
-}
-
-// Ready reports runner's readiness
-func (l *Loop) Ready() {
-	if l.ready != nil {
-		l.ready()
-	}
-}
-
-// Closing returns a channel that's closed when cancellation is requested
-func (l *Loop) Closing() <-chan DoneFunc {
-	return l.closeCh
-}
-
-// Looper creates a graceful RunnerCloser that runs in the detached go routine in indefinite loop.
-// Provided Loop struct allows to detect a cancellation and graceful termination
-// Example:
-//
-//	plumber.Looper(func(ctx context.Context, l *plumber.Loop) error {
-//	    return l.Run(func(done plumber.DoneFunc) {
-//	        tick := time.Tick(500 * time.Millisecond)
-//	        fmt.Println("Looper starting up")
-//	        done.Done(func() error {
-//	            for {
-//	                select {
-//	                case <-tick:
-//	                    fmt.Println("Looper work")
-//	                case done := <-l.Closing():
-//	                    fmt.Println("Looper requested to shutdown")
-//	                    done.Success()
-//	                    fmt.Println("Looper finished")
-//	                    return nil
-//	                case <-ctx.Done():
-//	                    fmt.Println("Looper canceled")
-//	                    // Cancel / Timeout
-//	                    return ctx.Err()
-//	                }
-//	            }
-//	        })
-//	    })
-//	})
-func Looper(run func(ctx context.Context, loop *Loop) error) Runner {
-	var (
-		runOnce    sync.Once
-		closeOnce  sync.Once
-		returnedCh = make(chan struct{}, 1)
-		l          = &Loop{
-			closeCh: make(chan DoneFunc, 1),
-		}
-	)
-
-	signal := NewSignal()
-
-	return NewRunner(
-		func(ctx context.Context) error {
-			var err error
-			runOnce.Do(func() {
-				l.ready = func() {
-					signal.Notify()
-				}
-				defer closeOnce.Do(func() {
-					close(l.closeCh)
-				})
-				err = run(ctx, l)
-				close(returnedCh)
-			})
-			return err
-		},
-		WithClose(func(ctx context.Context) error {
-			var (
-				errCh             = make(chan error, 1)
-				canceled DoneFunc = func(err error) {
-					errCh <- err
-					close(errCh)
-				}
-			)
-			// if hasn't been started, lets close it
-			closeOnce.Do(func() {
-				l.closeCh <- canceled
-				close(l.closeCh)
-			})
-			select {
-			case <-returnedCh:
-				return nil
-			case <-ctx.Done():
-				return ctx.Err()
-			case err := <-errCh:
-				return err
-			}
-		}),
-		WithReady(signal),
-	)
-}
-
 // ReadyRunner creates a Runner based on supplied run function with callback to signal ready state
 func ReadyRunner(run func(ctx context.Context, ready ReadyFunc) error) Runner {
 	signal := NewSignal()
@@ -187,7 +78,7 @@ func ReadyRunner(run func(ctx context.Context, ready ReadyFunc) error) Runner {
 	}, WithReady(signal))
 }
 
-// Closer creates a RunnerCloser based on supplied close function with noop Run method
+// Closer creates a runner implementing Closer interface based on supplied close function with noop Run method
 func Closer(closeFunc CallbackFunc) Runner {
 	return NewRunner(func(ctx context.Context) error {
 		<-ctx.Done()
@@ -210,7 +101,7 @@ type ParallelPipeline struct {
 	errSignal *Signal
 }
 
-// Parallel creates a concurrent RunnerCloser executor.
+// Parallel creates a concurrent Runner executor.
 // When started it will execute runners Run and Close methods in parallel.
 // Run and Close will block till all runner's corresponding methods are returned.
 func Parallel(runners ...Runner) *ParallelPipeline {
@@ -232,7 +123,7 @@ func (r *ParallelPipeline) Ready() (<-chan struct{}, error) {
 }
 
 // Run executes Run method on internal runners in parallel.
-// It partially implement RunnerCloser interface.
+// It partially implement Runner interface.
 // The it returns when all runner's Run methods are returned.
 func (r *ParallelPipeline) Run(ctx context.Context) error {
 	var (
@@ -298,7 +189,7 @@ func (r *ParallelPipeline) Run(ctx context.Context) error {
 }
 
 // Close executes Close method on internal runners in in parallel.
-// It partially implement RunnerCloser interface.
+// It partially implement Closer interface.
 // The it returns when all runner's Close methods are returned.
 func (r *ParallelPipeline) Close(ctx context.Context) error {
 	r.closeOnce.Do(func() {
@@ -343,7 +234,7 @@ type SerialPipeline struct {
 	errSignal *Signal
 }
 
-// Pipeline creates a serial RunnerCloser executor.
+// Pipeline creates a serial Runner executor.
 // When started it will execute Run method on given runners one by one with given order.
 // When closed it will execute Close method on given runners in revered order to achieve graceful shutdown sequence
 func Pipeline(runners ...Runner) *SerialPipeline {
@@ -365,7 +256,6 @@ func (r *SerialPipeline) Ready() (<-chan struct{}, error) {
 }
 
 // Run executes Run method on internal runners one by one with given order.
-// It partially implement RunnerCloser interface
 func (r *SerialPipeline) Run(ctx context.Context) error {
 	var (
 		wg      sync.WaitGroup
@@ -465,7 +355,7 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 }
 
 // Close executes Close method on internal runners in revered order to achieve graceful shutdown sequence
-// It partially implement RunnerCloser interface
+// It implements Closer interface
 func (r *SerialPipeline) Close(ctx context.Context) error {
 	var closeErrors []error
 	r.closeOnce.Do(func() {

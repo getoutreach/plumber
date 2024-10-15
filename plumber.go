@@ -238,7 +238,7 @@ func (r *R[T]) Define(resolve func() T) *R[T] {
 	return r
 }
 
-// Run executes Run method on value and satisfies partially the RunnerCloser interface
+// Run executes Run method on value and satisfies Runner,Closer and Readier interfaces
 func (r *R[T]) Run(ctx context.Context) error {
 	if err := r.D.Error(); err != nil {
 		return err
@@ -249,7 +249,7 @@ func (r *R[T]) Run(ctx context.Context) error {
 	return r.runnable.Run(ctx)
 }
 
-// Close executes Close method on value and satisfies partially the RunnerCloser interface
+// Close executes Close method on value and satisfies Closer interface
 func (r *R[T]) Close(ctx context.Context) error {
 	if err := r.D.Error(); err != nil {
 		return err

@@ -13,6 +13,10 @@ Please read the [CONTRIBUTING.md](CONTRIBUTING.md) document for guidelines on de
 
 ## High-level Overview
 
+### Example
+
+For a comprehensive example of a plumber usage please navigate to [example folder](/_user_/_project_/tree/_branch_/example/cmd/example).
+
 ### Service dependency management
 
 Simple but effective dependency management that is focused on readability. Main goal is to get rid off the repetitive error checking during the construction.
