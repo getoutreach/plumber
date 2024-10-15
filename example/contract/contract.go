@@ -40,10 +40,11 @@ func NewWorker(name string) *plumber.BaseLooper {
 		time.Sleep(100 * time.Millisecond)
 		fmt.Printf("[%s] starting up\n", name)
 		l.Ready()
-		tick := time.Tick(1000 * time.Millisecond)
+		tick := time.NewTicker(1000 * time.Millisecond)
+		defer tick.Stop()
 		for {
 			select {
-			case <-tick:
+			case <-tick.C:
 				// Work
 				fmt.Printf("[%s] work\n", name)
 			case done := <-l.Closing():
