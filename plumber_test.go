@@ -227,8 +227,6 @@ func TestExamplePipeline(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	signaler := plumber.NewErrorSignaler()
-
 	err := plumber.Start(ctx,
 		// Serial pipeline. Task are started sequentially and closed in reverse order.
 		plumber.Pipeline(
@@ -265,6 +263,7 @@ func TestExamplePipeline(t *testing.T) {
 							// Work
 							fmt.Println("Work")
 						case closeDone := <-l.Closing():
+							fmt.Println("Close is requested")
 							closeDone.Success()
 							// Graceful shutdown
 							return nil
@@ -278,7 +277,7 @@ func TestExamplePipeline(t *testing.T) {
 			// Dependency graph based runner
 			&a.D4,
 			&a.HTTP.Server,
-		).With(plumber.Signaler(signaler)),
+		),
 		// The pipeline needs to finish startup phase within 30 seconds. If not, run context is canceled. Close is initiated.
 		plumber.Readiness(2*time.Second),
 		// The pipeline needs to gracefully close with 120 seconds. If not, internal run and close contexts are canceled.
@@ -287,8 +286,6 @@ func TestExamplePipeline(t *testing.T) {
 		plumber.TTL(2*time.Second),
 		// When given signals will be received pipeline will be closed gracefully.
 		plumber.SignalCloser(),
-		// When some tasks covered with signaler reports and error pipeline will be closed.
-		plumber.Closing(signaler),
 	)
 
 	if err != nil {
@@ -300,7 +297,7 @@ func TestExamplePipeline(t *testing.T) {
 func fitHTTP(a *App) {
 	a.HTTP.EchoHandler.Define(func() http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(w, "back")
+			fmt.Fprintln(w, "back")
 		}
 	})
 	a.HTTP.HelloHandler.Resolve(func(r *plumber.Resolution[http.HandlerFunc]) {
@@ -309,7 +306,7 @@ func fitHTTP(a *App) {
 		).Then(func() {
 			message := a.Config.HelloMessage().Instance()
 			r.Resolve(func(w http.ResponseWriter, r *http.Request) {
-				fmt.Fprintf(w, "message: "+message)
+				fmt.Fprintln(w, "message:"+message)
 			})
 		})
 	})

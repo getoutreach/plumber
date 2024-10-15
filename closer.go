@@ -49,13 +49,13 @@ func (o *Options) Close() {
 // Option type pattern for a Start method
 type Option func(*Options)
 
-// Readiness allows to limit time for a RunnerCloser to return from the Run method
+// Readiness allows to limit time for a Closer to return from the Run method
 // When duration is reached the run context is automatically canceled and the Close method is invoked
 func Readiness(d time.Duration) Option {
 	return func(*Options) {}
 }
 
-// CloseTimeout allows to limit time for a RunnerCloser to return from the Close method
+// CloseTimeout allows to limit time for a Closer to return from the Close method
 // When duration is reached the close context is automatically canceled
 func CloseTimeout(d time.Duration) Option {
 	return func(o *Options) {
@@ -105,7 +105,7 @@ func CloserFunc(func(close func())) Option {
 	return func(*Options) {}
 }
 
-// ContextCloser closes the RunnerCloser based on given context.
+// ContextCloser closes the Closer based on given context.
 // When given context is ended the closer invokes the Close method.
 // It MUST be used with separate or detached context. See DetachCancellation
 func ContextCloser(detachedCtx context.Context) Option {
@@ -120,43 +120,4 @@ func ContextCloser(detachedCtx context.Context) Option {
 			}
 		})
 	}
-}
-
-func Closing(s *ErrorSignaler) Option {
-	return func(o *Options) {
-		s.Listen(func(err error) {
-			o.Close()
-		})
-	}
-}
-
-func Canceling(s *ErrorSignaler) Option {
-	return func(o *Options) {
-		s.Listen(func(err error) {
-			o.Cancel()
-		})
-	}
-}
-
-// ErrorSignaler is a struct providing notifications when task is closed with error.
-// Signalers are used usually in combination with Closing | Canceling closers.
-type ErrorSignaler struct {
-	listeners []func(error)
-}
-
-// NewErrorSignaler return a new instance of a error signaler
-func NewErrorSignaler() *ErrorSignaler {
-	return &ErrorSignaler{}
-}
-
-// Signal broadcasts given error to all registered listeners
-func (s *ErrorSignaler) Signal(err error) {
-	for _, l := range s.listeners {
-		l(err)
-	}
-}
-
-// Listen registers a listener into signaler
-func (s *ErrorSignaler) Listen(listener func(err error)) {
-	s.listeners = append(s.listeners, listener)
 }

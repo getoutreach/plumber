@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/getoutreach/plumber"
+	"gotest.tools/v3/assert"
 )
 
 func TestRunner(t *testing.T) {
@@ -33,10 +34,13 @@ func TestRunner(t *testing.T) {
 
 	defer cancel()
 
+	ready, err := plumber.RunnerReady(r)
+	assert.NilError(t, err)
+
 	select {
 	case <-ctx.Done():
 		fmt.Println("Context")
-	case <-plumber.RunnerReady(r):
+	case <-ready:
 		fmt.Println("Ready")
 	}
 }
