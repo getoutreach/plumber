@@ -15,7 +15,7 @@ Please read the [CONTRIBUTING.md](CONTRIBUTING.md) document for guidelines on de
 
 ### Example
 
-For a comprehensive example of a plumber usage please navigate to [example folder](/_user_/_project_/tree/_branch_/example/cmd/example).
+For a comprehensive example of a plumber usage please navigate to [example folder](/getoutreach/plumber/tree/main/example/cmd/example/main.go).
 
 ### Service dependency management
 
