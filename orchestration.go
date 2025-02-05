@@ -6,6 +6,7 @@ package plumber
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -40,29 +41,43 @@ func (ec ErrorCh) Errors() []error {
 	return errs
 }
 
-// Wait waits till channel is not close or till given context is ended and then returns all accumulated errors.
-func (ec ErrorCh) Wait(ctx context.Context) []error {
+// WaitTill waits till channel is not close or till given context is ended and then returns all accumulated errors.
+func (ec ErrorCh) WaitTill(ctx context.Context) []error {
 	var (
 		errs = []error{}
-		wg   sync.WaitGroup
 	)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case err, ok := <-ec:
-				if !ok {
-					return
-				}
+	for {
+		select {
+		case <-ctx.Done():
+			if !errors.Is(ctx.Err(), context.Canceled) {
+				errs = append(errs, ctx.Err())
+			}
+			return errs
+		case err, ok := <-ec:
+			if err != nil {
 				errs = append(errs, err)
 			}
+			if !ok {
+				return errs
+			}
 		}
-	}()
-	wg.Wait()
-	return errs
+	}
+}
+
+// Wait waits till channel is not close and returns all accumulated errors.
+func (ec ErrorCh) Wait() []error {
+	var (
+		errs = []error{}
+	)
+	for {
+		err, ok := <-ec
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if !ok {
+			return errs
+		}
+	}
 }
 
 // CallbackFunc a callback function type for graceful runner
@@ -217,7 +232,7 @@ func (r *ParallelPipeline) Close(ctx context.Context) error {
 
 // With applies the pipeline options
 func (r *ParallelPipeline) With(oo ...PipelineOption) *ParallelPipeline {
-	r.options.Apply(oo...)
+	r.options.apply(oo...)
 	return r
 }
 
@@ -234,7 +249,7 @@ type SerialPipeline struct {
 	errSignal *Signal
 }
 
-// Pipeline creates a serial Runner executor.
+// Serial creates a serial Runner executor.
 // When started it will execute Run method on given runners one by one with given order.
 // When closed it will execute Close method on given runners in revered order to achieve graceful shutdown sequence
 func Pipeline(runners ...Runner) *SerialPipeline {
@@ -351,7 +366,8 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 	close(errs)
 	close(readyCh)
 
-	return errors.Join(errs.Errors()...)
+	err := errors.Join(errs.Errors()...)
+	return err
 }
 
 // Close executes Close method on internal runners in revered order to achieve graceful shutdown sequence
@@ -373,71 +389,107 @@ func (r *SerialPipeline) Close(ctx context.Context) error {
 
 // With applies the pipeline options
 func (r *SerialPipeline) With(oo ...PipelineOption) *SerialPipeline {
-	r.options.Apply(oo...)
+	r.options.apply(oo...)
 	return r
 }
 
+// PipelineRunner creates a pipeline runner so the pipeline it self can be started and closed
+func PipelineRunner(runner Runner, opts ...Option) Runner {
+	var (
+		signal = NewSignal()
+		wait   = make(chan struct{}, 1)
+	)
+	opts = append(opts, SignalChannelCloser(signal))
+
+	return NewRunner(
+		func(ctx context.Context) error {
+			err := Start(ctx, runner, opts...)
+			close(wait)
+			return err
+		},
+		WithClose(func(ctx context.Context) error {
+			// trigger close sequence
+			signal.Notify()
+			select {
+			case <-wait:
+			case <-ctx.Done():
+			}
+			return nil
+		}),
+	)
+}
+
 // Start will execute given runner with optional configuration
-func Start(ctx context.Context, runner Runner, opts ...Option) error {
+func Start(xctx context.Context, runner Runner, opts ...Option) error {
 	var (
 		options = &Options{}
 	)
-	startCtx, startCancel := context.WithCancelCause(ctx)
-	defer startCancel(nil)
+
+	startCtx := options.apply(xctx, opts...)
+	defer options.finalize()
+
+	runCtx, runCancel := context.WithCancelCause(startCtx)
+	defer runCancel(errors.New("start context is canceled"))
 
 	closers := newCloserContext(startCtx)
 	defer closers.cancel()
 
 	var (
 		errorCh       = make(ErrorCh, 3)
-		closeCh       = make(chan struct{}, 1)
+		finishedCh    = make(chan struct{}, 1)
 		once          sync.Once
 		chanWriters   sync.WaitGroup
 		closeChannels = func() {
 			closers.cancel()
-			close(closeCh)
-			chanWriters.Wait()
-			// We can really terminate since all channel writers are done
-			close(errorCh)
 		}
-		terminate = func(ctx context.Context, initiateClose bool) {
+
+		terminate = func(initiateClose bool) {
 			once.Do(func() {
 				if !initiateClose {
 					closeChannels()
 					return
 				}
-				closeCtx, closeCancel := options.closeContext(ctx)
+				closeCtx, closeCancel, tryCloseCancel := options.closeContext(startCtx, runCancel)
 				defer closeCancel()
+
 				// go routine handling close async so it can be canceled
+				chanWriters.Add(1)
 				go func() {
+					defer chanWriters.Done()
 					err := RunnerClose(closeCtx, runner)
-					startCancel(closeCtx.Err())
+					tryCloseCancel()
 					errorCh <- err
 					closeChannels()
 				}()
+				chanWriters.Add(1)
+				defer chanWriters.Done()
 				select {
-				// Wait for close to finish
-				case <-closeCh:
-					break
-				// Wait for close context to be canceled
+				case <-finishedCh:
+					closeCancel()
 				case <-closeCtx.Done():
-					startCancel(closeCtx.Err())
+					runCancel(fmt.Errorf("closeCtx: %w", closeCtx.Err()))
 					if err := closeCtx.Err(); err != nil {
-						errorCh <- err
+						errorCh <- fmt.Errorf("closeCtx: %w", err)
 					}
-					break
 				}
 			})
 		}
 	)
 	chanWriters.Add(2)
 
+	go func() {
+		chanWriters.Wait()
+		// We can really terminate since all channel writers are done
+		close(errorCh)
+	}()
+
 	options.close = func() {
+		chanWriters.Add(1)
 		go func() {
-			terminate(ctx, true)
+			defer chanWriters.Done()
+			terminate(true)
 		}()
 	}
-	options.Apply(opts...)
 
 	closers.start(errorCh, &chanWriters, options.closers...)
 
@@ -447,7 +499,7 @@ func Start(ctx context.Context, runner Runner, opts ...Option) error {
 			case <-startCtx.Done():
 				return
 			case <-propagator.Errored():
-				go terminate(ctx, true)
+				go terminate(true)
 			}
 		}()
 	}
@@ -455,15 +507,16 @@ func Start(ctx context.Context, runner Runner, opts ...Option) error {
 	// runner go routine
 	go func() {
 		defer chanWriters.Done()
-		err := runner.Run(startCtx)
+		err := runner.Run(runCtx)
 		if err != nil {
 			// runner sequence had a problems calling close
 			errorCh <- err
 		}
-		go terminate(ctx, false)
+		close(finishedCh)
+		go terminate(false)
 	}()
 
-	return errors.Join(errorCh.Wait(ctx)...)
+	return errors.Join(errorCh.Wait()...)
 }
 
 // newCloserContext return instance of *closerContext
@@ -511,12 +564,11 @@ type PipelineOptions struct {
 // PipelineOption is a option patter struct for PipelineOptions
 type PipelineOption func(*PipelineOptions)
 
-// Apply given PipelineOption
-func (o *PipelineOptions) Apply(oo ...PipelineOption) *PipelineOptions {
+// apply given PipelineOption
+func (o *PipelineOptions) apply(oo ...PipelineOption) {
 	for _, op := range oo {
 		op(o)
 	}
-	return o
 }
 
 // KeepWhenErrored make the pipeline

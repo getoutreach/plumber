@@ -34,7 +34,7 @@ func main() {
 		// The pipeline will run for 10 seconds then will be closed gracefully.
 		plumber.TTL(5*time.Second),
 		// The pipeline needs to finish startup phase within 1 seconds. If not, run context is canceled. Close is initiated.
-		plumber.Readiness(1*time.Second),
+		plumber.ReadinessTimeout(1*time.Second),
 		// The pipeline needs to gracefully close with 5 seconds. If not, internal run and close contexts are canceled.
 		plumber.CloseTimeout(5*time.Second),
 		// The pipeline will stop as well on OS signal

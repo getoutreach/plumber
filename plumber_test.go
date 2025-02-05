@@ -279,7 +279,7 @@ func TestExamplePipeline(t *testing.T) {
 			&a.HTTP.Server,
 		),
 		// The pipeline needs to finish startup phase within 30 seconds. If not, run context is canceled. Close is initiated.
-		plumber.Readiness(2*time.Second),
+		plumber.ReadinessTimeout(2*time.Second),
 		// The pipeline needs to gracefully close with 120 seconds. If not, internal run and close contexts are canceled.
 		plumber.CloseTimeout(2*time.Second),
 		// The pipeline will run for 120 seconds then will be closed gracefully.
