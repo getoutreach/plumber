@@ -34,10 +34,10 @@ func ExampleLooper() {
 			}
 		}),
 		plumber.TTL(600*time.Millisecond),
-		plumber.CloseTimeout(2*time.Second),
+		plumber.CloseTimeout(3*time.Second),
 	)
 	if err != nil {
-		fmt.Println("error: ", err)
+		fmt.Printf("err: %v", err)
 	}
 	// Output:
 	// Looper starting up

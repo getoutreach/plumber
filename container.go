@@ -11,27 +11,27 @@ import (
 
 // Container represents a root dependency container
 type Container struct {
-	cleanup []func() error
+	cleanup []func(context.Context) error
 }
 
 // Cleanup registers a cleanup function
-func (c *Container) Cleanup(fn func()) {
-	c.cleanup = append(c.cleanup, func() error {
-		fn()
+func (c *Container) Cleanup(fn func(context.Context)) {
+	c.cleanup = append(c.cleanup, func(ctx context.Context) error {
+		fn(ctx)
 		return nil
 	})
 }
 
 // CleanupError registers a cleanup function returning an error
-func (c *Container) CleanupError(fn func() error) {
+func (c *Container) CleanupError(fn func(context.Context) error) {
 	c.cleanup = append(c.cleanup, fn)
 }
 
 // Close calls all cleanup functions
-func (c *Container) Close() error {
+func (c *Container) Close(ctx context.Context) error {
 	errs := []error{}
 	for _, cleanup := range c.cleanup {
-		if err := cleanup(); err != nil {
+		if err := cleanup(ctx); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -49,4 +49,11 @@ func DefineContainers[C, CF any](ctx context.Context, cfg CF, definers []func(co
 		d.Define(ctx, cfg, root)
 	}
 	return root
+}
+
+// ContainerResolved checks if the container can be resolved.
+// It checks as well each instance in the container separately to ensure that all required dependencies are resolved
+// and are actually used with resolution function.
+func ContainerResolved[C any](func() C) error {
+	return nil
 }

@@ -11,13 +11,13 @@ import (
 
 // Signal is and helper struct that broadcast a notification when certain even occures.
 type Signal struct {
-	sync.Once
-	ch chan struct{}
+	once sync.Once
+	ch   chan struct{}
 }
 
 // Notify send a signal to listener. Signal is send just once.
 func (s *Signal) Notify() {
-	s.Once.Do(
+	s.once.Do(
 		func() {
 			close(s.ch)
 		},
@@ -32,7 +32,7 @@ func (s *Signal) C() <-chan struct{} {
 // NewSignal returns a signal notifier
 func NewSignal() *Signal {
 	return &Signal{
-		ch: make(chan struct{}),
+		ch: make(chan struct{}, 1),
 	}
 }
 

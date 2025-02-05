@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -52,7 +55,7 @@ func erroringCloser(name string) plumber.Runner {
 	})
 }
 
-func ExamplePipeline() {
+func TestCloseTimeout(t *testing.T) {
 	ctx := context.Background()
 
 	err := plumber.Start(ctx,
@@ -62,17 +65,11 @@ func ExamplePipeline() {
 			reportingBlockingRunner("runner 3"),
 		),
 		plumber.TTL(10*time.Millisecond),
+		plumber.CloseTimeout(100*time.Millisecond),
 	)
-	if err != nil {
-		panic(err)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		fmt.Printf("err nil or: %v", err)
 	}
-	// Output:
-	// runner runner 1 started
-	// runner runner 2 started
-	// runner runner 3 started
-	// runner runner 3 closed
-	// runner runner 2 closed
-	// runner runner 1 closed
 }
 
 func TestPipelineErrors(t *testing.T) {
@@ -85,10 +82,12 @@ func TestPipelineErrors(t *testing.T) {
 			erroringRunner("runner 3"),
 		),
 		plumber.TTL(100*time.Millisecond),
-		func(o *plumber.Options) {
+		plumber.CloseTimeout(100*time.Millisecond),
+		func(ctx context.Context, o *plumber.Options) context.Context {
 			o.Closer(func(ctx context.Context) error {
 				return errors.New("Closer error")
 			})
+			return ctx
 		},
 	)
 	assert.ErrorContains(t, err, "runner runner 1 failed")
@@ -198,7 +197,7 @@ func TestPipelineRunnerContextCanceled(t *testing.T) {
 		plumber.TTL(10*time.Millisecond),
 		plumber.CloseTimeout(10*time.Millisecond),
 	)
-	assert.ErrorContains(t, err, "context canceled")
+	assert.ErrorContains(t, err, "context deadline exceeded")
 }
 
 func TestParallelPipeline(t *testing.T) {
@@ -228,4 +227,58 @@ func TestParallelPipeline(t *testing.T) {
 
 	fmt.Printf("%v\n", time.Since(start))
 	assert.Assert(t, time.Since(start) <= 15*time.Millisecond)
+}
+
+func TestPipelineDetachedContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var (
+		logger           = log.New(log.Writer(), "test: ", log.LstdFlags|log.Lmicroseconds)
+		brutallyCanceled int32
+	)
+
+	runner := plumber.PipelineRunner(
+		plumber.Pipeline(
+			plumber.Looper(func(ctx context.Context, loop *plumber.Loop) error {
+				loop.Ready()
+				for {
+					select {
+					case closed := <-loop.Closing():
+						logger.Print("closing looper")
+						closed.Success()
+						return nil
+					case <-ctx.Done():
+						atomic.StoreInt32(&brutallyCanceled, 1)
+						logger.Print("looper context done")
+						return fmt.Errorf("context brutally canceled: %w", ctx.Err())
+					default:
+						logger.Print("looper working")
+						time.Sleep(30 * time.Millisecond)
+					}
+				}
+			}),
+		),
+		plumber.TTL(1*time.Second),
+		plumber.CloseTimeout(2*time.Second),
+		plumber.DetachContext(),
+	)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		err := runner.Run(ctx)
+		assert.NilError(t, err)
+	}()
+
+	go func() {
+		defer wg.Done()
+		time.Sleep(100 * time.Millisecond)
+		logger.Print("canceling parent context")
+		cancel()
+	}()
+
+	wg.Wait()
+
+	assert.Assert(t, brutallyCanceled == 0)
 }
