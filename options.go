@@ -132,10 +132,8 @@ func ChannelCloser(c <-chan struct{}) Option {
 		o.Closer(func(ctx context.Context) error {
 			// Block until a signal is received.
 			select {
-			case _, ok := <-c:
-				if ok {
-					o.Close()
-				}
+			case <-c:
+				o.Close()
 				return nil
 			case <-ctx.Done():
 				return nil

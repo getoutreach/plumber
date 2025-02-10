@@ -282,3 +282,61 @@ func TestPipelineDetachedContext(t *testing.T) {
 
 	assert.Assert(t, brutallyCanceled == 0)
 }
+
+func TestPipelineSignalCloser(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	signal := plumber.NewSignal()
+
+	var (
+		logger             = log.New(log.Writer(), "test: ", log.LstdFlags|log.Lmicroseconds)
+		brutallyCanceled   int32
+		gracefullyCanceled int32
+	)
+
+	runner := plumber.PipelineRunner(
+		plumber.Pipeline(
+			plumber.Looper(func(ctx context.Context, loop *plumber.Loop) error {
+				loop.Ready()
+				for {
+					select {
+					case closed := <-loop.Closing():
+						atomic.StoreInt32(&gracefullyCanceled, 1)
+						logger.Print("closing looper")
+						closed.Success()
+						return nil
+					case <-ctx.Done():
+						atomic.StoreInt32(&brutallyCanceled, 1)
+						logger.Print("looper context done")
+						return fmt.Errorf("context brutally canceled: %w", ctx.Err())
+					default:
+						logger.Print("looper working")
+						time.Sleep(30 * time.Millisecond)
+					}
+				}
+			}),
+		),
+		plumber.CloseTimeout(2*time.Second),
+		plumber.SignalChannelCloser(signal),
+	)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		err := runner.Run(ctx)
+		assert.NilError(t, err)
+	}()
+
+	go func() {
+		defer wg.Done()
+		time.Sleep(100 * time.Millisecond)
+		signal.Notify()
+	}()
+
+	wg.Wait()
+
+	assert.Assert(t, brutallyCanceled == 0)
+	assert.Assert(t, gracefullyCanceled == 1)
+}
