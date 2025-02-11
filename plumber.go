@@ -100,7 +100,7 @@ func (d *D[T]) String() string {
 	if d.name == "" {
 		return s
 	}
-	return fmt.Sprintf("%s(%s)", s, d.name)
+	return fmt.Sprintf("%s(%s)", d.name, s)
 }
 
 // define sets resolution function but only once
