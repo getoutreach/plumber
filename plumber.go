@@ -267,6 +267,17 @@ func (r *R[T]) Run(ctx context.Context) error {
 	return r.runnable.Run(ctx)
 }
 
+// Error returns an error
+func (r *R[T]) Error() error {
+	if err := r.D.Error(); err != nil {
+		return err
+	}
+	if r.runnable == nil {
+		return fmt.Errorf("Runnable %s not resolved", &r.D)
+	}
+	return nil
+}
+
 // Close executes Close method on value and satisfies Closer interface
 func (r *R[T]) Close(ctx context.Context) error {
 	if err := r.D.Error(); err != nil {
