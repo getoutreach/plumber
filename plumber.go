@@ -226,14 +226,32 @@ func (r *R[T]) Resolve(callback func(*ResolutionR[T])) *R[T] {
 }
 
 // Define allows to define value using callback that returns a value
+// given instance must by a runnable
 func (r *R[T]) Define(resolve func() T) *R[T] {
-	r.D.Define(func() T {
+	r.D.DefineError(func() (T, error) {
+		var empty T
 		rv := resolve()
 		var v any = rv
 		if runner, ok := v.(Runner); ok {
 			r.runnable = runner
+		} else {
+			return empty, errors.New("instance is not a runnable")
 		}
-		return rv
+		return rv, nil
+	})
+	return r
+}
+
+// DefineError to define value using callback that returns a value and error
+// given instance must by a runnable
+func (r *R[T]) DefineError(resolve func() (T, error)) *R[T] {
+	r.D.DefineError(func() (T, error) {
+		rv, err := resolve()
+		var v any = rv
+		if runner, ok := v.(Runner); ok {
+			r.runnable = runner
+		}
+		return rv, err
 	})
 	return r
 }
