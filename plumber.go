@@ -77,12 +77,30 @@ type D[T any] struct {
 	deps      []Dependency
 	listeners []func()
 	wrappers  []func(T) T
+	name      string
+}
+
+// Named creates a new named dependency
+func Named[T any](name string) *D[T] {
+	var d D[T]
+	d.Named(name)
+	return &d
+}
+
+// Named sets a name for the dependency
+func (d *D[T]) Named(name string) *D[T] {
+	d.name = name
+	return d
 }
 
 // String return names of underlaying type
 func (d *D[T]) String() string {
 	var v T
-	return reflect.TypeOf(&v).Elem().String()
+	s := reflect.TypeOf(&v).Elem().String()
+	if d.name == "" {
+		return s
+	}
+	return fmt.Sprintf("%s(%s)", s, d.name)
 }
 
 // define sets resolution function but only once
@@ -213,6 +231,19 @@ func (d *D[T]) Wrap(wrappers ...func(T) T) *D[T] {
 type R[T any] struct {
 	D[T]
 	runnable Runner
+}
+
+// NamedR creates a new named runnable dependency
+func NamedR[T any](name string) *R[T] {
+	var r R[T]
+	r.Named(name)
+	return &r
+}
+
+// Named sets a name for the dependency
+func (r *R[T]) Named(name string) *R[T] {
+	r.D.name = name
+	return r
 }
 
 // Resolve returns a callback providing a resolution orchestrator
