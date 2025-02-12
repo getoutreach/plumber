@@ -54,9 +54,6 @@ func DefineContainers[C, CF any](ctx context.Context, cfg CF, definers []func(co
 	return root
 }
 
-// dependencyType is a type of Dependency interface to be used in reflection
-var dependencyType = reflect.TypeOf((*Errorer)(nil)).Elem()
-
 // ContainerResolved checks if the container can be resolved.
 // It checks as well each instance in the container separately to ensure that all required dependencies are resolved
 // and are actually used with resolution function.
@@ -65,6 +62,7 @@ func ContainerResolved[C any](containerFunc func() C) error {
 	return containerDependecyResolved(root, containerFunc, []string{})
 }
 
+// containerDependecyResolved checks if the particular level in container graph can be resolved.
 func containerDependecyResolved[C any](root any, containerFunc func() C, path []string) error {
 	errs := []error{}
 	v := reflect.ValueOf(root)
@@ -144,7 +142,6 @@ func evaluateDependencyByPath[C any](containerFunc func() C, path []string) erro
 		err := errorer.Error()
 		path := strings.Join(path, ".")
 		if err != nil {
-
 			errs = append(errs, fmt.Errorf("errors on \"%s\": %w", path, err))
 		}
 

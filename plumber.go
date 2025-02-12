@@ -240,11 +240,7 @@ func (d *D[T]) Wrap(wrappers ...func(T) T) *D[T] {
 
 // dependencies returns a list of dependencies
 func (d *D[T]) dependencies() []Dependency {
-	var deps []Dependency
-	for _, dep := range d.deps {
-		deps = append(deps, dep)
-	}
-	return deps
+	return d.deps
 }
 
 // R represents a runnable dependency wrapper

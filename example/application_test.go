@@ -58,6 +58,7 @@ func TestApplicationContainer(t *testing.T) {
 	}); err != nil {
 		assert.Assert(t, err != nil)
 		assert.Equal(t, err.Error(),
+			// nolint: lll //Why: multiline string
 			`errors on "Bugs.Notdefined": instance notdefined(*async.Publisher) not resolved
 errors on "Bugs.GraphQL": dependency not resolved, *graphql.Server requires notdefined(*async.Publisher) (instance notdefined(*async.Publisher) not resolved)
 errors on "Bugs.GraphQL": unused dependency: notdefined(*async.Publisher)`,

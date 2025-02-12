@@ -19,7 +19,7 @@ type Bugs struct {
 	Server plumber.R[*graphql.Server] `plumber:",ignore"`
 
 	// private should not be accessed and tested
-	private plumber.D[int32]
+	private plumber.D[int32] // nolint:unused //Why: only for testing
 }
 
 // Define resolves dependencies
