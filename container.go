@@ -143,10 +143,6 @@ func evaluateDependencyByPath[C any](containerFunc func() C, path []string) erro
 	if errorer != nil {
 		path := strings.Join(path, ".")
 
-		if path == "Bugs.GraphQL" {
-			fmt.Println("Bugs.GraphQL !!!!!")
-		}
-
 		errs = append(errs, lo.Map(errorer.dependencyErrors(), func(e error, _ int) error {
 			return fmt.Errorf("errors on \"%s\": %w", path, e)
 		})...)
