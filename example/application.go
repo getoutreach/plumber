@@ -24,6 +24,7 @@ type Container struct {
 	GraphQL  *GraphQL
 	GRPC     *GRPC
 	Service  *Service
+	Bugs     *Bugs
 }
 
 // NewApplication returns instance of the root dependency container
@@ -34,8 +35,9 @@ func NewApplication(ctx context.Context, cf *Config, definers ...Definer) *Conta
 		GraphQL:  new(GraphQL),
 		Service:  new(Service),
 		Async:    new(Async),
+		Bugs:     new(Bugs),
 	}
 	return plumber.DefineContainers(ctx, cf, definers, a,
-		a.Async, a.Database, a.GRPC, a.GraphQL, a.Service,
+		a.Async, a.Database, a.GRPC, a.GraphQL, a.Service, a.Bugs,
 	)
 }
