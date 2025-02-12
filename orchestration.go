@@ -397,23 +397,18 @@ func (r *SerialPipeline) With(oo ...PipelineOption) *SerialPipeline {
 func PipelineRunner(runner Runner, opts ...Option) RunnerCloser {
 	var (
 		signal = NewSignal()
-		//		wait   = make(chan struct{}, 1)
 	)
 	opts = append(opts, SignalChannelCloser(signal))
 
 	return NewRunner(
 		func(ctx context.Context) error {
 			err := Start(ctx, runner, opts...)
-			//			close(wait)
 			return err
 		},
 		WithClose(func(ctx context.Context) error {
 			// trigger close sequence
 			signal.Notify()
-			// select {
-			// case <-wait:
-			// case <-ctx.Done():
-			// }
+
 			return nil
 		}),
 	)
