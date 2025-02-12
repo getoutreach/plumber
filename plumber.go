@@ -24,7 +24,14 @@ var (
 
 // Dependency represent a dependency that can be supplied into Require method
 type Dependency interface {
+	String() string
+	Resolved() bool
 	Iterate(func(dep Dependency) bool)
+	Error() error
+}
+
+// Errorer represents an interface that can return an error
+type Errorer interface {
 	Error() error
 }
 
@@ -54,7 +61,7 @@ func (f *Future[T]) Then(callback func()) {
 			err = d.Error()
 		}
 		if err != nil {
-			errs = append(errs, fmt.Errorf("dependency not resolved, %s requires %s (%w)", f.d, d, err))
+			errs = append(errs, fmt.Errorf("dependency not resolved, %s requires %s (%w)", f.d.String(), d.String(), err))
 		}
 	}
 	if len(errs) != 0 {
@@ -100,7 +107,7 @@ func (d *D[T]) String() string {
 	if d.name == "" {
 		return s
 	}
-	return fmt.Sprintf("%s(%s)", s, d.name)
+	return fmt.Sprintf("%s(%s)", d.name, s)
 }
 
 // define sets resolution function but only once
@@ -181,7 +188,7 @@ func (d *D[T]) InstanceError() (T, error) {
 	v := d.Instance()
 	err := d.err
 	if !d.defined {
-		err = fmt.Errorf("instance %s not resolved", d)
+		err = fmt.Errorf("instance %s not resolved", d.String())
 	}
 	return v, err
 }
@@ -190,6 +197,11 @@ func (d *D[T]) InstanceError() (T, error) {
 func (d *D[T]) Error() error {
 	_, err := d.InstanceError()
 	return err
+}
+
+// Resolved returns true if dependency is resolved
+func (d *D[T]) Resolved() bool {
+	return d.resolved
 }
 
 // Iterate iterates dependency graph, when callback returns true iterator will continue down stream
@@ -226,10 +238,19 @@ func (d *D[T]) Wrap(wrappers ...func(T) T) *D[T] {
 	return d
 }
 
+// dependencies returns a list of dependencies
+func (d *D[T]) dependencies() []Dependency {
+	var deps []Dependency
+	for _, dep := range d.deps {
+		deps = append(deps, dep)
+	}
+	return deps
+}
+
 // R represents a runnable dependency wrapper
 // It is meant to be supplied into the Pipeline()
 type R[T any] struct {
-	D[T]
+	d        D[T]
 	runnable Runner
 }
 
@@ -242,24 +263,54 @@ func NamedR[T any](name string) *R[T] {
 
 // Named sets a name for the dependency
 func (r *R[T]) Named(name string) *R[T] {
-	r.D.name = name
+	r.d.Named(name)
 	return r
 }
 
 // Resolve returns a callback providing a resolution orchestrator
 // Using the orchestrator we can define dependencies between values
 func (r *R[T]) Resolve(callback func(*ResolutionR[T])) *R[T] {
-	r.D.Resolve(func(dr *Resolution[T]) {
+	r.d.Resolve(func(dr *Resolution[T]) {
 		rr := &ResolutionR[T]{resolution: dr, r: r}
 		callback(rr)
 	})
 	return r
 }
 
+// Instance returns a value
+func (r *R[T]) Instance() T {
+	return r.d.Instance()
+}
+
+// String return names of underlaying type
+func (r *R[T]) String() string {
+	return r.d.String()
+}
+
+// Resolved returns true if dependency is resolved
+func (r *R[T]) Resolved() bool {
+	return r.d.Resolved()
+}
+
+// dependencies returns a list of dependencies
+func (r *R[T]) dependencies() []Dependency {
+	return r.d.dependencies()
+}
+
+// InstanceError returns and a value and the error
+func (r *R[T]) InstanceError() (T, error) {
+	v := r.d.Instance()
+	err := r.d.err
+	if err == nil {
+		err = r.Error()
+	}
+	return v, err
+}
+
 // Define allows to define value using callback that returns a value
 // given instance must by a runnable
 func (r *R[T]) Define(resolve func() T) *R[T] {
-	r.D.DefineError(func() (T, error) {
+	r.d.DefineError(func() (T, error) {
 		var empty T
 		rv := resolve()
 		var v any = rv
@@ -276,11 +327,14 @@ func (r *R[T]) Define(resolve func() T) *R[T] {
 // DefineError to define value using callback that returns a value and error
 // given instance must by a runnable
 func (r *R[T]) DefineError(resolve func() (T, error)) *R[T] {
-	r.D.DefineError(func() (T, error) {
+	r.d.DefineError(func() (T, error) {
+		var empty T
 		rv, err := resolve()
 		var v any = rv
 		if runner, ok := v.(Runner); ok {
 			r.runnable = runner
+		} else {
+			return empty, errors.New("instance is not a runnable")
 		}
 		return rv, err
 	})
@@ -289,43 +343,48 @@ func (r *R[T]) DefineError(resolve func() (T, error)) *R[T] {
 
 // Run executes Run method on value and satisfies Runner,Closer and Readier interfaces
 func (r *R[T]) Run(ctx context.Context) error {
-	if err := r.D.Error(); err != nil {
+	if err := r.d.Error(); err != nil {
 		return err
 	}
 	if r.runnable == nil {
-		return fmt.Errorf("Runnable %s not resolved", &r.D)
+		return fmt.Errorf("Runnable %s not resolved 1", &r.d)
 	}
 	return r.runnable.Run(ctx)
 }
 
 // Error returns an error
 func (r *R[T]) Error() error {
-	if err := r.D.Error(); err != nil {
+	if err := r.d.Error(); err != nil {
 		return err
 	}
 	if r.runnable == nil {
-		return fmt.Errorf("Runnable %s not resolved", &r.D)
+		return fmt.Errorf("Runnable %s not resolved 2", &r.d)
 	}
 	return nil
 }
 
+// Iterate iterates dependency graph, when callback returns true iterator will continue down stream
+func (r *R[T]) Iterate(callback func(dep Dependency) bool) {
+	r.d.Iterate(callback)
+}
+
 // Close executes Close method on value and satisfies Closer interface
 func (r *R[T]) Close(ctx context.Context) error {
-	if err := r.D.Error(); err != nil {
+	if err := r.d.Error(); err != nil {
 		return err
 	}
 	if r.runnable == nil {
-		return fmt.Errorf("Runnable %s not resolved", &r.D)
+		return fmt.Errorf("Runnable %s not resolved 3", &r.d)
 	}
 	return RunnerClose(ctx, r.runnable)
 }
 
 func (r *R[T]) Ready() (<-chan struct{}, error) {
-	if err := r.D.Error(); err != nil {
+	if err := r.d.Error(); err != nil {
 		return nil, err
 	}
 	if r.runnable == nil {
-		return nil, fmt.Errorf("Runnable %s not resolved", &r.D)
+		return nil, fmt.Errorf("Runnable %s not resolved 4", &r.d)
 	}
 	return RunnerReady(r.runnable)
 }

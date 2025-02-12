@@ -2,6 +2,7 @@ package example_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/getoutreach/plumber"
@@ -33,14 +34,33 @@ func TestApplicationManually(t *testing.T) {
 	))
 }
 
+func TestPtr(t *testing.T) {
+	cfg := &example.Config{}
+	c := example.NewApplication(
+		context.Background(), cfg, WithIntegrationEnvironment,
+	)
+
+	v := plumber.ReflectValueByPath(func() *example.Container { return c }, []string{"Async", "Publisher"})
+
+	if vp, ok := v.Addr().Interface().(plumber.Errorer); ok {
+		fmt.Println(vp.Error())
+	}
+}
+
 func TestApplicationContainer(t *testing.T) {
 	// Or you can and you should check the whole container
 	if err := plumber.ContainerResolved(func() *example.Container {
 		cfg := &example.Config{}
-		return example.NewApplication(
+		c := example.NewApplication(
 			context.Background(), cfg, WithIntegrationEnvironment,
 		)
+		return c
 	}); err != nil {
-		assert.NilError(t, err)
+		assert.Assert(t, err != nil)
+		assert.Equal(t, err.Error(),
+			`errors on "Bugs.Notdefined": instance notdefined(*async.Publisher) not resolved
+errors on "Bugs.GraphQL": dependency not resolved, *graphql.Server requires notdefined(*async.Publisher) (instance notdefined(*async.Publisher) not resolved)
+errors on "Bugs.GraphQL": unused dependency: notdefined(*async.Publisher)`,
+		)
 	}
 }

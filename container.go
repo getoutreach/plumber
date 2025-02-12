@@ -7,6 +7,9 @@ package plumber
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
+	"strings"
 )
 
 // Container represents a root dependency container
@@ -51,9 +54,124 @@ func DefineContainers[C, CF any](ctx context.Context, cfg CF, definers []func(co
 	return root
 }
 
+// dependencyType is a type of Dependency interface to be used in reflection
+var dependencyType = reflect.TypeOf((*Errorer)(nil)).Elem()
+
 // ContainerResolved checks if the container can be resolved.
 // It checks as well each instance in the container separately to ensure that all required dependencies are resolved
 // and are actually used with resolution function.
-func ContainerResolved[C any](func() C) error {
-	return nil
+func ContainerResolved[C any](containerFunc func() C) error {
+	root := containerFunc()
+	return containerDependecyResolved(root, containerFunc, []string{})
+}
+
+func containerDependecyResolved[C any](root any, containerFunc func() C, path []string) error {
+	errs := []error{}
+	v := reflect.ValueOf(root)
+	v = reflect.Indirect(v)
+	t := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+
+		if !field.CanInterface() {
+			continue
+		}
+		var (
+			name       = t.Field(i).Name
+			actualPath = append(append([]string{}, path...), name)
+		)
+
+		tag := t.Field(i).Tag.Get("plumber")
+		if tag != "" {
+			parts := strings.Split(tag, ",")
+			if len(parts) > 1 {
+				if parts[1] == "ignore" {
+					continue
+				}
+			}
+		}
+
+		it := field.Interface()
+		if _, ok := it.(Errorer); ok {
+			if err := evaluateDependencyByPath(containerFunc, actualPath); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+		} else {
+			ptr := reflect.New(field.Type())
+			ptr.Elem().Set(field)
+
+			it := ptr.Interface()
+			if _, ok := it.(Errorer); ok {
+				if err := evaluateDependencyByPath(containerFunc, actualPath); err != nil {
+					errs = append(errs, err)
+					continue
+				}
+			}
+		}
+
+		field = reflect.Indirect(field)
+
+		if field.Kind() == reflect.Struct {
+			if err := containerDependecyResolved(field.Interface(), containerFunc, actualPath); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// evaluateDependencyByPath evaluates dependency by path
+func evaluateDependencyByPath[C any](containerFunc func() C, path []string) error {
+	errs := []error{}
+	dep := ReflectValueByPath(containerFunc, path)
+	var errorer Errorer
+	if errr, ok := dep.Interface().(Errorer); ok {
+		errorer = errr
+	} else {
+		vl := dep
+		if vl.CanAddr() {
+			vl = vl.Addr()
+			dp := vl.Interface()
+			if errr, ok := dp.(Errorer); ok {
+				errorer = errr
+			}
+		}
+	}
+
+	if errorer != nil {
+		err := errorer.Error()
+		path := strings.Join(path, ".")
+		if err != nil {
+
+			errs = append(errs, fmt.Errorf("errors on \"%s\": %w", path, err))
+		}
+
+		if dep, ok := errorer.(interface{ dependencies() []Dependency }); ok {
+			for _, d := range dep.dependencies() {
+				if !d.Resolved() {
+					errs = append(errs, fmt.Errorf("errors on \"%s\": unused dependency: %s", path, d.String()))
+				}
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ReflectValueByPath returns dependency by path
+func ReflectValueByPath[C any](containerFunc func() C, path []string) reflect.Value {
+	elem := containerFunc()
+
+	if len(path) == 0 {
+		return reflect.ValueOf(elem)
+	}
+
+	field := reflect.ValueOf(elem)
+
+	for _, name := range path {
+		field = reflect.Indirect(field)
+		field = field.FieldByName(name)
+	}
+	return field
 }
