@@ -44,7 +44,7 @@ return &Service{
 We do just:
 
 ```golang
-a.Service.Resolve(func(r *plumber.Resolution[*Service]) {
+a.Service.Resolver(func(r *plumber.Resolution[*Service]) {
     r.Require(&a.D1, &a.D2).Then(func() {
         r.Resolve(&Service{
             D1: a.D1.Instance(),
@@ -74,7 +74,7 @@ a.D1.Const(1)
 a.D2.Const(2)
 
 // service resolver
-a.Service.Resolve(func(r *plumber.Resolution[*Service]) {
+a.Service.Resolver(func(r *plumber.Resolution[*Service]) {
     // service depends on D1 and D2 those needs gets resolved first without an error.
     r.Require(&a.D1, &a.D2).Then(func() {
         // When all good, we can construct our service

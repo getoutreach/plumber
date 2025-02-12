@@ -30,9 +30,9 @@ type Dependency interface {
 	Error() error
 }
 
-// Errorer represents an interface that can return an error
-type Errorer interface {
-	Error() error
+// dependencyErrorer represents an interface that can return an error
+type dependencyErrorer interface {
+	dependencyErrors() []error
 }
 
 // Future represents a struct that will help with dependency evaluation
@@ -68,23 +68,30 @@ func (f *Future[T]) Then(callback func()) {
 		f.d.err = errors.Join(errs...)
 		return
 	}
-	callback()
+	if f.d.futureCallback != nil {
+		f.d.futureCallback(callback)
+	} else {
+		callback()
+	}
 }
 
 // D represent a dependency wrapper
 type D[T any] struct {
-	resolving bool
-	defined   bool
-	resolved  bool
-	value     T
-	err       error
-	once      sync.Once
-	mx        sync.Mutex
-	resolve   func()
-	deps      []Dependency
-	listeners []func()
-	wrappers  []func(T) T
-	name      string
+	resolving         bool
+	defined           bool
+	resolved          bool
+	value             T
+	err               error
+	once              sync.Once
+	mx                sync.Mutex
+	resolve           func()
+	deps              []Dependency
+	listeners         []func()
+	wrappers          []func(T) T
+	name              string
+	instanceRetrieved func()
+	resolution        *Resolution[T]
+	futureCallback    func(next func())
 }
 
 // Named creates a new named dependency
@@ -111,7 +118,7 @@ func (d *D[T]) String() string {
 }
 
 // define sets resolution function but only once
-func (d *D[T]) define(resolve func()) {
+func (d *D[T]) define(resolve func(), callbacks ...func()) {
 	d.once.Do(func() {
 		d.defined = true
 		d.resolve = func() {
@@ -123,6 +130,9 @@ func (d *D[T]) define(resolve func()) {
 			}
 			for _, l := range d.listeners {
 				l()
+			}
+			for _, c := range callbacks {
+				c()
 			}
 		}
 	})
@@ -172,6 +182,9 @@ func (d *D[T]) Must() T {
 func (d *D[T]) Instance() T {
 	d.mx.Lock()
 	defer d.mx.Unlock()
+	if d.instanceRetrieved != nil {
+		d.instanceRetrieved()
+	}
 	var zero T
 	if !d.defined {
 		return zero
@@ -199,6 +212,36 @@ func (d *D[T]) Error() error {
 	return err
 }
 
+// setInstanceListener sets a listener that will be triggered when instance is retrieved
+func (d *D[T]) setInstanceListener(listener func()) {
+	d.instanceRetrieved = listener
+}
+
+// dependencyErrors returns a list during dependency resolution
+func (d *D[T]) dependencyErrors() []error {
+	errs := []error{}
+	d.futureCallback = func(next func()) {
+		definedDependencies := map[Dependency]struct{}{}
+		for _, dep := range d.deps {
+			definedDependencies[dep] = struct{}{}
+			if depListener, ok := dep.(interface{ setInstanceListener(func()) }); ok {
+				depListener.setInstanceListener(func() {
+					delete(definedDependencies, dep)
+				})
+			}
+		}
+		next()
+		for d := range definedDependencies {
+			errs = append(errs, fmt.Errorf("dependency declared but not used: %s", d))
+		}
+	}
+	err := d.Error()
+	if err != nil {
+		errs = append(errs, err)
+	}
+	return errs
+}
+
 // Resolved returns true if dependency is resolved
 func (d *D[T]) Resolved() bool {
 	return d.resolved
@@ -214,12 +257,19 @@ func (d *D[T]) Iterate(callback func(dep Dependency) bool) {
 	}
 }
 
-// Resolve returns a callback providing a resolution orchestrator
-// Using the orchestrator we can define dependencies between values
+// Deprecated: Use Resolver instead
 func (d *D[T]) Resolve(callback func(*Resolution[T])) *D[T] {
+	return d.Resolver(callback)
+}
+
+// Resolver returns a callback providing a resolution orchestrator
+// Using the orchestrator we can define dependencies between values
+func (d *D[T]) Resolver(callback func(*Resolution[T])) *D[T] {
+	r := Resolution[T]{d: d}
 	d.define(func() {
-		r := Resolution[T]{d: d}
 		callback(&r)
+	}, func() {
+		d.resolution = &r
 	})
 	return d
 }
@@ -236,11 +286,6 @@ func (d *D[T]) WhenResolved(callback func()) *D[T] {
 func (d *D[T]) Wrap(wrappers ...func(T) T) *D[T] {
 	d.wrappers = append(d.wrappers, wrappers...)
 	return d
-}
-
-// dependencies returns a list of dependencies
-func (d *D[T]) dependencies() []Dependency {
-	return d.deps
 }
 
 // R represents a runnable dependency wrapper
@@ -263,10 +308,15 @@ func (r *R[T]) Named(name string) *R[T] {
 	return r
 }
 
+// Deprecated: use Resolver instead
+func (r *R[T]) Resolve(callback func(*ResolutionR[T])) *R[T] {
+	return r.Resolver(callback)
+}
+
 // Resolve returns a callback providing a resolution orchestrator
 // Using the orchestrator we can define dependencies between values
-func (r *R[T]) Resolve(callback func(*ResolutionR[T])) *R[T] {
-	r.d.Resolve(func(dr *Resolution[T]) {
+func (r *R[T]) Resolver(callback func(*ResolutionR[T])) *R[T] {
+	r.d.Resolver(func(dr *Resolution[T]) {
 		rr := &ResolutionR[T]{resolution: dr, r: r}
 		callback(rr)
 	})
@@ -288,9 +338,13 @@ func (r *R[T]) Resolved() bool {
 	return r.d.Resolved()
 }
 
-// dependencies returns a list of dependencies
-func (r *R[T]) dependencies() []Dependency {
-	return r.d.dependencies()
+// dependencyErrors returns a list during dependency resolution
+func (r *R[T]) dependencyErrors() []error {
+	return r.d.dependencyErrors()
+}
+
+func (r *R[T]) setInstanceListener(listener func()) {
+	r.d.setInstanceListener(listener)
 }
 
 // InstanceError returns and a value and the error
@@ -388,6 +442,7 @@ func (r *R[T]) Ready() (<-chan struct{}, error) {
 // Resolution is value resolution orchestrator
 type Resolution[T any] struct {
 	d *D[T]
+	f *Future[T]
 }
 
 // Resolved ends the resolution with given value
@@ -410,9 +465,11 @@ func (r *Resolution[T]) ResolveError(v T, err error) {
 // It is a necessary to call Then to trigger a dependency evaluation
 func (r *Resolution[T]) Require(deps ...Dependency) *Future[T] {
 	r.d.deps = deps
-	return &Future[T]{
+	f := &Future[T]{
 		d: r.d,
 	}
+	r.f = f
+	return f
 }
 
 // ResolutionR represents a resolution orchestrator for a runnable values

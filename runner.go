@@ -34,6 +34,12 @@ type ErrorNotifier interface {
 	Errored() <-chan struct{}
 }
 
+// RunnerCloser implements Runner and Closeable interfaces
+type RunnerCloser interface {
+	Runner
+	Closeable
+}
+
 // SmartRunner implements all interfaces that makes the runner good citizen
 type SmartRunner interface {
 	Runner
