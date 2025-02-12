@@ -5,7 +5,6 @@ package plumber
 
 import (
 	"context"
-	"sync"
 )
 
 // Runner describes basic runnable unit. Runner can be started.
@@ -84,7 +83,6 @@ func WithClose(closeFunc func(context.Context) error) RunnerOption {
 type runner struct {
 	options RunnerOptions
 	run     func(ctx context.Context) error
-	mx      sync.Mutex
 }
 
 // NewRunner returns an instance of the runner. Optionally supplied options might redefine other Runner method Close and Ready
