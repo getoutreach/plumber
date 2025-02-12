@@ -20,7 +20,7 @@ type Service struct {
 
 // Define resolves dependencies
 func (c *Service) Define(ctx context.Context, cf *Config, a *Container) {
-	c.Mutator.Resolve(func(r *plumber.Resolution[contract.MutatorService]) {
+	c.Mutator.Resolver(func(r *plumber.Resolution[contract.MutatorService]) {
 		r.Require(
 			&a.Database.Repository,
 		).Then(func() {
@@ -28,7 +28,7 @@ func (c *Service) Define(ctx context.Context, cf *Config, a *Container) {
 		})
 	})
 
-	c.NotifyingMutator.Resolve(func(r *plumber.Resolution[contract.MutatorService]) {
+	c.NotifyingMutator.Resolver(func(r *plumber.Resolution[contract.MutatorService]) {
 		r.Require(
 			&c.Mutator,
 		).Then(func() {
@@ -36,7 +36,7 @@ func (c *Service) Define(ctx context.Context, cf *Config, a *Container) {
 		})
 	})
 
-	c.Querier.Resolve(func(r *plumber.Resolution[*service.QueryService]) {
+	c.Querier.Resolver(func(r *plumber.Resolution[*service.QueryService]) {
 		r.Require(
 			&a.Database.Repository,
 		).Then(func() {

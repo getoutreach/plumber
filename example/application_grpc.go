@@ -19,7 +19,7 @@ type GRPC struct {
 func (c *GRPC) Define(ctx context.Context, cf *Config, a *Container) {
 	c.Port.Const(5000)
 
-	c.Server.Resolve(func(r *plumber.ResolutionR[*grpc.Server]) {
+	c.Server.Resolver(func(r *plumber.ResolutionR[*grpc.Server]) {
 		r.Require(
 			&a.Service.Querier,
 			&a.Service.NotifyingMutator,

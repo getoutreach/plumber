@@ -30,7 +30,7 @@ type Bugs struct {
 func (c *Bugs) Define(ctx context.Context, cf *Config, a *Container) {
 	c.NotUsed.Named("Port").Const(1)
 	c.Notdefined.Named("notdefined")
-	c.GraphQL.Named("BuggyGraphQL").Resolve(func(r *plumber.ResolutionR[*graphql.Server]) {
+	c.GraphQL.Named("BuggyGraphQL").Resolver(func(r *plumber.ResolutionR[*graphql.Server]) {
 		r.Require(
 			&c.Notdefined,
 			&c.NotUsed,
@@ -43,7 +43,7 @@ func (c *Bugs) Define(ctx context.Context, cf *Config, a *Container) {
 		})
 	})
 
-	c.ServerWithNotUsedDep.Named("ServerWithNotUsedDep").Resolve(func(r *plumber.ResolutionR[*graphql.Server]) {
+	c.ServerWithNotUsedDep.Named("ServerWithNotUsedDep").Resolver(func(r *plumber.ResolutionR[*graphql.Server]) {
 		r.Require(
 			&c.NotUsed,
 		).Then(func() {

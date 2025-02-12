@@ -321,7 +321,9 @@ func TestPipelineRunnerClose(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		err := runner.Run(ctx)
-		assert.NilError(t, err)
+		// If run managed to return we have nil, if cancel closes the context we get context.Canceled
+		// For gracefull shutdown use CloseTimeout
+		assert.Assert(t, err == nil || errors.Is(err, context.Canceled))
 	}()
 
 	go func() {

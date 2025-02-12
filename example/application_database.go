@@ -22,7 +22,7 @@ func (c *Database) Define(ctx context.Context, cf *Config, a *Container) {
 		return database.NewRepository()
 	})
 
-	c.BatchingRepository.Resolve(func(r *plumber.ResolutionR[*database.BatchingRepository]) {
+	c.BatchingRepository.Resolver(func(r *plumber.ResolutionR[*database.BatchingRepository]) {
 		r.Require(&c.Repository).Then(func() {
 			r.ResolveError(database.NewBatchingRepository(c.Repository.Instance(), 100))
 		})

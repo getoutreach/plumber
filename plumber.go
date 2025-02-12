@@ -257,9 +257,14 @@ func (d *D[T]) Iterate(callback func(dep Dependency) bool) {
 	}
 }
 
-// Resolve returns a callback providing a resolution orchestrator
-// Using the orchestrator we can define dependencies between values
+// Deprecated: Use Resolver instead
 func (d *D[T]) Resolve(callback func(*Resolution[T])) *D[T] {
+	return d.Resolver(callback)
+}
+
+// Resolver returns a callback providing a resolution orchestrator
+// Using the orchestrator we can define dependencies between values
+func (d *D[T]) Resolver(callback func(*Resolution[T])) *D[T] {
 	r := Resolution[T]{d: d}
 	d.define(func() {
 		callback(&r)
@@ -303,10 +308,15 @@ func (r *R[T]) Named(name string) *R[T] {
 	return r
 }
 
+// Deprecated: use Resolver instead
+func (r *R[T]) Resolve(callback func(*ResolutionR[T])) *R[T] {
+	return r.Resolver(callback)
+}
+
 // Resolve returns a callback providing a resolution orchestrator
 // Using the orchestrator we can define dependencies between values
-func (r *R[T]) Resolve(callback func(*ResolutionR[T])) *R[T] {
-	r.d.Resolve(func(dr *Resolution[T]) {
+func (r *R[T]) Resolver(callback func(*ResolutionR[T])) *R[T] {
+	r.d.Resolver(func(dr *Resolution[T]) {
 		rr := &ResolutionR[T]{resolution: dr, r: r}
 		callback(rr)
 	})

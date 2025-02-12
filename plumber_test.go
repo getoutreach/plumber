@@ -37,7 +37,7 @@ type App struct {
 }
 
 func (a *App) D3() *plumber.D[int] {
-	return a.d3.Resolve(func(r *plumber.Resolution[int]) {
+	return a.d3.Resolver(func(r *plumber.Resolution[int]) {
 		r.Require(&a.D2, a.D3()).Then(func() {
 			r.Resolve(0)
 		})
@@ -75,7 +75,7 @@ func TestRequireOk(t *testing.T) {
 	}{}
 	a.D1.Const(1)
 	a.D2.Const(2)
-	a.Service.Resolve(func(r *plumber.Resolution[*dep]) {
+	a.Service.Resolver(func(r *plumber.Resolution[*dep]) {
 		r.Require(&a.D1, &a.D2).Then(func() {
 			r.Resolve(&dep{
 				D1: a.D1.Instance(),
@@ -99,12 +99,12 @@ func TestRequireNotOk(t *testing.T) {
 		Middle      plumber.D[middle]
 	}{}
 	a.D1.Const(1)
-	a.Middle.Resolve(func(r *plumber.Resolution[middle]) {
+	a.Middle.Resolver(func(r *plumber.Resolution[middle]) {
 		r.Require(&a.NotResolved).Then(func() {
 			r.Resolve(middle{})
 		})
 	})
-	a.D2.Resolve(func(r *plumber.Resolution[int]) {
+	a.D2.Resolver(func(r *plumber.Resolution[int]) {
 		r.Require(&a.D1, &a.Middle).Then(func() {
 			r.Resolve(1)
 		})
@@ -124,17 +124,17 @@ func TestRequireNotOkError(t *testing.T) {
 		Middle    plumber.D[middle]
 	}{}
 
-	a.WithError.Resolve(func(r *plumber.Resolution[*notresolved]) {
+	a.WithError.Resolver(func(r *plumber.Resolution[*notresolved]) {
 		r.Require().Then(func() {
 			r.ResolveError(nil, errors.New("Error"))
 		})
 	})
-	a.Middle.Resolve(func(r *plumber.Resolution[middle]) {
+	a.Middle.Resolver(func(r *plumber.Resolution[middle]) {
 		r.Require(&a.WithError).Then(func() {
 			r.Resolve(middle{})
 		})
 	})
-	a.D2.Resolve(func(r *plumber.Resolution[int]) {
+	a.D2.Resolver(func(r *plumber.Resolution[int]) {
 		r.Require(&a.Middle).Then(func() {
 			r.Resolve(1)
 		})
@@ -151,7 +151,7 @@ func TestRequireNotOkCycle(t *testing.T) {
 		D2 plumber.D[int]
 	}{}
 	a.D1.Const(1)
-	a.D2.Resolve(func(r *plumber.Resolution[int]) {
+	a.D2.Resolver(func(r *plumber.Resolution[int]) {
 		r.Require(&a.D1, &a.D2).Then(func() {
 			r.Resolve(1)
 		})
@@ -169,7 +169,7 @@ func TestRequireConcurrentOk(t *testing.T) {
 		Concurrent plumber.D[concurrent]
 	}{}
 	a.D1.Const(1)
-	a.D2.Resolve(func(r *plumber.Resolution[int]) {
+	a.D2.Resolver(func(r *plumber.Resolution[int]) {
 		r.Require(&a.D1, &a.Concurrent).Then(func() {
 			r.Resolve(1)
 		})
@@ -214,7 +214,7 @@ func TestExamplePipeline(t *testing.T) {
 		return "tesait"
 	})
 
-	a.D4.Resolve(func(r *plumber.ResolutionR[int]) {
+	a.D4.Resolver(func(r *plumber.ResolutionR[int]) {
 		r.Require(&a.D2).Then(func() {
 			r.ResolveAdapter(0, plumber.Closer(func(context.Context) error {
 				return nil
@@ -300,7 +300,7 @@ func fitHTTP(a *App) {
 			fmt.Fprintln(w, "back")
 		}
 	})
-	a.HTTP.HelloHandler.Resolve(func(r *plumber.Resolution[http.HandlerFunc]) {
+	a.HTTP.HelloHandler.Resolver(func(r *plumber.Resolution[http.HandlerFunc]) {
 		r.Require(
 			a.Config.HelloMessage(),
 		).Then(func() {
@@ -310,7 +310,7 @@ func fitHTTP(a *App) {
 			})
 		})
 	})
-	a.HTTP.Server.Resolve(func(r *plumber.ResolutionR[*http.Server]) {
+	a.HTTP.Server.Resolver(func(r *plumber.ResolutionR[*http.Server]) {
 		r.Require(
 			&a.HTTP.HelloHandler,
 			&a.HTTP.EchoHandler,
