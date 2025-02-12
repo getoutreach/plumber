@@ -107,7 +107,7 @@ func TestPipelineSignalerClosing(t *testing.T) {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case <-time.After(25 * time.Second):
+				case <-time.After(10 * time.Second):
 					return errors.New("runner failed")
 				}
 			}),
@@ -276,6 +276,68 @@ func TestPipelineDetachedContext(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 		logger.Print("canceling parent context")
 		cancel()
+	}()
+
+	wg.Wait()
+
+	assert.Assert(t, brutallyCanceled == 0)
+}
+
+func TestPipelineRunnerClose(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	var (
+		logger           = log.New(log.Writer(), "test: ", log.LstdFlags|log.Lmicroseconds)
+		brutallyCanceled int32
+	)
+
+	runner := plumber.PipelineRunner(
+		plumber.Pipeline(
+			plumber.Looper(func(ctx context.Context, loop *plumber.Loop) error {
+				loop.Ready()
+				for {
+					select {
+					case closed := <-loop.Closing():
+						time.Sleep(100 * time.Millisecond)
+						logger.Print("closing looper")
+						closed.Success()
+						return nil
+					case <-ctx.Done():
+						atomic.StoreInt32(&brutallyCanceled, 1)
+						logger.Print("looper context done")
+						return fmt.Errorf("context brutally canceled: %w", ctx.Err())
+					default:
+						logger.Print("looper working")
+						time.Sleep(30 * time.Millisecond)
+					}
+				}
+			}),
+		),
+	)
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		err := runner.Run(ctx)
+		assert.NilError(t, err)
+	}()
+
+	go func() {
+		defer wg.Done()
+		time.Sleep(500 * time.Millisecond)
+		logger.Print("closing runner twice")
+		err := runner.Close(context.Background())
+		assert.NilError(t, err)
+	}()
+
+	go func() {
+		defer wg.Done()
+		time.Sleep(100 * time.Millisecond)
+		logger.Print("closing runner")
+		err := runner.Close(context.Background())
+		assert.NilError(t, err)
 	}()
 
 	wg.Wait()

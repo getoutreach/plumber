@@ -394,7 +394,7 @@ func (r *SerialPipeline) With(oo ...PipelineOption) *SerialPipeline {
 }
 
 // PipelineRunner creates a pipeline runner so the pipeline it self can be started and closed
-func PipelineRunner(runner Runner, opts ...Option) Runner {
+func PipelineRunner(runner Runner, opts ...Option) RunnerCloser {
 	var (
 		signal = NewSignal()
 		wait   = make(chan struct{}, 1)
