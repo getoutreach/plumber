@@ -323,7 +323,7 @@ func TestPipelineRunnerClose(t *testing.T) {
 		err := runner.Run(ctx)
 		// If run managed to return we have nil, if cancel closes the context we get context.Canceled
 		// For gracefull shutdown use CloseTimeout
-		assert.Assert(t, err == nil || errors.Is(err, context.Canceled))
+		assert.NilError(t, plumber.UnlessCanceled(err))
 	}()
 
 	go func() {
@@ -403,4 +403,41 @@ func TestPipelineSignalCloser(t *testing.T) {
 
 	assert.Assert(t, brutallyCanceled == 0)
 	assert.Assert(t, gracefullyCanceled == 1)
+}
+
+// The test is intended not to hang
+func TestPipelineCloseBeforeRun(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	runner := plumber.PipelineRunner(
+		plumber.Pipeline(
+			plumber.Looper(func(ctx context.Context, loop *plumber.Loop) error {
+				loop.Ready()
+				for {
+					select {
+					case closed := <-loop.Closing():
+						closed.Success()
+						return nil
+					case <-ctx.Done():
+						return ctx.Err()
+					default:
+						time.Sleep(100 * time.Millisecond)
+					}
+				}
+			}),
+		),
+	)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	runner.Close(context.Background())
+
+	go func() {
+		defer wg.Done()
+		err := plumber.UnlessCanceled(runner.Run(ctx))
+		assert.NilError(t, err)
+	}()
+
+	wg.Wait()
 }

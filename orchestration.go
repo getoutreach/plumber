@@ -397,23 +397,23 @@ func (r *SerialPipeline) With(oo ...PipelineOption) *SerialPipeline {
 func PipelineRunner(runner Runner, opts ...Option) RunnerCloser {
 	var (
 		signal = NewSignal()
-		wait   = make(chan struct{}, 1)
+		//		wait   = make(chan struct{}, 1)
 	)
 	opts = append(opts, SignalChannelCloser(signal))
 
 	return NewRunner(
 		func(ctx context.Context) error {
 			err := Start(ctx, runner, opts...)
-			close(wait)
+			//			close(wait)
 			return err
 		},
 		WithClose(func(ctx context.Context) error {
 			// trigger close sequence
 			signal.Notify()
-			select {
-			case <-wait:
-			case <-ctx.Done():
-			}
+			// select {
+			// case <-wait:
+			// case <-ctx.Done():
+			// }
 			return nil
 		}),
 	)
@@ -576,4 +576,13 @@ func KeepRunningOnError() func(*PipelineOptions) {
 	return func(o *PipelineOptions) {
 		o.KeepRunningOnError = true
 	}
+}
+
+// UnlessCanceled returns nil if error is context.Canceled
+// The pipeline might return context.Canceled error when it is closed
+func UnlessCanceled(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
 }
