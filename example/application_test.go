@@ -42,7 +42,7 @@ func TestPtr(t *testing.T) {
 
 	v := plumber.ReflectValueByPath(func() *example.Container { return c }, []string{"Async", "Publisher"})
 
-	if vp, ok := v.Addr().Interface().(plumber.Errorer); ok {
+	if vp, ok := v.Addr().Interface().(interface{ Error() error }); ok {
 		fmt.Println(vp.Error())
 	}
 }
@@ -57,11 +57,12 @@ func TestApplicationContainer(t *testing.T) {
 		return c
 	}); err != nil {
 		assert.Assert(t, err != nil)
-		assert.Equal(t, err.Error(),
+		assert.Equal(t,
 			// nolint: lll //Why: multiline string
 			`errors on "Bugs.Notdefined": instance notdefined(*async.Publisher) not resolved
-errors on "Bugs.GraphQL": dependency not resolved, *graphql.Server requires notdefined(*async.Publisher) (instance notdefined(*async.Publisher) not resolved)
-errors on "Bugs.GraphQL": unused dependency: notdefined(*async.Publisher)`,
+errors on "Bugs.GraphQL": dependency not resolved, BuggyGraphQL(*graphql.Server) requires notdefined(*async.Publisher) (instance notdefined(*async.Publisher) not resolved)
+errors on "Bugs.ServerWithNotUsedDep": dependency declared but not used: Port(int32)`,
+			err.Error(),
 		)
 	}
 }

@@ -14,7 +14,11 @@ import (
 type Bugs struct {
 	Notdefined plumber.R[*async.Publisher]
 
+	NotUsed plumber.D[int32]
+
 	GraphQL plumber.R[*graphql.Server]
+
+	ServerWithNotUsedDep plumber.R[*graphql.Server]
 
 	Server plumber.R[*graphql.Server] `plumber:",ignore"`
 
@@ -24,10 +28,24 @@ type Bugs struct {
 
 // Define resolves dependencies
 func (c *Bugs) Define(ctx context.Context, cf *Config, a *Container) {
+	c.NotUsed.Named("Port").Const(1)
 	c.Notdefined.Named("notdefined")
-	c.GraphQL.Resolve(func(r *plumber.ResolutionR[*graphql.Server]) {
+	c.GraphQL.Named("BuggyGraphQL").Resolve(func(r *plumber.ResolutionR[*graphql.Server]) {
 		r.Require(
 			&c.Notdefined,
+			&c.NotUsed,
+		).Then(func() {
+			r.ResolveError(graphql.NewServer(
+				1,
+				nil,
+				nil,
+			))
+		})
+	})
+
+	c.ServerWithNotUsedDep.Named("ServerWithNotUsedDep").Resolve(func(r *plumber.ResolutionR[*graphql.Server]) {
+		r.Require(
+			&c.NotUsed,
 		).Then(func() {
 			r.ResolveError(graphql.NewServer(
 				1,

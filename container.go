@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+
+	"github.com/samber/lo"
 )
 
 // Container represents a root dependency container
@@ -90,7 +92,7 @@ func containerDependecyResolved[C any](root any, containerFunc func() C, path []
 		}
 
 		it := field.Interface()
-		if _, ok := it.(Errorer); ok {
+		if _, ok := it.(dependencyErrorer); ok {
 			if err := evaluateDependencyByPath(containerFunc, actualPath); err != nil {
 				errs = append(errs, err)
 				continue
@@ -100,7 +102,7 @@ func containerDependecyResolved[C any](root any, containerFunc func() C, path []
 			ptr.Elem().Set(field)
 
 			it := ptr.Interface()
-			if _, ok := it.(Errorer); ok {
+			if _, ok := it.(dependencyErrorer); ok {
 				if err := evaluateDependencyByPath(containerFunc, actualPath); err != nil {
 					errs = append(errs, err)
 					continue
@@ -124,34 +126,30 @@ func containerDependecyResolved[C any](root any, containerFunc func() C, path []
 func evaluateDependencyByPath[C any](containerFunc func() C, path []string) error {
 	errs := []error{}
 	dep := ReflectValueByPath(containerFunc, path)
-	var errorer Errorer
-	if errr, ok := dep.Interface().(Errorer); ok {
+	var errorer dependencyErrorer
+	if errr, ok := dep.Interface().(dependencyErrorer); ok {
 		errorer = errr
 	} else {
 		vl := dep
 		if vl.CanAddr() {
 			vl = vl.Addr()
 			dp := vl.Interface()
-			if errr, ok := dp.(Errorer); ok {
+			if errr, ok := dp.(dependencyErrorer); ok {
 				errorer = errr
 			}
 		}
 	}
 
 	if errorer != nil {
-		err := errorer.Error()
 		path := strings.Join(path, ".")
-		if err != nil {
-			errs = append(errs, fmt.Errorf("errors on \"%s\": %w", path, err))
+
+		if path == "Bugs.GraphQL" {
+			fmt.Println("Bugs.GraphQL !!!!!")
 		}
 
-		if dep, ok := errorer.(interface{ dependencies() []Dependency }); ok {
-			for _, d := range dep.dependencies() {
-				if !d.Resolved() {
-					errs = append(errs, fmt.Errorf("errors on \"%s\": unused dependency: %s", path, d.String()))
-				}
-			}
-		}
+		errs = append(errs, lo.Map(errorer.dependencyErrors(), func(e error, _ int) error {
+			return fmt.Errorf("errors on \"%s\": %w", path, e)
+		})...)
 	}
 	return errors.Join(errs...)
 }
