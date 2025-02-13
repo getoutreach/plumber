@@ -6,7 +6,6 @@ package plumber
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"time"
@@ -30,7 +29,7 @@ func (o *Options) apply(ctx context.Context, oo ...Option) (out context.Context)
 }
 
 // closeContext returns ready made close context with or without timeout
-func (o *Options) closeContext2(
+func (o *Options) closeContext(
 	ctx context.Context,
 	cancelRun context.CancelCauseFunc,
 ) (out context.Context, cancelAll context.CancelFunc) {
@@ -48,30 +47,6 @@ func (o *Options) closeContext2(
 		<-out.Done()
 		cancelRun(out.Err())
 	}
-}
-
-// closeContext returns ready made close context with or without timeout
-func (o *Options) closeContext(
-	ctx context.Context,
-	cancelRun context.CancelCauseFunc,
-) (out context.Context, cancelAll, tryCancel context.CancelFunc) {
-	var cancel context.CancelFunc
-	if o.CloseTimeout > 0 {
-		out, cancel = context.WithTimeout(ctx, o.CloseTimeout)
-		tryCancel = func() {}
-	} else {
-		out, cancel = context.WithCancel(ctx)
-		tryCancel = func() {
-			fmt.Println("closing all immediately")
-			cancel()
-		}
-	}
-	return out, func() {
-		<-out.Done()
-		cancel()
-		cancelRun(out.Err())
-		fmt.Println("closing all with", out.Err())
-	}, tryCancel
 }
 
 // Closer registers new closer

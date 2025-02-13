@@ -1,3 +1,6 @@
+// Copyright 2024 Outreach Corporation. All Rights Reserved.
+
+// Description: This file contains serial pipelines
 package plumber
 
 import (
@@ -9,6 +12,7 @@ import (
 	"github.com/samber/lo"
 )
 
+// runningRunner is a helper struct to keep track of running runners
 type runningRunner struct {
 	runner Runner
 	id     int
@@ -20,9 +24,7 @@ type runningRunner struct {
 type SerialPipeline struct {
 	runners   []Runner
 	options   *PipelineOptions
-	closing   atomic.Bool
 	closed    chan struct{}
-	closeOnce sync.Once
 	signal    *Signal
 	errSignal *Signal
 
@@ -31,7 +33,7 @@ type SerialPipeline struct {
 	messages chan any
 }
 
-// Serial creates a serial Runner executor.
+// Pipeline creates a serial Runner executor.
 // When started it will execute Run method on given runners one by one with given order.
 // When closed it will execute Close method on given runners in revered order to achieve graceful shutdown sequence
 func Pipeline(runners ...Runner) *SerialPipeline {
@@ -71,7 +73,7 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 		var closeErrors []error
 		var running bool
 		var closing bool
-		var workerId int
+		var workerID int
 		var closeContext = context.Background()
 		var runningWorkers []runningRunner
 		var closeDone chan error
@@ -100,7 +102,6 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 				closeDone = m.done
 
 				r.messages <- &eventRunnerClose{}
-				break
 				// starting runner
 			case *eventRun:
 				if running || closing {
@@ -108,7 +109,6 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 				}
 				running = true
 				r.messages <- &eventRunnerStart{}
-				break
 				// runner has finished running
 			case *eventRunnerClose:
 				// filter out the one that has ended
@@ -135,10 +135,9 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 					})
 					return errs
 				}
-				break
 			case *eventRunnerStart:
-				workerId++
-				if closing || workerId > len(r.runners) {
+				workerID++
+				if closing || workerID > len(r.runners) {
 					// we are all running or closing
 					continue
 				}
@@ -166,14 +165,12 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 						// we can close another runner or start closing the pipeline
 						r.messages <- &eventRunnerClose{id: running.id}
 					}(runner)
-				}(workerId)
-				break
+				}(workerID)
 				// some error occurred
 			case *eventError:
 				if m.err != nil {
 					errs = append(errs, m.err)
 				}
-				break
 			}
 		}
 		return errs
@@ -202,10 +199,10 @@ func (r *SerialPipeline) With(oo ...PipelineOption) *SerialPipeline {
 	return r
 }
 
-// SerialPipeline is a serial runner closer orchestrator
+// SerialNonBlockingPipeline is a serial runner closer orchestrator
 // The runners are started and closed in serial fashion.
-// The Run or Close methods needs to return and only then next runner is evaluated
-type SerialPipeline2 struct {
+// NonBlocking version does not wait for the runner to finish before closing the next one
+type SerialNonBlockingPipeline struct {
 	runners   []Runner
 	options   *PipelineOptions
 	closing   atomic.Bool
@@ -215,11 +212,12 @@ type SerialPipeline2 struct {
 	errSignal *Signal
 }
 
-// Serial creates a serial Runner executor.
+// PipelineNonBlocking creates a non blocking serial Runner executor.
 // When started it will execute Run method on given runners one by one with given order.
 // When closed it will execute Close method on given runners in revered order to achieve graceful shutdown sequence
-func Pipeline2(runners ...Runner) *SerialPipeline2 {
-	return &SerialPipeline2{
+// NonBlocking version does not wait for the runner to finish before closing the next one
+func PipelineNonBlocking(runners ...Runner) *SerialNonBlockingPipeline {
+	return &SerialNonBlockingPipeline{
 		runners:   runners,
 		options:   &PipelineOptions{},
 		closed:    make(chan struct{}),
@@ -228,16 +226,16 @@ func Pipeline2(runners ...Runner) *SerialPipeline2 {
 	}
 }
 
-func (r *SerialPipeline2) Errored() <-chan struct{} {
+func (r *SerialNonBlockingPipeline) Errored() <-chan struct{} {
 	return r.errSignal.C()
 }
 
-func (r *SerialPipeline2) Ready() (<-chan struct{}, error) {
+func (r *SerialNonBlockingPipeline) Ready() (<-chan struct{}, error) {
 	return r.signal.C(), nil
 }
 
 // Run executes Run method on internal runners one by one with given order.
-func (r *SerialPipeline2) Run(ctx context.Context) error {
+func (r *SerialNonBlockingPipeline) Run(ctx context.Context) error {
 	var (
 		wg      sync.WaitGroup
 		errs    = make(ErrorCh, len(r.runners))
@@ -333,7 +331,7 @@ func (r *SerialPipeline2) Run(ctx context.Context) error {
 
 // Close executes Close method on internal runners in revered order to achieve graceful shutdown sequence
 // It implements Closer interface
-func (r *SerialPipeline2) Close(ctx context.Context) error {
+func (r *SerialNonBlockingPipeline) Close(ctx context.Context) error {
 	var closeErrors []error
 	r.closeOnce.Do(func() {
 		close(r.closed)
@@ -349,7 +347,7 @@ func (r *SerialPipeline2) Close(ctx context.Context) error {
 }
 
 // With applies the pipeline options
-func (r *SerialPipeline2) With(oo ...PipelineOption) *SerialPipeline2 {
+func (r *SerialNonBlockingPipeline) With(oo ...PipelineOption) *SerialNonBlockingPipeline {
 	r.options.apply(oo...)
 	return r
 }

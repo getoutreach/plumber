@@ -251,26 +251,31 @@ func PipelineRunner(runner Runner, opts ...Option) RunnerCloser {
 	)
 }
 
+// eventRun is a event run event type for runner state machine
 type eventRun struct {
 }
 
+// eventRunnerStart is a event start event type for runner state machine
 type eventRunnerStart struct {
 }
 
+// eventRunnerClose is a event runner close event type for runner state machine
 type eventRunnerClose struct {
 	id int
 }
 
+// eventClose is a event close event type for runner state machine
 type eventClose struct {
 	closerContext context.Context
 	done          chan error
 }
 
+// eventFinished is a event finish event type for runner state machine
 type eventFinished struct {
-	err   error
-	index int
+	err error
 }
 
+// eventError is a event error event type for runner state machine
 type eventError struct {
 	err error
 }
@@ -339,7 +344,7 @@ func Start(xctx context.Context, runner Runner, opts ...Option) error {
 				}
 				closing = true
 				go func() {
-					closeCtx, closeCancel := options.closeContext2(startCtx, runCancel)
+					closeCtx, closeCancel := options.closeContext(startCtx, runCancel)
 					defer closeCancel()
 					// start the close sequence
 					messages <- &eventError{err: RunnerClose(closeCtx, runner)}
@@ -391,26 +396,7 @@ type closerContext struct {
 	cancel func()
 }
 
-// start starts closers functions and captures an error
-func (c *closerContext) start(errorCh chan error, chanWriters *sync.WaitGroup, closers ...func(context.Context) error) {
-	for _, closer := range closers {
-		closer := closer
-		c.erg.Go(func() error {
-			return closer(c.ctx)
-		})
-	}
-
-	// closers go routine
-	go func() {
-		defer chanWriters.Done()
-		err := c.erg.Wait()
-		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			errorCh <- err
-		}
-	}()
-}
-
-// start starts closers functions and captures an error
+// startClosers starts closers functions and captures an error
 func (c *closerContext) startClosers(messages chan any, closers ...func(context.Context) error) {
 	for _, closer := range closers {
 		c.erg.Go(func() error {

@@ -14,19 +14,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func reportingRunner(name string, fce ...func()) plumber.Runner {
-	return plumber.GracefulRunner(func(ctx context.Context) error {
-		fmt.Println("runner", name, "started")
-		for _, f := range fce {
-			f()
-		}
-		return nil
-	}, func(ctx context.Context) error {
-		fmt.Println("runner", name, "closed")
-		return nil
-	})
-}
-
 // nolint: unparam //Why: not yet
 func reportingBlockingRunner(name string, fce ...func()) plumber.Runner {
 	return plumber.GracefulRunner(func(ctx context.Context) error {
@@ -67,7 +54,6 @@ func reportingLooperRunner(name string) plumber.RunnerCloser {
 				})
 			}
 		}
-
 	})
 }
 
