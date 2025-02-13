@@ -37,7 +37,7 @@ func (l *BaseLooper) Close(ctx context.Context) error {
 }
 
 // Ready signals that runner is ready
-func (l *BaseLooper) Ready() (<-chan struct{}, error) {
+func (l *BaseLooper) Ready() <-chan struct{} {
 	return RunnerReady(l.runner)
 }
 
@@ -88,7 +88,7 @@ func (l *Loop) Closing() <-chan DoneFunc {
 //	        }
 //	    }
 //	})
-func Looper(run func(ctx context.Context, loop *Loop) error) Runner {
+func Looper(run func(ctx context.Context, loop *Loop) error) RunnerCloser {
 	var (
 		runOnce    sync.Once
 		closeOnce  sync.Once

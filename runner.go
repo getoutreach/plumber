@@ -18,7 +18,7 @@ type Runner interface {
 // Readier describes Runner that can signal whether it is ready.
 // This is useful when Runners needs to be execute with the Pipeline sequentially.
 type Readier interface {
-	Ready() (<-chan struct{}, error)
+	Ready() <-chan struct{}
 }
 
 // Closeable describes Runner that can be graceful closed. Close method must be idempotent.
@@ -95,8 +95,8 @@ func NewRunner(run func(ctx context.Context) error, opts ...RunnerOption) SmartR
 }
 
 // Ready signals that runner is ready
-func (r *runner) Ready() (<-chan struct{}, error) {
-	return r.options.ready(), nil
+func (r *runner) Ready() <-chan struct{} {
+	return r.options.ready()
 }
 
 // Run executes a task
@@ -128,11 +128,11 @@ var closedCh = func() <-chan struct{} {
 
 // RunnerReady return channel that can be used to check if runner is ready.
 // When channel is closed runner can be considered ready.
-func RunnerReady(runner Runner) (<-chan struct{}, error) {
+func RunnerReady(runner Runner) <-chan struct{} {
 	if r, ok := runner.(Readier); ok {
 		return r.Ready()
 	}
-	return closedCh, nil
+	return closedCh
 }
 
 // RunnerClose calls Close method on given Runner when supported
