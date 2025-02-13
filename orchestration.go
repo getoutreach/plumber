@@ -330,14 +330,14 @@ func Start(xctx context.Context, runner Runner, opts ...Option) error {
 		}()
 		var running bool
 		var closing bool
-		errors := []error{}
+		errs := []error{}
 		for m := range messages {
 			switch m := m.(type) {
 			// close requested
 			case *eventClose:
 				// we are not running so we are safe to exit
 				if !running {
-					return errors
+					return errs
 				}
 				if closing {
 					continue
@@ -364,17 +364,17 @@ func Start(xctx context.Context, runner Runner, opts ...Option) error {
 				// runner has finished running
 			case *eventFinished:
 				if m.err != nil {
-					errors = append(errors, m.err)
+					errs = append(errs, m.err)
 				}
-				return errors
+				return errs
 				// some error occurred
 			case *eventError:
 				if m.err != nil {
-					errors = append(errors, m.err)
+					errs = append(errs, m.err)
 				}
 			}
 		}
-		return errors
+		return errs
 	}()...)
 }
 
@@ -399,9 +399,11 @@ type closerContext struct {
 // startClosers starts closers functions and captures an error
 func (c *closerContext) startClosers(messages chan any, closers ...func(context.Context) error) {
 	for _, closer := range closers {
-		c.erg.Go(func() error {
-			return closer(c.ctx)
-		})
+		func(func(context.Context) error) {
+			c.erg.Go(func() error {
+				return closer(c.ctx)
+			})
+		}(closer)
 	}
 
 	// closers go routine
