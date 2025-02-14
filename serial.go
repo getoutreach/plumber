@@ -24,11 +24,8 @@ type runningRunner struct {
 type SerialPipeline struct {
 	runners   []Runner
 	options   *PipelineOptions
-	closed    chan struct{}
-	signal    *Signal
+	ready     *Signal
 	errSignal *Signal
-
-	closeSignal *Signal
 
 	messages chan any
 }
@@ -40,11 +37,8 @@ func Pipeline(runners ...Runner) *SerialPipeline {
 	return &SerialPipeline{
 		runners:   runners,
 		options:   &PipelineOptions{},
-		closed:    make(chan struct{}),
-		signal:    NewSignal(),
+		ready:     NewSignal(),
 		errSignal: NewSignal(),
-
-		closeSignal: NewSignal(),
 
 		messages: make(chan any, 10),
 	}
@@ -54,8 +48,8 @@ func (r *SerialPipeline) Errored() <-chan struct{} {
 	return r.errSignal.C()
 }
 
-func (r *SerialPipeline) Ready() (<-chan struct{}, error) {
-	return r.signal.C(), nil
+func (r *SerialPipeline) Ready() <-chan struct{} {
+	return r.ready.C()
 }
 
 // Run executes Run method on internal runners one by one with given order.
@@ -138,6 +132,10 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 			case *eventRunnerStart:
 				workerID++
 				if closing || workerID > len(r.runners) {
+					if !closing {
+						// We are all ready and running
+						r.ready.Notify()
+					}
 					// we are all running or closing
 					continue
 				}
@@ -230,8 +228,8 @@ func (r *SerialNonBlockingPipeline) Errored() <-chan struct{} {
 	return r.errSignal.C()
 }
 
-func (r *SerialNonBlockingPipeline) Ready() (<-chan struct{}, error) {
-	return r.signal.C(), nil
+func (r *SerialNonBlockingPipeline) Ready() <-chan struct{} {
+	return r.signal.C()
 }
 
 // Run executes Run method on internal runners one by one with given order.

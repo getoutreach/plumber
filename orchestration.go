@@ -132,8 +132,8 @@ func (r *ParallelPipeline) Errored() <-chan struct{} {
 	return r.errSignal.C()
 }
 
-func (r *ParallelPipeline) Ready() (<-chan struct{}, error) {
-	return r.signal.C(), nil
+func (r *ParallelPipeline) Ready() <-chan struct{} {
+	return r.signal.C()
 }
 
 // Run executes Run method on internal runners in parallel.
