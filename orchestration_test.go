@@ -70,8 +70,7 @@ func erroringCloser(name string) plumber.Runner {
 	})
 }
 
-// ExamplePipeline demonstrates how serial pipeline is handling workers and how closing sequence looks like
-// it closes all workers in reversed order and waiting for each worker to return from it Run method before closing next one
+// ExampleReadySignal demonstrates how to get notified when serial pipeline all ready
 func ExampleReadySignal() {
 	var (
 		ready = plumber.NewSignal()
