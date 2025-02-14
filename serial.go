@@ -26,6 +26,7 @@ type SerialPipeline struct {
 	options   *PipelineOptions
 	ready     *Signal
 	errSignal *Signal
+	closed    *Signal
 
 	messages chan any
 }
@@ -36,9 +37,10 @@ type SerialPipeline struct {
 func Pipeline(runners ...Runner) *SerialPipeline {
 	return &SerialPipeline{
 		runners:   runners,
-		options:   &PipelineOptions{},
+		options:   NewPipelineOptions(),
 		ready:     NewSignal(),
 		errSignal: NewSignal(),
+		closed:    NewSignal(),
 
 		messages: make(chan any, 10),
 	}
@@ -157,8 +159,12 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 							}
 						}()
 
-						err := running.runner.Run(runCtx)
+						go r.options.ErrorNotifier.Forward(ctx, running.runner, r.closed, r.errSignal)
 
+						err := running.runner.Run(runCtx)
+						if err != nil {
+							r.options.ErrorNotifier.Notify(r.errSignal)
+						}
 						r.messages <- &eventError{err: err}
 						// we can close another runner or start closing the pipeline
 						r.messages <- &eventRunnerClose{id: running.id}
@@ -204,7 +210,7 @@ type SerialNonBlockingPipeline struct {
 	runners   []Runner
 	options   *PipelineOptions
 	closing   atomic.Bool
-	closed    chan struct{}
+	closed    *Signal
 	closeOnce sync.Once
 	signal    *Signal
 	errSignal *Signal
@@ -217,8 +223,8 @@ type SerialNonBlockingPipeline struct {
 func PipelineNonBlocking(runners ...Runner) *SerialNonBlockingPipeline {
 	return &SerialNonBlockingPipeline{
 		runners:   runners,
-		options:   &PipelineOptions{},
-		closed:    make(chan struct{}),
+		options:   NewPipelineOptions(),
+		closed:    NewSignal(),
 		signal:    NewSignal(),
 		errSignal: NewSignal(),
 	}
@@ -265,7 +271,7 @@ func (r *SerialNonBlockingPipeline) Run(ctx context.Context) error {
 
 				// We need to check those again since select does not guarantee the priority
 				select {
-				case <-r.closed:
+				case <-r.closed.C():
 				case <-ctx.Done():
 				default:
 					runner := r.runners[index]
@@ -288,18 +294,18 @@ func (r *SerialNonBlockingPipeline) Run(ctx context.Context) error {
 							ready := RunnerReady(runner)
 
 							select {
-							case <-r.closed:
+							case <-r.closed.C():
 							case <-ctx.Done():
 							case <-ready:
 								readyCh <- struct{}{}
 							}
 						}()
 
-						go forwardErrorSignal(ctx, runner, r.closed, r.errSignal)
+						go r.options.ErrorNotifier.Forward(ctx, runner, r.closed, r.errSignal)
 
 						err := runner.Run(ctx)
 						if err != nil && !r.closing.Load() {
-							r.errSignal.Notify()
+							r.options.ErrorNotifier.Notify(r.errSignal)
 						}
 						if err != nil {
 							errored.Store(true)
@@ -307,7 +313,7 @@ func (r *SerialNonBlockingPipeline) Run(ctx context.Context) error {
 						}
 					}()
 				}
-			case <-r.closed:
+			case <-r.closed.C():
 				return
 			case <-ctx.Done():
 				return
@@ -332,7 +338,7 @@ func (r *SerialNonBlockingPipeline) Run(ctx context.Context) error {
 func (r *SerialNonBlockingPipeline) Close(ctx context.Context) error {
 	var closeErrors []error
 	r.closeOnce.Do(func() {
-		close(r.closed)
+		r.closed.Notify()
 		for i := len(r.runners) - 1; i >= 0; i-- {
 			var runner = r.runners[i]
 			if err := RunnerClose(ctx, runner); err != nil {

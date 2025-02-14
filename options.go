@@ -18,6 +18,7 @@ type Options struct {
 	finalizers   []func()
 	Cancel       func()
 	CloseTimeout time.Duration
+	readySignal  *Signal
 }
 
 // Apply applies given options into Options struct
@@ -189,5 +190,13 @@ func DetachContext() Option {
 			cancel()
 		})
 		return ContextCloser(parentCtx)(detachedContext, o)
+	}
+}
+
+// ReadySignal sets a signal that will be notified when the pipeline is ready
+func ReadySignal(readySignal *Signal) Option {
+	return func(parentCtx context.Context, o *Options) context.Context {
+		o.readySignal = readySignal
+		return parentCtx
 	}
 }

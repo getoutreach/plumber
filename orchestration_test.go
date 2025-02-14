@@ -70,6 +70,49 @@ func erroringCloser(name string) plumber.Runner {
 	})
 }
 
+// ExamplePipeline demonstrates how serial pipeline is handling workers and how closing sequence looks like
+// it closes all workers in reversed order and waiting for each worker to return from it Run method before closing next one
+func ExampleReadySignal() {
+	var (
+		ready = plumber.NewSignal()
+		ctx   = context.Background()
+	)
+
+	go func() {
+		<-ready.C()
+		fmt.Println("--- pipeline all ready")
+	}()
+
+	err := plumber.Start(ctx,
+		plumber.Pipeline(
+			plumber.Pipeline(
+				reportingLooperRunner("worker #1"),
+				reportingLooperRunner("worker #2"),
+			),
+			reportingLooperRunner("worker #3"),
+		),
+		plumber.TTL(1*time.Second),
+		plumber.ReadySignal(ready),
+	)
+	if err != nil {
+		panic(err)
+	}
+	// Output:
+	// runner[ worker #1 ] starting
+	// runner[ worker #1 ] working
+	// runner[ worker #2 ] starting
+	// runner[ worker #2 ] working
+	// runner[ worker #3 ] starting
+	// runner[ worker #3 ] working
+	// --- pipeline all ready
+	// runner[ worker #3 ] closing
+	// runner[ worker #3 ] finished
+	// runner[ worker #2 ] closing
+	// runner[ worker #2 ] finished
+	// runner[ worker #1 ] closing
+	// runner[ worker #1 ] finished
+}
+
 func TestCloseTimeout(t *testing.T) {
 	ctx := context.Background()
 

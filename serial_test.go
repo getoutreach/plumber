@@ -2,7 +2,6 @@ package plumber_test
 
 import (
 	"context"
-	"testing"
 	"time"
 
 	"github.com/getoutreach/plumber"
@@ -43,22 +42,4 @@ func ExamplePipeline() {
 	// runner[ worker #2 ] finished
 	// runner[ worker #1 ] closing
 	// runner[ worker #1 ] finished
-}
-
-func TestPipelineReady(t *testing.T) {
-	ctx := context.Background()
-	err := plumber.Start(ctx,
-		plumber.Pipeline(
-			plumber.Pipeline(
-				reportingLooperRunner("worker #1"),
-				reportingLooperRunner("worker #2"),
-				reportingLooperRunner("worker #3"),
-			),
-			reportingLooperRunner("worker #4"),
-		),
-		plumber.TTL(1*time.Second),
-	)
-	if err != nil {
-		panic(err)
-	}
 }

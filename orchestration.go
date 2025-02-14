@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"sync/atomic"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -100,136 +99,6 @@ func Closer(closeFunc CallbackFunc) Runner {
 	}, WithClose(closeFunc))
 }
 
-// ParallelPipeline is a parallel runner closer orchestrator
-// The runners are started and closed in concurrent fashion.
-// The Run or Close are invoked independently
-type ParallelPipeline struct {
-	runners []Runner
-	wg      sync.WaitGroup
-	options *PipelineOptions
-	closing atomic.Bool
-
-	closed    chan struct{}
-	closeOnce sync.Once
-	signal    *Signal
-	errSignal *Signal
-}
-
-// Parallel creates a concurrent Runner executor.
-// When started it will execute runners Run and Close methods in parallel.
-// Run and Close will block till all runner's corresponding methods are returned.
-func Parallel(runners ...Runner) *ParallelPipeline {
-	return &ParallelPipeline{
-		runners:   runners,
-		options:   &PipelineOptions{},
-		signal:    NewSignal(),
-		errSignal: NewSignal(),
-		closed:    make(chan struct{}),
-	}
-}
-
-func (r *ParallelPipeline) Errored() <-chan struct{} {
-	return r.errSignal.C()
-}
-
-func (r *ParallelPipeline) Ready() <-chan struct{} {
-	return r.signal.C()
-}
-
-// Run executes Run method on internal runners in parallel.
-// It partially implement Runner interface.
-// The it returns when all runner's Run methods are returned.
-func (r *ParallelPipeline) Run(ctx context.Context) error {
-	var (
-		readyCh = make(chan struct{}, len(r.runners))
-		errs    = make(ErrorCh, len(r.runners))
-	)
-	r.wg.Add(len(r.runners))
-
-	go func() {
-		var counter = 0
-		for {
-			select {
-			case <-readyCh:
-				counter++
-			case <-r.closed:
-				break
-			case <-ctx.Done():
-				break
-			}
-			if counter == len(r.runners) {
-				r.signal.Notify()
-				break
-			}
-		}
-		r.wg.Wait()
-		close(errs)
-	}()
-
-	if !r.options.KeepRunningOnError {
-		closeOnError(ctx, r.errSignal, r)
-	}
-
-	for _, runner := range r.runners {
-		go func(runner Runner) {
-			defer r.wg.Done()
-
-			// Wait for the runner to be ready
-			go func() {
-				ready := RunnerReady(runner)
-				select {
-				case <-ready:
-					readyCh <- struct{}{}
-				case <-ctx.Done():
-				}
-			}()
-
-			go forwardErrorSignal(ctx, runner, r.closed, r.errSignal)
-
-			err := runner.Run(ctx)
-			if err != nil && !r.closing.Load() {
-				r.errSignal.Notify()
-			}
-			errs <- err
-		}(runner)
-	}
-
-	return errors.Join(errs.Errors()...)
-}
-
-// Close executes Close method on internal runners in in parallel.
-// It partially implement Closer interface.
-// The it returns when all runner's Close methods are returned.
-func (r *ParallelPipeline) Close(ctx context.Context) error {
-	r.closeOnce.Do(func() {
-		close(r.closed)
-	})
-	r.closing.Store(true)
-	var (
-		closeErrors = make(ErrorCh, len(r.runners))
-		wg          sync.WaitGroup
-	)
-	wg.Add(len(r.runners))
-	for i := len(r.runners) - 1; i >= 0; i-- {
-		var runner = r.runners[i]
-		go func() {
-			defer wg.Done()
-			if err := RunnerClose(ctx, runner); err != nil {
-				closeErrors <- err
-			}
-		}()
-	}
-	wg.Wait()
-	close(closeErrors)
-	return errors.Join(closeErrors.Errors()...)
-}
-
-// With applies the pipeline options
-func (r *ParallelPipeline) With(oo ...PipelineOption) *ParallelPipeline {
-	r.options.apply(oo...)
-	return r
-}
-
 // PipelineRunner creates a pipeline runner so the pipeline it self can be started and closed
 func PipelineRunner(runner Runner, opts ...Option) RunnerCloser {
 	var (
@@ -253,6 +122,15 @@ func PipelineRunner(runner Runner, opts ...Option) RunnerCloser {
 
 // eventRun is a event run event type for runner state machine
 type eventRun struct {
+}
+
+// eventReady is a event runner ready event type for runner state machine
+type eventReady struct {
+}
+
+// eventClosed is a event all runner closed  event type for runner state machine
+type eventClosed struct {
+	err error
 }
 
 // eventRunnerStart is a event start event type for runner state machine
@@ -358,6 +236,17 @@ func Start(xctx context.Context, runner Runner, opts ...Option) error {
 				running = true
 				// runner go routine
 				go func() {
+					// notify about pipeline readiness
+					if options.readySignal != nil {
+						ready := RunnerReady(runner)
+						go func() {
+							select {
+							case <-ready:
+								options.readySignal.Notify()
+							case <-runCtx.Done():
+							}
+						}()
+					}
 					err := runner.Run(runCtx)
 					messages <- &eventFinished{err: err}
 				}()
@@ -417,7 +306,15 @@ func (c *closerContext) startClosers(messages chan any, closers ...func(context.
 
 // PipelineOptions holds a pipeline options
 type PipelineOptions struct {
+	ErrorNotifier      ErrorNotifierStrategy
 	KeepRunningOnError bool
+}
+
+// NewPipelineOptions creates a default instance of PipelineOptions
+func NewPipelineOptions() *PipelineOptions {
+	return &PipelineOptions{
+		ErrorNotifier: NotifyingErrorNotifier{},
+	}
 }
 
 // PipelineOption is a option patter struct for PipelineOptions
@@ -430,10 +327,10 @@ func (o *PipelineOptions) apply(oo ...PipelineOption) {
 	}
 }
 
-// KeepWhenErrored make the pipeline
-func KeepRunningOnError() func(*PipelineOptions) {
+// WithErrorNotifier overrides default error notifier strategy
+func WithErrorNotifier(errorNotifier ErrorNotifierStrategy) func(*PipelineOptions) {
 	return func(o *PipelineOptions) {
-		o.KeepRunningOnError = true
+		o.ErrorNotifier = errorNotifier
 	}
 }
 
