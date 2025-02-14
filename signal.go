@@ -36,20 +36,6 @@ func NewSignal() *Signal {
 	}
 }
 
-// forwardErrorSignal forward information that a Runner errored to given signal instance
-func forwardErrorSignal(ctx context.Context, runner Runner, closed <-chan struct{}, signal *Signal) {
-	if notifier, ok := runner.(ErrorNotifier); ok {
-		select {
-		case <-closed:
-			return
-		case <-ctx.Done():
-			return
-		case <-notifier.Errored():
-			signal.Notify()
-		}
-	}
-}
-
 // closeOnError when given signal reports error that runner is closed
 func closeOnError(ctx context.Context, signal *Signal, runner Closeable) {
 	go func() {
@@ -61,3 +47,40 @@ func closeOnError(ctx context.Context, signal *Signal, runner Closeable) {
 		}
 	}()
 }
+
+// ErrorNotifierStrategy is a strategy to notify about errors
+type ErrorNotifierStrategy interface {
+	Forward(ctx context.Context, runner Runner, closed, signal *Signal)
+	Notify(signal *Signal)
+}
+
+// NotifyingErrorNotifier is a strategy that forwards error notifications
+type NotifyingErrorNotifier struct{}
+
+// Forward forwards error notifications
+func (NotifyingErrorNotifier) Forward(ctx context.Context, runner Runner, closed, signal *Signal) {
+	if notifier, ok := runner.(ErrorNotifier); ok {
+		select {
+		case <-closed.C():
+			return
+		case <-ctx.Done():
+			return
+		case <-notifier.Errored():
+			signal.Notify()
+		}
+	}
+}
+
+// Notify notifies about errors
+func (NotifyingErrorNotifier) Notify(signal *Signal) {
+	signal.Notify()
+}
+
+// NoopErrorNotifier is a strategy that does not notify about the errors
+type NoopErrorNotifier struct{}
+
+// Forward forwards error notifications
+func (NoopErrorNotifier) Forward(ctx context.Context, runner Runner, closed, signal *Signal) {}
+
+// Notify notifies about errors
+func (NoopErrorNotifier) Notify(signal *Signal) {}
