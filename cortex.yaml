@@ -39,8 +39,8 @@ info:
     repo: https://github.com/getoutreach/plumber
     framework: stencil
     language: Golang
-    stencil_version: v1.38.0
-    golang_version: 1.22.0
+    stencil_version: v1.40.1
+    golang_version: 1.23.4
     cli: false
     service: false
     product: Outreach
@@ -50,8 +50,8 @@ info:
     reporting_team: ce-ecs
     lintroller: platinum
   x-cortex-groups:
-    - lifecycle: in_development
-    - product: Outreach
-    - language: Golang
-    - framework: stencil
-    - engOrg: ce
+    - lifecycle:in_development
+    - product:Outreach
+    - language:Golang
+    - framework:stencil
+    - engOrg:ce
