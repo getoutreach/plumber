@@ -535,7 +535,6 @@ type closerContext struct {
 // start starts closers functions and captures an error
 func (c *closerContext) start(errorCh chan error, chanWriters *sync.WaitGroup, closers ...func(context.Context) error) {
 	for _, closer := range closers {
-		closer := closer
 		c.erg.Go(func() error {
 			return closer(c.ctx)
 		})
