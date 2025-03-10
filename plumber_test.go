@@ -63,6 +63,57 @@ func TestDefineOnce(t *testing.T) {
 	assert.Equal(t, a.D2.Must(), 3)
 }
 
+func TestConcurrency(t *testing.T) {
+	for i := 0; i < 1000; i++ {
+		t.Run("run", func(t *testing.T) {
+			a := struct {
+				D1 plumber.D[*http.Server]
+				D2 plumber.D[*http.Server]
+				D3 plumber.D[*http.Server]
+			}{}
+
+			a.D1.Named("D1").Define(func() *http.Server {
+				return &http.Server{}
+			})
+
+			a.D2.Named("D2").Resolver(func(r *plumber.Resolution[*http.Server]) {
+				r.Require(&a.D1).Then(func() {
+					r.Resolve(&http.Server{})
+				})
+			})
+
+			a.D3.Named("D3").Resolver(func(r *plumber.Resolution[*http.Server]) {
+				r.Require(&a.D2).Then(func() {
+					r.Resolve(&http.Server{})
+				})
+			})
+
+			wg := sync.WaitGroup{}
+			wg.Add(3)
+
+			go func() {
+				defer wg.Done()
+				err := a.D3.Error()
+				assert.NilError(t, err)
+			}()
+
+			go func() {
+				defer wg.Done()
+				err := a.D2.Error()
+				assert.NilError(t, err)
+			}()
+
+			go func() {
+				defer wg.Done()
+				err := a.D1.Error()
+				assert.NilError(t, err)
+			}()
+
+			wg.Wait()
+		})
+	}
+}
+
 func TestRequireOk(t *testing.T) {
 	type dep struct {
 		D1 int

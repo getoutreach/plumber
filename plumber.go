@@ -84,6 +84,7 @@ type D[T any] struct {
 	err               error
 	once              sync.Once
 	mx                sync.Mutex
+	depMx             sync.RWMutex
 	resolve           func()
 	deps              []Dependency
 	listeners         []func()
@@ -249,7 +250,11 @@ func (d *D[T]) Resolved() bool {
 
 // Iterate iterates dependency graph, when callback returns true iterator will continue down stream
 func (d *D[T]) Iterate(callback func(dep Dependency) bool) {
-	for _, dep := range d.deps {
+	d.depMx.RLock()
+	defer d.depMx.RUnlock()
+
+	deps := d.deps
+	for _, dep := range deps {
 		if !callback(dep) {
 			break
 		}
@@ -461,7 +466,9 @@ func (r *Resolution[T]) ResolveError(v T, err error) {
 // Require allows to define a dependant for the current value
 // It is a necessary to call Then to trigger a dependency evaluation
 func (r *Resolution[T]) Require(deps ...Dependency) *Future[T] {
+	r.d.depMx.Lock()
 	r.d.deps = deps
+	r.d.depMx.Unlock()
 	f := &Future[T]{
 		d: r.d,
 	}
