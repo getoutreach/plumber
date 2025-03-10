@@ -1,17 +1,21 @@
 module github.com/getoutreach/plumber
 
-go 1.22.0
+go 1.23.0
 
-toolchain go1.22.6
+toolchain go1.23.4
 
 require (
 	github.com/samber/lo v1.49.1
 	gotest.tools/v3 v3.5.2
 )
 
-require golang.org/x/text v0.21.0 // indirect
+require (
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	golang.org/x/text v0.21.0 // indirect
+)
 
 require (
-	github.com/google/go-cmp v0.5.9 // indirect
-	golang.org/x/sync v0.11.0
+	github.com/google/go-cmp v0.6.0 // indirect
+	golang.org/x/sync v0.12.0
 )

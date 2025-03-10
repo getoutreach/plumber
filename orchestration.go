@@ -288,11 +288,9 @@ type closerContext struct {
 // startClosers starts closers functions and captures an error
 func (c *closerContext) startClosers(messages chan any, closers ...func(context.Context) error) {
 	for _, closer := range closers {
-		func(func(context.Context) error) {
-			c.erg.Go(func() error {
-				return closer(c.ctx)
-			})
-		}(closer)
+		c.erg.Go(func() error {
+			return closer(c.ctx)
+		})
 	}
 
 	// closers go routine
