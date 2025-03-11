@@ -434,12 +434,9 @@ func (r *R[T]) Close(ctx context.Context) error {
 	return RunnerClose(ctx, r.runnable)
 }
 
-func (r *R[T]) Ready() (<-chan struct{}, error) {
+func (r *R[T]) Ready() <-chan struct{} {
 	if err := r.d.Error(); err != nil {
-		return nil, err
-	}
-	if r.runnable == nil {
-		return nil, fmt.Errorf("Runnable %s not resolved 4", &r.d)
+		return nil
 	}
 	return RunnerReady(r.runnable)
 }
