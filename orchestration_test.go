@@ -500,3 +500,56 @@ func TestPipelineCloseBeforeRun(t *testing.T) {
 
 	wg.Wait()
 }
+
+// The test is intended not to hang
+func TestPipelineWithCloser(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var closed uint32
+
+	runner := plumber.PipelineRunner(
+		plumber.Pipeline(
+			plumber.Closer(func(ctx context.Context) error {
+				atomic.AddUint32(&closed, 1)
+				return nil
+			}),
+			plumber.Closer(func(ctx context.Context) error {
+				atomic.AddUint32(&closed, 1)
+				return nil
+			}),
+			plumber.Looper(func(ctx context.Context, loop *plumber.Loop) error {
+				loop.Ready()
+				for {
+					select {
+					case closed := <-loop.Closing():
+						closed.Success()
+						return nil
+					case <-ctx.Done():
+						return ctx.Err()
+					default:
+						time.Sleep(100 * time.Millisecond)
+					}
+				}
+			}),
+		),
+	)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		time.Sleep(1000 * time.Millisecond)
+		runner.Close(context.Background())
+	}()
+
+	go func() {
+		defer wg.Done()
+		err := plumber.UnlessCanceled(runner.Run(ctx))
+		assert.NilError(t, err)
+	}()
+
+	wg.Wait()
+
+	assert.Equal(t, closed, uint32(2))
+}
