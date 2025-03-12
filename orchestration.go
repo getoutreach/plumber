@@ -92,11 +92,20 @@ func ReadyRunner(run func(ctx context.Context, ready ReadyFunc) error) Runner {
 }
 
 // Closer creates a runner implementing Closer interface based on supplied close function with noop Run method
+// run method will block until context is done or close function is invoked
 func Closer(closeFunc CallbackFunc) Runner {
+	signal := NewSignal()
 	return NewRunner(func(ctx context.Context) error {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-signal.C():
+		}
 		return nil
-	}, WithClose(closeFunc))
+	}, WithClose(func(ctx context.Context) error {
+		err := closeFunc(ctx)
+		signal.Notify()
+		return err
+	}))
 }
 
 // PipelineRunner creates a pipeline runner so the pipeline it self can be started and closed
