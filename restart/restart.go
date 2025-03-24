@@ -126,7 +126,7 @@ func NewNonRestartableError(err error) error {
 	return &NonRestartableError{err}
 }
 
-// IsNonRestartableError checks if there is any error in the chain of type NewNonRestartableError
+// IsNonRestartableError checks if there is any error in the chain of type NonRestartableError
 func IsNonRestartableError(err error) bool {
 	var re *NonRestartableError
 	return errors.As(err, &re)

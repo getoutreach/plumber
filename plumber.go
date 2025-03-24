@@ -229,7 +229,7 @@ func (d *D[T]) MakeInstanceError() (T, error) {
 	return d.instanceErrorFunc()
 }
 
-// MakeInstanceError builds new instance and returns a value if error occurs it panics
+// MakeInstance builds new instance and returns a value if error occurs it panics
 func (d *D[T]) MakeInstance() T {
 	instance, err := d.instanceErrorFunc()
 	if err != nil {
