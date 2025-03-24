@@ -21,8 +21,8 @@ type InstanceableRunner[O plumber.Runner] interface {
 
 // Always is a runner that is automatically restarted in case of error
 // Unless the error is of type NonRestartableError
-func Always() RestartOption {
-	return func(o *RestartOptions) {
+func Always() Option {
+	return func(o *Options) {
 		o.ErrDecider = func(e error) bool {
 			return !IsNonRestartableError(e)
 		}
@@ -30,26 +30,26 @@ func Always() RestartOption {
 }
 
 // WithDelay defines an delay before restarting the runner
-func WithDelay(d time.Duration) RestartOption {
-	return func(o *RestartOptions) {
+func WithDelay(d time.Duration) Option {
+	return func(o *Options) {
 		o.Delay = d
 	}
 }
 
-// RestartOptions is the options for the restartable runner
-type RestartOptions struct {
+// Options is the options for the restartable runner
+type Options struct {
 	// ErrDecider is a function that decides if the error should be restarted
 	ErrDecider func(error) bool
 	// Delay is the time to wait before restarting
 	Delay time.Duration
 }
 
-// RestartOption is a function that sets the options for the restartable runner
-type RestartOption func(o *RestartOptions)
+// Option is a function that sets the options for the restartable runner
+type Option func(o *Options)
 
 // Restartable creates a runner that is automatically restarted in case of error
-func Restartable[T plumber.Runner](makeInstance InstanceableRunner[T], options ...RestartOption) plumber.Runner {
-	o := &RestartOptions{}
+func Restartable[T plumber.Runner](makeInstance InstanceableRunner[T], options ...Option) plumber.Runner {
+	o := &Options{}
 	Always()(o)
 	for _, option := range options {
 		option(o)
