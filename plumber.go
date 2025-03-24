@@ -79,6 +79,7 @@ func (f *Future[T]) Then(callback func()) {
 type D[T any] struct {
 	resolving         bool
 	defined           bool
+	instanceErrorFunc func() (T, error)
 	resolved          bool
 	value             T
 	err               error
@@ -141,6 +142,7 @@ func (d *D[T]) define(resolve func(), callbacks ...func()) {
 
 // Define allows to define value using callback that returns a value and error
 func (d *D[T]) DefineError(resolve func() (T, error)) *D[T] {
+	d.instanceErrorFunc = resolve
 	d.define(func() {
 		d.value, d.err = resolve()
 	})
@@ -149,6 +151,9 @@ func (d *D[T]) DefineError(resolve func() (T, error)) *D[T] {
 
 // Define allows to define value using callback that returns a value
 func (d *D[T]) Define(resolve func() T) *D[T] {
+	d.instanceErrorFunc = func() (T, error) {
+		return resolve(), nil
+	}
 	d.define(func() {
 		d.value = resolve()
 	})
@@ -157,6 +162,9 @@ func (d *D[T]) Define(resolve func() T) *D[T] {
 
 // Const assigns a static value
 func (d *D[T]) Const(v T) *D[T] {
+	d.instanceErrorFunc = func() (T, error) {
+		return v, nil
+	}
 	d.define(func() {
 		d.value = v
 	})
@@ -165,6 +173,9 @@ func (d *D[T]) Const(v T) *D[T] {
 
 // Use overwrites defined value with specific instance. Should be used only for testings
 func (d *D[T]) Use(v T) *D[T] {
+	d.instanceErrorFunc = func() (T, error) {
+		return v, nil
+	}
 	d.resolved = true
 	d.value = v
 	return d
@@ -211,6 +222,20 @@ func (d *D[T]) InstanceError() (T, error) {
 func (d *D[T]) Error() error {
 	_, err := d.InstanceError()
 	return err
+}
+
+// MakeInstanceError builds new instance and returns a value and an error
+func (d *D[T]) MakeInstanceError() (T, error) {
+	return d.instanceErrorFunc()
+}
+
+// MakeInstanceError builds new instance and returns a value if error occurs it panics
+func (d *D[T]) MakeInstance() T {
+	instance, err := d.instanceErrorFunc()
+	if err != nil {
+		panic(err)
+	}
+	return instance
 }
 
 // setInstanceListener sets a listener that will be triggered when instance is retrieved
@@ -270,7 +295,28 @@ func (d *D[T]) Resolve(callback func(*Resolution[T])) *D[T] {
 // Resolver returns a callback providing a resolution orchestrator
 // Using the orchestrator we can define dependencies between values
 func (d *D[T]) Resolver(callback func(*Resolution[T])) *D[T] {
-	r := Resolution[T]{d: d}
+	r := Resolution[T]{
+		setInstance: func(v T) {
+			d.value = v
+		},
+		setError: func(err error) {
+			d.err = err
+		},
+		d: d,
+	}
+	d.instanceErrorFunc = func() (value T, err error) {
+		localR := Resolution[T]{
+			setInstance: func(v T) {
+				value = v
+			},
+			setError: func(e error) {
+				err = e
+			},
+			d: d,
+		}
+		callback(&localR)
+		return value, err
+	}
 	d.define(func() {
 		callback(&r)
 	}, func() {
@@ -443,18 +489,20 @@ func (r *R[T]) Ready() <-chan struct{} {
 
 // Resolution is value resolution orchestrator
 type Resolution[T any] struct {
-	d *D[T]
-	f *Future[T]
+	setInstance func(T)
+	setError    func(error)
+	d           *D[T]
+	f           *Future[T]
 }
 
 // Resolved ends the resolution with given value
 func (r *Resolution[T]) Resolve(v T) {
-	r.d.value = v
+	r.setInstance(v)
 }
 
 // Error ends resolution with and error
 func (r *Resolution[T]) Error(err error) {
-	r.d.err = err
+	r.setError(err)
 }
 
 // ResolveError ends the resolution with given value and error

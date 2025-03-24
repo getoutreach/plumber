@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -390,4 +391,42 @@ func fitHTTP(a *App) {
 			}))
 		})
 	})
+}
+
+func TestMakeInstanceError(t *testing.T) {
+	var counter uint32 = 1
+
+	s := struct {
+		D1 plumber.D[uint32]
+		D2 plumber.D[uint32]
+		D3 plumber.D[uint32]
+	}{}
+
+	s.D1.Define(func() uint32 {
+		return 1 * atomic.LoadUint32(&counter)
+	})
+
+	s.D2.DefineError(func() (uint32, error) {
+		return 2 * atomic.LoadUint32(&counter), nil
+	})
+
+	s.D3.Resolver(func(r *plumber.Resolution[uint32]) {
+		r.Require(&s.D1).Then(func() {
+			r.Resolve(4*atomic.LoadUint32(&counter) + s.D1.Instance() + s.D2.Instance())
+		})
+	})
+
+	v, err := s.D3.InstanceError()
+	assert.NilError(t, err)
+	assert.Equal(t, uint32(7), v)
+
+	atomic.AddUint32(&counter, 1)
+
+	v, err = s.D3.MakeInstanceError()
+	assert.NilError(t, err)
+	assert.Equal(t, uint32(11), v)
+
+	v, err = s.D3.InstanceError()
+	assert.NilError(t, err)
+	assert.Equal(t, uint32(7), v)
 }
