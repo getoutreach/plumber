@@ -22,6 +22,13 @@ func (f DoneFunc) Done(do func() error) {
 	f(do())
 }
 
+// Finish reports back runner status using given error
+func (f DoneFunc) Finish(err error) {
+	if f != nil {
+		f(err)
+	}
+}
+
 // Success reports back runner status as success. It is preferred then running Done(nil) to increase code readability.
 func (f DoneFunc) Success() {
 	f(nil)
