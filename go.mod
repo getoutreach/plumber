@@ -17,5 +17,5 @@ require (
 
 require (
 	github.com/google/go-cmp v0.6.0 // indirect
-	golang.org/x/sync v0.15.0
+	golang.org/x/sync v0.16.0
 )
