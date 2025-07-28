@@ -5,7 +5,6 @@ package plumber
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
@@ -103,8 +102,6 @@ func Looper(run func(ctx context.Context, loop *Loop) error) RunnerCloser {
 
 	return NewRunner(
 		func(ctx context.Context) error {
-			fmt.Println("!!! Looper Run started")
-			defer fmt.Println("!!! Looper Run completed")
 			var err error
 			runOnce.Do(func() {
 				l.ready = func() {

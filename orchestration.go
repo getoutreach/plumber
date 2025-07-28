@@ -6,7 +6,6 @@ package plumber
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
@@ -104,18 +103,13 @@ func ReadyRunner(run func(ctx context.Context, ready ReadyFunc) error) Runner {
 func Closer(closeFunc CallbackFunc) Runner {
 	signal := NewSignal()
 	return NewRunner(func(ctx context.Context) error {
-		fmt.Println("--- Closer Run started")
-		defer fmt.Println("---- Closer Run completed")
 		select {
 		case <-ctx.Done():
-			fmt.Println("---- context done in Closer Run")
 			return ctx.Err()
 		case <-signal.C():
-			fmt.Println("---- Closer Run signal received")
 			return nil
 		}
 	}, WithClose(func(ctx context.Context) error {
-		fmt.Println("--- Closer Close started")
 		err := closeFunc(ctx)
 		signal.Notify()
 		return err
@@ -236,7 +230,6 @@ func Start(xctx context.Context, runner Runner, opts ...Option) error {
 			switch m := m.(type) {
 			// close requested
 			case *eventClose:
-				fmt.Println("close requested")
 				// we are not running so we are safe to exit
 				if !running {
 					return errs
@@ -276,7 +269,6 @@ func Start(xctx context.Context, runner Runner, opts ...Option) error {
 				}()
 				// runner has finished running
 			case *eventFinished:
-				fmt.Println("runner finished running")
 				if m.err != nil {
 					errs = append(errs, m.err)
 				}
