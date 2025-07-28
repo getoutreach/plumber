@@ -5,6 +5,7 @@ package plumber
 
 import (
 	"context"
+	"sync"
 )
 
 // Runner describes basic runnable unit. Runner can be started.
@@ -83,6 +84,8 @@ func WithClose(closeFunc func(context.Context) error) RunnerOption {
 type runner struct {
 	options RunnerOptions
 	run     func(ctx context.Context) error
+
+	closeOnce sync.Once
 }
 
 // NewRunner returns an instance of the runner. Optionally supplied options might redefine other Runner method Close and Ready
@@ -108,10 +111,13 @@ func (r *runner) Run(ctx context.Context) error {
 // within defined duration otherwise run context will be canceled.
 // Close can block for configured duration. When exceeded close context is canceled
 func (r *runner) Close(ctx context.Context) error {
+	var err error
 	if r.options.close != nil {
-		return r.options.close(ctx)
+		r.closeOnce.Do(func() {
+			err = r.options.close(ctx)
+		})
 	}
-	return nil
+	return err
 }
 
 // GracefulRunner is runner supporting Run and Close methods
