@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 )
 
 // ParallelPipeline is a parallel runner closer orchestrator
@@ -20,6 +21,7 @@ type ParallelPipeline struct {
 	signal    *Signal
 	errSignal *Signal
 	messages  chan any
+	running   atomic.Bool
 }
 
 // Parallel creates a concurrent Runner executor.
@@ -59,9 +61,10 @@ func (r *ParallelPipeline) Run(ctx context.Context) error {
 		var finishedRunners int
 		var running bool
 		var closing bool
+		var closeContext = context.Background()
 		var closeDone chan error
 		var closeOnce sync.Once
-		var closeContext = context.Background()
+		r.running.Store(true)
 
 		errs := []error{}
 		for m := range r.messages {
@@ -74,7 +77,10 @@ func (r *ParallelPipeline) Run(ctx context.Context) error {
 				}
 			case *eventClose:
 				if !running {
-					return errs
+					if m.done != nil {
+						close(m.done)
+					}
+					continue
 				}
 				if closing {
 					if m.done != nil {
@@ -112,6 +118,7 @@ func (r *ParallelPipeline) Run(ctx context.Context) error {
 					errs = append(errs, m.err)
 				}
 				if finishedRunners == len(r.runners) {
+					r.closed.Notify()
 					return errs
 				}
 			}
@@ -163,16 +170,20 @@ func (r *ParallelPipeline) closeAll(ctx context.Context) {
 // Close executes Close method on internal runners in revered order to achieve graceful shutdown sequence
 // It implements Closer interface
 func (r *ParallelPipeline) Close(ctx context.Context) error {
+	if !r.running.Load() {
+		return nil
+	}
+
 	event := &eventClose{
 		closerContext: ctx,
 		done:          make(chan error, 1),
 	}
-	r.messages <- event
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case err := <-event.done:
-		return err
+	case r.messages <- event:
+		return nil
 	}
 }
 

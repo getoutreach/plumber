@@ -28,6 +28,8 @@ type SerialPipeline struct {
 	errSignal *Signal
 	closed    *Signal
 
+	running atomic.Bool
+
 	messages chan any
 }
 
@@ -42,7 +44,7 @@ func Pipeline(runners ...Runner) *SerialPipeline {
 		errSignal: NewSignal(),
 		closed:    NewSignal(),
 
-		messages: make(chan any, 10),
+		messages: make(chan any, 2000),
 	}
 }
 
@@ -75,6 +77,11 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 		var closeDone chan error
 		var closeOnce sync.Once
 		errs := []error{}
+
+		// signal that we are ready to run
+		// so close will wait for errors to be reported
+		r.running.Store(true)
+
 		for m := range r.messages {
 			switch m := m.(type) {
 			// close requested
@@ -122,6 +129,7 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 				}
 
 				if len(runningWorkers) == 0 {
+					r.closed.Notify()
 					closeOnce.Do(func() {
 						if closeDone == nil {
 							return
@@ -164,8 +172,8 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 						err := running.runner.Run(runCtx)
 						if err != nil {
 							r.options.ErrorNotifier.Notify(r.errSignal)
+							r.messages <- &eventError{err: err}
 						}
-						r.messages <- &eventError{err: err}
 						// we can close another runner or start closing the pipeline
 						r.messages <- &eventRunnerClose{id: running.id}
 					}(runner)
@@ -184,6 +192,9 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 // Close executes Close method on internal runners in revered order to achieve graceful shutdown sequence
 // It implements Closer interface
 func (r *SerialPipeline) Close(ctx context.Context) error {
+	if !r.running.Load() {
+		return nil
+	}
 	event := &eventClose{
 		closerContext: ctx,
 		done:          make(chan error, 1),
@@ -194,6 +205,8 @@ func (r *SerialPipeline) Close(ctx context.Context) error {
 		return ctx.Err()
 	case err := <-event.done:
 		return err
+	case <-r.closed.C():
+		return nil
 	}
 }
 

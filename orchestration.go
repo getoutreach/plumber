@@ -105,9 +105,10 @@ func Closer(closeFunc CallbackFunc) Runner {
 	return NewRunner(func(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
+			return ctx.Err()
 		case <-signal.C():
+			return nil
 		}
-		return nil
 	}, WithClose(func(ctx context.Context) error {
 		err := closeFunc(ctx)
 		signal.Notify()
