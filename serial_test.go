@@ -45,7 +45,7 @@ func TestCloseIsCalledWhenOneFailsAndNotStarted(t *testing.T) {
 		).With(plumber.CloseNotRunning()),
 		plumber.TTL(2*time.Second),
 	)
-	assert.Error(t, err, "runner worker #1 failed")
+	assert.ErrorContains(t, err, "runner worker #1 failed")
 	assert.Assert(t, called.Load(), "Close should be called when one of the runners fails")
 }
 
