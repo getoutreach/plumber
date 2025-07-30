@@ -168,7 +168,11 @@ func FuncCloser(providerCallback func(closeFunc func())) Option {
 
 // ContextCloser closes the Closer based on given context.
 // When given context is ended the closer invokes the Close method.
-func ContextCloser(parentCtx context.Context) Option {
+func ContextCloser(ctx ...context.Context) Option {
+	var parentCtx context.Context
+	if len(ctx) > 0 {
+		parentCtx = ctx[0]
+	}
 	return func(startCtx context.Context, o *Options) context.Context {
 		o.Closer(func(ctx context.Context) error {
 			if parentCtx == nil {
