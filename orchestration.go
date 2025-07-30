@@ -145,11 +145,6 @@ type eventRun struct {
 type eventReady struct {
 }
 
-// eventClosed is a event all runner closed  event type for runner state machine
-type eventClosed struct {
-	err error
-}
-
 // eventRunnerStart is a event start event type for runner state machine
 type eventRunnerStart struct {
 }
