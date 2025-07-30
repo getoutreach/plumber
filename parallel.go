@@ -22,6 +22,8 @@ type ParallelPipeline struct {
 	errSignal *Signal
 	messages  chan any
 	running   atomic.Bool
+
+	closeOnce sync.Once
 }
 
 // Parallel creates a concurrent Runner executor.
@@ -173,18 +175,22 @@ func (r *ParallelPipeline) Close(ctx context.Context) error {
 	if !r.running.Load() {
 		return nil
 	}
+	var err error
 
-	event := &eventClose{
-		closerContext: ctx,
-		done:          make(chan error, 1),
-	}
+	r.closeOnce.Do(func() {
+		event := &eventClose{
+			closerContext: ctx,
+			done:          make(chan error, 1),
+		}
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case r.messages <- event:
-		return nil
-	}
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		case r.messages <- event:
+			err = <-event.done
+		}
+	})
+	return err
 }
 
 // With applies the pipeline options
