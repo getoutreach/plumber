@@ -145,24 +145,21 @@ type eventRun struct {
 type eventReady struct {
 }
 
-// eventClosed is a event all runner closed  event type for runner state machine
-type eventClosed struct {
-	err error
-}
-
 // eventRunnerStart is a event start event type for runner state machine
 type eventRunnerStart struct {
 }
 
 // eventRunnerClose is a event runner close event type for runner state machine
 type eventRunnerClose struct {
-	id int
+	id  int
+	err error
 }
 
 // eventClose is a event close event type for runner state machine
 type eventClose struct {
 	closerContext context.Context
 	done          chan error
+	terminate     bool
 }
 
 // eventFinished is a event finish event type for runner state machine
@@ -323,6 +320,7 @@ func (c *closerContext) startClosers(messages chan any, closers ...func(context.
 type PipelineOptions struct {
 	ErrorNotifier      ErrorNotifierStrategy
 	KeepRunningOnError bool
+	CloseNotRunning    bool
 }
 
 // NewPipelineOptions creates a default instance of PipelineOptions
@@ -346,6 +344,14 @@ func (o *PipelineOptions) apply(oo ...PipelineOption) {
 func WithErrorNotifier(errorNotifier ErrorNotifierStrategy) func(*PipelineOptions) {
 	return func(o *PipelineOptions) {
 		o.ErrorNotifier = errorNotifier
+	}
+}
+
+// CloseNotRunning makes sure that close sequence will be executed even if the runner hasn't been started
+// This is useful for pipelines including runners that works as cleanup tasks that needs to be executed all the time
+func CloseNotRunning() func(*PipelineOptions) {
+	return func(o *PipelineOptions) {
+		o.CloseNotRunning = true
 	}
 }
 

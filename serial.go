@@ -30,6 +30,8 @@ type SerialPipeline struct {
 
 	running atomic.Bool
 
+	closeOnce sync.Once
+
 	messages chan any
 }
 
@@ -44,7 +46,7 @@ func Pipeline(runners ...Runner) *SerialPipeline {
 		errSignal: NewSignal(),
 		closed:    NewSignal(),
 
-		messages: make(chan any, 2000),
+		messages: make(chan any, len(runners)),
 	}
 }
 
@@ -56,27 +58,36 @@ func (r *SerialPipeline) Ready() <-chan struct{} {
 	return r.ready.C()
 }
 
+// runnersToClose returns a list of runners that should be closed based on the options
+func runnersToClose(o *PipelineOptions, started []runningRunner, all []Runner) []Runner {
+	// Lets close all started workers
+	workers := lo.Map(started, func(e runningRunner, _ int) Runner {
+		return e.runner
+	})
+	if o.CloseNotRunning {
+		workers = all
+	}
+	return workers
+}
+
 // Run executes Run method on internal runners one by one with given order.
 func (r *SerialPipeline) Run(ctx context.Context) error {
 	runCtx, runCancel := context.WithCancelCause(ctx)
 	defer runCancel(nil)
 
-	// lets try to start the runner
-	go func() {
-		r.messages <- &eventRun{}
-	}()
+	var returnCh = make(chan error, 1)
 
-	// main event loop
-	return errors.Join(func() []error {
-		var closeErrors []error
-		var running bool
-		var closing bool
-		var workerID int
-		var closeContext = context.Background()
-		var runningWorkers []runningRunner
-		var closeDone chan error
-		var closeOnce sync.Once
-		errs := []error{}
+	go func() {
+		var (
+			closeErrors    []error
+			running        bool
+			closing        bool
+			workerID       int
+			runningWorkers []runningRunner
+			startedWorkers []runningRunner
+			errs           = []error{}
+			terminate      bool
+		)
 
 		// signal that we are ready to run
 		// so close will wait for errors to be reported
@@ -86,26 +97,36 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 			switch m := m.(type) {
 			// close requested
 			case *eventClose:
-				if !running {
-					return errs
-				}
-				if closing {
-					continue
+				terminate = m.terminate || terminate
+				if !closing {
+					closerContext := m.closerContext
+					if closerContext == nil {
+						closerContext = ctx
+					}
+
+					workers := runnersToClose(r.options, startedWorkers, r.runners)
+
+					for i := len(workers) - 1; i >= 0; i-- {
+						runner := workers[i]
+						if err := RunnerClose(closerContext, runner); err != nil {
+							closeErrors = append(closeErrors, err)
+						}
+					}
+					startedWorkers = startedWorkers[:0]
 				}
 				closing = true
-				// We have nothing to close
-				if len(runningWorkers) == 0 {
-					return errs
-				}
 
-				// ensure we have a close context
-				if m.closerContext != nil {
-					closeContext = m.closerContext
+				if m.done != nil {
+					m.done <- errors.Join(closeErrors...)
+					close(m.done)
 				}
-				closeDone = m.done
-
-				r.messages <- &eventRunnerClose{}
-				// starting runner
+				if len(runningWorkers) > 0 {
+					continue
+				}
+				// Terminate from the loo
+				if terminate {
+					return
+				}
 			case *eventRun:
 				if running || closing {
 					continue
@@ -114,30 +135,21 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 				r.messages <- &eventRunnerStart{}
 				// runner has finished running
 			case *eventRunnerClose:
+				if m.err != nil {
+					errs = append(errs, m.err)
+				}
 				// filter out the one that has ended
 				if m.id > 0 {
 					runningWorkers = lo.Filter(runningWorkers, func(e runningRunner, _ int) bool {
 						return e.id != m.id
 					})
 				}
+				// Signal close event since something has finished
+				r.messages <- &eventClose{}
 
-				// if we still have runners to close we keep closing
-				if len(runningWorkers) > 0 {
-					last := runningWorkers[len(runningWorkers)-1]
-					// we can call synchronously close since we are anyway waiting for run to finish
-					closeErrors = append(closeErrors, RunnerClose(closeContext, last.runner))
-				}
-
+				// no more working workers so we can return from Run method
 				if len(runningWorkers) == 0 {
-					r.closed.Notify()
-					closeOnce.Do(func() {
-						if closeDone == nil {
-							return
-						}
-						closeDone <- errors.Join(closeErrors...)
-						close(closeDone)
-					})
-					return errs
+					returnCh <- errors.Join(errs...)
 				}
 			case *eventRunnerStart:
 				workerID++
@@ -154,8 +166,9 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 						runner: r.runners[id-1],
 						id:     id,
 					}
-
 					runningWorkers = append(runningWorkers, runner)
+					startedWorkers = append(startedWorkers, runner)
+
 					go func(running runningRunner) {
 						// Wait for the runner to become ready and then signal to start another runner
 						ready := RunnerReady(running.runner)
@@ -172,21 +185,18 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 						err := running.runner.Run(runCtx)
 						if err != nil {
 							r.options.ErrorNotifier.Notify(r.errSignal)
-							r.messages <- &eventError{err: err}
 						}
+
 						// we can close another runner or start closing the pipeline
-						r.messages <- &eventRunnerClose{id: running.id}
+						r.messages <- &eventRunnerClose{id: running.id, err: err}
 					}(runner)
 				}(workerID)
 				// some error occurred
-			case *eventError:
-				if m.err != nil {
-					errs = append(errs, m.err)
-				}
 			}
 		}
-		return errs
-	}()...)
+	}()
+	r.messages <- &eventRun{}
+	return <-returnCh
 }
 
 // Close executes Close method on internal runners in revered order to achieve graceful shutdown sequence
@@ -195,19 +205,23 @@ func (r *SerialPipeline) Close(ctx context.Context) error {
 	if !r.running.Load() {
 		return nil
 	}
-	event := &eventClose{
-		closerContext: ctx,
-		done:          make(chan error, 1),
-	}
-	r.messages <- event
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-event.done:
-		return err
-	case <-r.closed.C():
-		return nil
-	}
+	var returnErr error
+
+	r.closeOnce.Do(func() {
+		event := &eventClose{
+			closerContext: ctx,
+			done:          make(chan error, 1),
+			terminate:     true,
+		}
+		r.messages <- event
+		select {
+		case <-ctx.Done():
+			returnErr = ctx.Err()
+		case err := <-event.done:
+			returnErr = err
+		}
+	})
+	return returnErr
 }
 
 // With applies the pipeline options

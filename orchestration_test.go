@@ -52,6 +52,36 @@ func reportingLooperRunner(name string) plumber.RunnerCloser {
 				go work.Do(func() {
 					fmt.Println("runner[", name, "] working")
 				})
+				time.Sleep(100 * time.Millisecond) // Simulate work
+			}
+		}
+	})
+}
+
+func erroringLazyRunner(name string) plumber.RunnerCloser {
+	return plumber.Looper(func(ctx context.Context, loop *plumber.Loop) error {
+		go func() {
+			time.Sleep(10 * time.Millisecond)
+			loop.Ready()
+		}()
+		var work sync.Once
+		fmt.Println("runner[", name, "] starting")
+		defer fmt.Println("runner[", name, "] finished")
+		for {
+			select {
+			case closed := <-loop.Closing():
+				fmt.Println("runner[", name, "] closing")
+				closed.Success()
+				return nil
+			case <-ctx.Done():
+				fmt.Println("runner[", name, "] context done")
+				return ctx.Err()
+			default:
+				go work.Do(func() {
+					fmt.Println("runner[", name, "] working")
+				})
+				time.Sleep(100 * time.Millisecond) // Simulate work
+				return errors.New("runner " + name + " failed")
 			}
 		}
 	})
