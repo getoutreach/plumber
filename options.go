@@ -6,7 +6,6 @@ package plumber
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"time"
@@ -180,7 +179,6 @@ func ContextCloser(ctx ...context.Context) Option {
 			}
 			select {
 			case <-parentCtx.Done():
-				fmt.Println("PipelineRunner closing by context")
 				o.Close()
 				return nil
 			case <-ctx.Done():

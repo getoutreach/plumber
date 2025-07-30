@@ -6,7 +6,6 @@ package plumber
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
@@ -130,7 +129,6 @@ func PipelineRunner(runner Runner, opts ...Option) RunnerCloser {
 			return err
 		},
 		WithClose(func(ctx context.Context) error {
-			fmt.Println("PipelineRunner closing")
 			// trigger close sequence
 			signal.Notify()
 

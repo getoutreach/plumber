@@ -52,20 +52,23 @@ func (r *ParallelPipeline) Ready() <-chan struct{} {
 // It partially implement Runner interface.
 // The it returns when all runner's Run methods are returned.
 func (r *ParallelPipeline) Run(ctx context.Context) error {
-	// lets try to start the runner
-	go func() {
-		r.messages <- &eventRun{}
-	}()
+	runCtx, runCancel := context.WithCancelCause(ctx)
+	defer runCancel(nil)
+
+	var returnCh = make(chan error, 1)
 
 	// main event loop
-	return errors.Join(func() []error {
-		var readyRunners int
-		var finishedRunners int
-		var running bool
-		var closing bool
-		var closeContext = context.Background()
-		var closeDone chan error
-		var closeOnce sync.Once
+	go func() {
+		var (
+			readyRunners    int
+			finishedRunners int
+			running         bool
+			closing         bool
+			closeContext    = runCtx
+			terminate       bool
+			closeErrors     error
+			startedRunners  int
+		)
 		r.running.Store(true)
 
 		errs := []error{}
@@ -78,39 +81,33 @@ func (r *ParallelPipeline) Run(ctx context.Context) error {
 					r.signal.Notify()
 				}
 			case *eventClose:
-				if !running {
-					if m.done != nil {
-						close(m.done)
+				terminate = terminate || m.terminate
+				if !closing {
+					r.closed.Notify()
+
+					// ensure we have a close context
+					if m.closerContext != nil {
+						closeContext = m.closerContext
 					}
-					continue
-				}
-				if closing {
-					if m.done != nil {
-						close(m.done)
-					}
-					continue
+					closeErrors = r.closeAll(closeContext)
 				}
 				closing = true
-				r.closed.Notify()
 
-				// ensure we have a close context
-				if m.closerContext != nil {
-					closeContext = m.closerContext
+				if m.done != nil {
+					m.done <- closeErrors
+					close(m.done)
 				}
-				closeDone = m.done
-				go r.closeAll(closeContext)
-			case *eventClosed:
-				closeOnce.Do(func() {
-					if closeDone != nil {
-						closeDone <- m.err
+				if terminate {
+					if !running || finishedRunners == startedRunners {
+						return
 					}
-					close(closeDone)
-				})
+				}
 			case *eventRun:
 				if running || closing {
 					continue
 				}
 				running = true
+				startedRunners = len(r.runners)
 				for _, runner := range r.runners {
 					go r.run(ctx, runner)
 				}
@@ -119,14 +116,21 @@ func (r *ParallelPipeline) Run(ctx context.Context) error {
 				if m.err != nil {
 					errs = append(errs, m.err)
 				}
-				if finishedRunners == len(r.runners) {
-					r.closed.Notify()
-					return errs
+
+				if finishedRunners == startedRunners {
+					returnCh <- errors.Join(errs...)
+					close(returnCh)
 				}
+
+				r.messages <- &eventClose{}
 			}
 		}
-		return errs
-	}()...)
+	}()
+
+	// lets try to start the runner
+	r.messages <- &eventRun{}
+
+	return <-returnCh
 }
 
 // run start a single runner
@@ -152,7 +156,7 @@ func (r *ParallelPipeline) run(ctx context.Context, runner Runner) {
 }
 
 // closeAll closes all runners
-func (r *ParallelPipeline) closeAll(ctx context.Context) {
+func (r *ParallelPipeline) closeAll(ctx context.Context) error {
 	closeErrors := []error{}
 	var wg sync.WaitGroup
 	wg.Add(len(r.runners))
@@ -166,7 +170,7 @@ func (r *ParallelPipeline) closeAll(ctx context.Context) {
 		}(runner)
 	}
 	wg.Wait()
-	r.messages <- &eventClosed{err: errors.Join(closeErrors...)}
+	return errors.Join(closeErrors...)
 }
 
 // Close executes Close method on internal runners in revered order to achieve graceful shutdown sequence
@@ -181,6 +185,7 @@ func (r *ParallelPipeline) Close(ctx context.Context) error {
 		event := &eventClose{
 			closerContext: ctx,
 			done:          make(chan error, 1),
+			terminate:     true,
 		}
 
 		select {
