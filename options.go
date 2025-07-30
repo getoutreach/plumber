@@ -6,6 +6,7 @@ package plumber
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"time"
@@ -168,17 +169,21 @@ func FuncCloser(providerCallback func(closeFunc func())) Option {
 // ContextCloser closes the Closer based on given context.
 // When given context is ended the closer invokes the Close method.
 func ContextCloser(parentCtx context.Context) Option {
-	return func(ctx context.Context, o *Options) context.Context {
+	return func(startCtx context.Context, o *Options) context.Context {
 		o.Closer(func(ctx context.Context) error {
+			if parentCtx == nil {
+				parentCtx = startCtx
+			}
 			select {
 			case <-parentCtx.Done():
+				fmt.Println("PipelineRunner closing by context")
 				o.Close()
 				return nil
 			case <-ctx.Done():
 				return nil
 			}
 		})
-		return ctx
+		return startCtx
 	}
 }
 
