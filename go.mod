@@ -1,8 +1,6 @@
 module github.com/getoutreach/plumber
 
-go 1.23.0
-
-toolchain go1.23.4
+go 1.24.0
 
 require (
 	github.com/samber/lo v1.50.0
@@ -17,5 +15,5 @@ require (
 
 require (
 	github.com/google/go-cmp v0.7.0 // indirect
-	golang.org/x/sync v0.16.0
+	golang.org/x/sync v0.17.0
 )
