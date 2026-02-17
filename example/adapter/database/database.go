@@ -62,3 +62,28 @@ func (s *BatchingRepository) Get(ctx context.Context, id int64) (*contract.Entit
 func (s *BatchingRepository) Create(ctx context.Context, name string) (*contract.Entity, error) {
 	return s.inner.Create(ctx, name)
 }
+
+// UserRepository represents a database repository for users
+type UserRepository struct {
+	counter int64
+}
+
+func NewUserRepository() (*UserRepository, error) {
+	return &UserRepository{}, nil
+}
+
+func (s *UserRepository) Get(ctx context.Context, id int64) (*contract.Entity, error) {
+	// Here suppose to be a logic that batches requests into a single batch query
+	return &contract.Entity{
+		ID:   id,
+		Name: "user",
+	}, nil
+}
+
+func (s *UserRepository) Create(ctx context.Context, name string) (*contract.Entity, error) {
+	s.counter++
+	return &contract.Entity{
+		ID:   s.counter,
+		Name: name,
+	}, nil
+}

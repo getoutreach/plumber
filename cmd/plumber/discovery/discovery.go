@@ -190,6 +190,11 @@ func processContainer(astParser *discovery.ASTParser, info *containerInfo) error
 		// Match container fields with discovered structs
 		if containerStruct != nil {
 			matchContainerFields(containerStruct, result)
+
+			// Augment container struct with missing fields (uses already-parsed AST)
+			if err := augmentContainerStruct(astParser, info.containerPath, cfg.Name, containerStruct, result); err != nil {
+				return fmt.Errorf("failed to augment container struct: %w", err)
+			}
 		}
 	} else {
 		fmt.Printf("    No source paths configured\n")
@@ -246,6 +251,34 @@ func discoverSourceTypes(astParser *discovery.ASTParser, sourcePaths []string, c
 	}
 
 	return result, nil
+}
+
+func augmentContainerStruct(astParser *discovery.ASTParser, containerPath string, containerName string, containerStruct *discovery.StructInfo, result *discovery.DiscoveryResult) error {
+	// Get the already-parsed AST file from the parser
+	file, err := astParser.GetParsedFile(containerPath)
+	if err != nil {
+		return fmt.Errorf("failed to get parsed file: %w", err)
+	}
+
+	// Get the file set
+	fset := astParser.GetFileSet()
+
+	// Augment using the parsed AST
+	augmenter := discovery.NewAugmenter()
+	augmentResult, err := augmenter.AugmentContainerStruct(containerPath, containerName, containerStruct, result, file, fset)
+	if err != nil {
+		return err
+	}
+
+	if len(augmentResult.Added) > 0 {
+		fmt.Printf("\n    Augmentation:\n")
+		fmt.Printf("      Added %d field(s):\n", len(augmentResult.Added))
+		for _, fieldName := range augmentResult.Added {
+			fmt.Printf("        + %s\n", fieldName)
+		}
+	}
+
+	return nil
 }
 
 // matchContainerFields compares container struct fields with discovered source structs

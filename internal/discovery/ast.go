@@ -118,6 +118,28 @@ func NewASTParser(paths ...string) (*ASTParser, error) {
 	}, nil
 }
 
+// GetParsedFile returns the already-parsed AST file for a given path
+func (p *ASTParser) GetParsedFile(filepath string) (*ast.File, error) {
+	// Find the package that contains this file
+	for _, pkg := range p.pkgs {
+		for _, file := range pkg.Syntax {
+			pos := pkg.Fset.Position(file.Pos())
+			if pos.Filename == filepath {
+				return file, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("file %q not found in parsed packages", filepath)
+}
+
+// GetFileSet returns the token file set used by the parser
+func (p *ASTParser) GetFileSet() *token.FileSet {
+	if len(p.pkgs) > 0 {
+		return p.pkgs[0].Fset
+	}
+	return token.NewFileSet()
+}
+
 // Discover finds all structs and their constructors based on matchers
 func (p *ASTParser) Discover(matchers []Matcher) (*DiscoveryResult, error) {
 	return p.DiscoverInFiles(matchers, nil)
