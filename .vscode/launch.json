@@ -12,7 +12,14 @@
       "envFile": "${workspaceRoot}/.vscode/private.env",
       "go.testEnvFile": "${workspaceRoot}/.vscode/private.env",
       "program": "${workspaceRoot}/cmd/plumber/",
-      "buildFlags": "-tags=or_dev"
+      "buildFlags": "-tags=or_dev",
+      "args": [
+        "discovery",
+        "-dir",
+        "${workspaceRoot}/example",
+        "-config",
+        "${workspaceRoot}/example/plumber.yaml"
+      ]
     },
     {
       "name": "Attach to dev container",

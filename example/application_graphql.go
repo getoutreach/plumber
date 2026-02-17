@@ -9,14 +9,14 @@ import (
 	"github.com/getoutreach/plumber/example/adapter/graphql"
 )
 
-// GraphQL represents graphql related dependency container
-type GraphQL struct {
+// Graphql represents graphql related dependency container
+type Graphql struct {
 	Port   plumber.D[int32]
 	Server plumber.R[*graphql.Server]
 }
 
 // Define resolves dependencies
-func (c *GraphQL) Define(ctx context.Context, cf *Config, a *Container) {
+func (c *Graphql) Define(ctx context.Context, cf *Config, a *Container) {
 	c.Port.Const(5000)
 
 	c.Server.Resolver(func(r *plumber.ResolutionR[*graphql.Server]) {

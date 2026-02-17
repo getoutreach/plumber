@@ -1,4 +1,6 @@
 service: false
 dependencies:
-  optional: []
-  required: []
+  optional:
+    []
+  required:
+    []

@@ -4,6 +4,8 @@ arguments:
   lintroller: platinum
   metrics: datadog
   oss: true
+  commands:
+    - plumber
   ciOptions:
     skipDocker: true
     skipE2e: true
