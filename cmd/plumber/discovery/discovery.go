@@ -206,11 +206,12 @@ func processContainer(astParser *discovery.ASTParser, info *containerInfo) error
 			for _, provider := range result.Providers {
 				typeName := "unknown"
 				if provider.Type != nil {
-					typeName = provider.Type.TypeName
+					typeName = provider.Type.TypeInfo.Type.String()
 				}
-				fmt.Printf("      %s (Type: %s)\n", provider.Name, typeName)
+				fmt.Printf("      %s\n", provider.Name)
+				fmt.Printf("        Type: %s\n", typeName)
 				if provider.Constructor != nil {
-					fmt.Printf("        - %s()\n", provider.Constructor.FunctionName)
+					fmt.Printf("        Func: %s\n", provider.Constructor.FunctionName)
 				}
 			}
 
