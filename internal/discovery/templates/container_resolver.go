@@ -1,0 +1,200 @@
+package templates
+
+import (
+	"embed"
+	"go/parser"
+	"go/token"
+	"go/types"
+
+	"github.com/dave/dst"
+	"github.com/dave/dst/decorator"
+	"github.com/dave/dst/dstutil"
+	"github.com/getoutreach/plumber/internal/discovery/contract"
+	"golang.org/x/tools/go/packages"
+)
+
+//go:embed fixtures/*.go
+var fixtureFS embed.FS
+
+type Visitor interface {
+	Pre(c *dstutil.Cursor) bool
+	Post(c *dstutil.Cursor) bool
+}
+
+type RecursiveVisitor struct {
+	PreFunc  func(c *dstutil.Cursor) bool
+	PostFunc func(c *dstutil.Cursor) bool
+}
+
+func (v *RecursiveVisitor) Pre(c *dstutil.Cursor) bool {
+	if v.PreFunc != nil {
+		return v.PreFunc(c)
+	}
+	return true
+}
+
+func (v *RecursiveVisitor) Post(c *dstutil.Cursor) bool {
+	if v.PostFunc != nil {
+		return v.PostFunc(c)
+	}
+	return true
+}
+
+type functionBodyExtractor struct {
+	RecursiveVisitor
+	block *dst.BlockStmt
+}
+
+func (v *functionBodyExtractor) Pre(c *dstutil.Cursor) bool {
+	ret, ok := c.Node().(*dst.FuncDecl)
+	if ok {
+		v.block = ret.Body
+		return true
+	}
+	return true
+}
+
+func walk(node dst.Node, visitors ...Visitor) dst.Node {
+	dstutil.Apply(
+		node,
+		func(c *dstutil.Cursor) bool {
+			for _, visitor := range visitors {
+				if !visitor.Pre(c) {
+					return false
+				}
+			}
+			return true
+		},
+		func(c *dstutil.Cursor) bool {
+			for _, visitor := range visitors {
+				if !visitor.Post(c) {
+					return false
+				}
+			}
+			return true
+		},
+	)
+	return node
+}
+
+func ContainerResolver(visitors ...Visitor) *dst.File {
+	// bodyExtractor := functionBodyExtractor{}
+	// &bodyExtractor
+
+	template, err := fixtureFS.ReadFile("fixtures/container_resolver_resolve.go")
+	if err != nil {
+		panic(err)
+	}
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "templates", template, parser.ParseComments)
+	if err != nil {
+		panic(err)
+	}
+
+	decorated, err := decorator.DecorateFile(fset, f)
+	if err != nil {
+		panic(err)
+	}
+
+	walk(decorated, append([]Visitor{}, visitors...)...)
+
+	return decorated
+}
+
+func SelectorExprNameReplace(mapping map[string]string) Visitor {
+	v := &RecursiveVisitor{}
+	v.PreFunc = func(c *dstutil.Cursor) bool {
+		sel, ok := c.Node().(*dst.SelectorExpr)
+		if ok {
+			name := sel.Sel.Name
+			if newName, exists := mapping[name]; exists {
+				sel.Sel.Name = newName
+			}
+		}
+		return true
+	}
+	return v
+}
+
+func IdentReplace(mapping map[string]any) Visitor {
+	v := &RecursiveVisitor{}
+	v.PreFunc = func(c *dstutil.Cursor) bool {
+		ident, ok := c.Node().(*dst.Ident)
+		if ok {
+			name := ident.Name
+			if replacement, exists := mapping[name]; exists {
+				switch replacement := replacement.(type) {
+				case string:
+					ident.Name = replacement
+				case func(c *dstutil.Cursor):
+					replacement(c)
+				}
+			}
+			return false
+		}
+		return true
+	}
+	return v
+}
+
+func FuncBodyStmts(node dst.Node) []dst.Stmt {
+	extractor := &functionBodyExtractor{}
+	walk(node, extractor)
+	return extractor.block.List
+}
+
+func FuncDeclaration(node dst.Node, name string) *dst.FuncDecl {
+	var funcDeclaration *dst.FuncDecl
+	visitor := &RecursiveVisitor{
+		PreFunc: func(c *dstutil.Cursor) bool {
+			funcDecl, ok := c.Node().(*dst.FuncDecl)
+			if ok && funcDecl.Name.Name == name {
+				funcDeclaration = funcDecl
+				return false // Stop walking once we've found the function declaration
+			}
+			return true
+		},
+	}
+	walk(node, visitor)
+	return funcDeclaration
+}
+
+func TypeDefinition(param contract.ParameterInfo) func(c *dstutil.Cursor) {
+	return func(c *dstutil.Cursor) {
+		c.Replace(ToTypeDefinition(param.TypeInfo.Package, param.TypeInfo.Type))
+	}
+}
+
+func ToTypeDefinition(pkg *packages.Package, t types.Type) dst.Expr {
+	switch t := t.(type) {
+	case *types.Named:
+		return &dst.Ident{Name: t.Obj().Name(), Path: pkg.PkgPath}
+	case *types.Pointer:
+		return &dst.StarExpr{X: ToTypeDefinition(pkg, t.Elem())}
+	case *types.Slice:
+		return &dst.ArrayType{Elt: ToTypeDefinition(pkg, t.Elem())}
+	case *types.Map:
+		return &dst.MapType{
+			Key:   ToTypeDefinition(pkg, t.Key()),
+			Value: ToTypeDefinition(pkg, t.Elem()),
+		}
+	default:
+		return &dst.Ident{Name: t.String()}
+	}
+}
+
+// func IdentReplace(mapping map[string]string) RecursiveVisitor {
+// 	v := RecursiveVisitor{}
+// 	v.VisitFunc = func(n ast.Node) ast.Visitor {
+// 		ident, ok := n.(*ast.Ident)
+// 		if ok {
+// 			name := ident.Name
+// 			if newName, exists := mapping[name]; exists {
+// 				ident.Name = newName
+// 			}
+// 		}
+// 		return v
+// 	}
+// 	return v
+// }
