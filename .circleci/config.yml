@@ -16,7 +16,6 @@ parameters:
 
   ## <</Stencil::Block>>
 
-
 # Extra contexts to expose to all jobs below
 contexts: &contexts
   - aws-credentials
@@ -30,7 +29,7 @@ contexts: &contexts
   - tray-webhooks
   - wizcli
   ## <<Stencil::Block(extraContexts)>>
-  
+
   ## <</Stencil::Block>>
 
 # Test configs to pass to test and cache jobs
@@ -43,7 +42,6 @@ test: &test
 
   ## <</Stencil::Block>>
 
-
 # Branches used for releasing code, pre-release or not
 release_branches: &release_branches
   - "main"
@@ -52,7 +50,8 @@ release_branches: &release_branches
 
 ## <</Stencil::Block>>
 
-jobs:  {} 
+jobs:
+  {}
   ## <<Stencil::Block(circleJobs)>>
 
   ## <</Stencil::Block>>

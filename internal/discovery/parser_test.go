@@ -42,10 +42,9 @@ applications:
           container:
             path: ./test.go
           matchers:
-            - plumber.matcher.struct:
-                constructors:
-                  - New{{ name }}
-                  - Create{{ name }}
+            - constructors:
+                - New(?P<name>.*)
+                - Create(?P<name>.*)
 `
 
 	cfg, err := discovery.ParseConfigBytes([]byte(yamlContent))
@@ -53,9 +52,8 @@ applications:
 	assert.Equal(t, len(cfg.Applications[0].Containers[0].PlumberContainer.Matchers), 1)
 
 	matcher := cfg.Applications[0].Containers[0].PlumberContainer.Matchers[0]
-	assert.Assert(t, matcher.PlumberMatcherStruct != nil)
-	assert.Equal(t, len(matcher.PlumberMatcherStruct.Constructors), 2)
-	assert.Equal(t, matcher.PlumberMatcherStruct.Constructors[0], "New{{ name }}")
+	assert.Equal(t, len(matcher.Constructors), 2)
+	assert.Equal(t, matcher.Constructors[0], "New(?P<name>.*)")
 }
 
 func TestParseConfigWithLoop(t *testing.T) {
@@ -102,3 +100,29 @@ applications:
 	_, err := discovery.ParseConfigBytes([]byte(yamlContent))
 	assert.ErrorContains(t, err, "no containers defined")
 }
+
+func TestParseConfigWithConstructorMatcher(t *testing.T) {
+	yamlContent := `
+applications:
+  - name: testapp
+    containers:
+      - plumber.container:
+          name: TestContainer
+          container:
+            path: ./test.go
+          matchers:
+            - constructors:
+                - New(?P<name>.*)
+                - Factory(?P<name>.*)
+`
+
+	cfg, err := discovery.ParseConfigBytes([]byte(yamlContent))
+	assert.NilError(t, err)
+	assert.Equal(t, len(cfg.Applications[0].Containers[0].PlumberContainer.Matchers), 1)
+
+	matcher := cfg.Applications[0].Containers[0].PlumberContainer.Matchers[0]
+	assert.Equal(t, len(matcher.Constructors), 2)
+	assert.Equal(t, matcher.Constructors[0], "New(?P<name>.*)")
+	assert.Equal(t, matcher.Constructors[1], "Factory(?P<name>.*)")
+}
+

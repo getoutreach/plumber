@@ -6,6 +6,8 @@
 package discovery_test
 
 import (
+	"fmt"
+	"go/types"
 	"os"
 	"path/filepath"
 	"testing"
@@ -35,10 +37,10 @@ func NewUser(name string, age int) *User {
 	err := os.WriteFile(testFile, []byte(content), 0644)
 	assert.NilError(t, err)
 
-	file, fset, err := discovery.ParseFile(testFile)
+	file, dec, err := discovery.ParseFile(testFile)
 	assert.NilError(t, err)
 	assert.Assert(t, file != nil)
-	assert.Assert(t, fset != nil)
+	assert.Assert(t, dec != nil)
 	assert.Equal(t, file.Name.Name, "test")
 }
 
@@ -58,9 +60,7 @@ func TestASTParserDiscover(t *testing.T) {
 
 	matchers := []discovery.Matcher{
 		{
-			PlumberMatcherStruct: &discovery.StructMatcherConfig{
-				Constructors: []string{"New*"},
-			},
+			Constructors: []string{"New(?P<name>.*)"},
 		},
 	}
 
@@ -68,16 +68,15 @@ func TestASTParserDiscover(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, result != nil)
 
-	// The example should have at least some structs
-	t.Logf("Found %d structs", len(result.Structs))
-	t.Logf("Found %d constructors", len(result.Constructors))
+	// The example should have at least some providers
+	t.Logf("Found %d providers", len(result.Providers))
 }
 
 func TestASTParserWithMockCode(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a test package with multiple files
-	goModContent := `module testpkg
+	goModContent := `module github.com/getoutreach/testpkg
 
 go 1.23
 `
@@ -114,8 +113,8 @@ type Repository struct {
 }
 
 // CreateRepository creates a new repository
-func CreateRepository(db string) *Repository {
-	return &Repository{DB: db}
+func CreateRepository(db string) (*Repository, error) {
+	return &Repository{DB: db}, nil
 }
 `
 	err = os.WriteFile(filepath.Join(tmpDir, "service.go"), []byte(serviceGoContent), 0644)
@@ -130,18 +129,49 @@ func CreateRepository(db string) *Repository {
 
 	matchers := []discovery.Matcher{
 		{
-			PlumberMatcherStruct: &discovery.StructMatcherConfig{
-				Constructors: []string{"New*", "Create*"},
-			},
+			Constructors: []string{"New(?P<name>.*)", "Create(?P<name>.*)"},
 		},
 	}
 
 	result, err := parser.Discover(matchers)
 	assert.NilError(t, err)
 
-	// Should find structs from both files
-	assert.Assert(t, len(result.Structs) >= 3, "should find at least 3 structs (Service, Repository, Container)")
+	// Should find both providers
+	assert.Assert(t, len(result.Providers) >= 2, "should find at least 2 providers")
 
-	// Should find both constructors
-	assert.Assert(t, len(result.Constructors) >= 2, "should find at least 2 constructors")
+	// Verify first provider (Service)
+	assert.Equal(t, result.Providers[0].Name, "Service")
+	assert.Assert(t, result.Providers[0].Type != nil)
+	assert.Assert(t, result.Providers[0].Constructor != nil, "Service should have a constructor")
+	assert.Equal(t, result.Providers[0].Constructor.FunctionName, "NewService")
+
+	// Verify second provider (Repository)
+	assert.Equal(t, result.Providers[1].Name, "Repository")
+	assert.Assert(t, result.Providers[1].Type != nil)
+	assert.Assert(t, result.Providers[1].Constructor != nil, "Repository should have a constructor")
+	assert.Equal(t, result.Providers[1].Constructor.FunctionName, "CreateRepository")
+
+	assert.Assert(t, !result.Providers[0].Constructor.ReturnsError(), "first constructor should not return error")
+	assert.Assert(t, result.Providers[1].Constructor.ReturnsError(), "second constructor should return error")
+
+	for _, p := range result.Providers[1].Constructor.ReturnParameters {
+		fmt.Println(types.TypeString(p.TypeInfo.Type, RelativeTo(p.TypeInfo.Package.Types)))
+	}
+
+	fmt.Println()
+	// fmt.Println(c)
+}
+
+// RelativeTo returns a [Qualifier] that fully qualifies members of
+// all packages other than pkg.
+func RelativeTo(pkg *types.Package) types.Qualifier {
+	if pkg == nil {
+		return nil
+	}
+	return func(other *types.Package) string {
+		if pkg == other {
+			return other.Name() // same package; unqualified
+		}
+		return other.Name()
+	}
 }

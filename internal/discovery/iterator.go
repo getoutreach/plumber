@@ -1,8 +1,6 @@
 // Copyright 2024 Outreach Corporation. All Rights Reserved.
 
 // Description: Path iterator for loop config hydration
-// Managed: true
-
 package discovery
 
 import (

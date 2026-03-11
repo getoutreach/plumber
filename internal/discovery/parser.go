@@ -95,24 +95,24 @@ func ProcessLoops(cfg *Config, baseDir string) error {
 			plumberCfg := container.PlumberContainer
 
 			// If there's a loop configuration, expand it
-		if container.Loop != nil {
-			iterator, err := NewPathIterator(baseDir, container.Loop.Path)
-			if err != nil {
-				return fmt.Errorf("application %q: failed to create path iterator: %w", app.Name, err)
-			}
+			if container.Loop != nil {
+				iterator, err := NewPathIterator(baseDir, container.Loop.Path)
+				if err != nil {
+					return fmt.Errorf("application %q: failed to create path iterator: %w", app.Name, err)
+				}
 
-			matches, err := iterator.Iterate()
+				matches, err := iterator.Iterate()
 
-			if err != nil {
-				return fmt.Errorf("application %q: failed to iterate paths: %w", app.Name, err)
-			}
+				if err != nil {
+					return fmt.Errorf("application %q: failed to iterate paths: %w", app.Name, err)
+				}
 
-			if len(matches) == 0 {
-				return fmt.Errorf("application %q: no paths matched pattern %q", app.Name, container.Loop.Path)
-			}
+				if len(matches) == 0 {
+					return fmt.Errorf("application %q: no paths matched pattern %q", app.Name, container.Loop.Path)
+				}
 
-			// Create hydrated configs
-			hydrated := HydrateConfig(plumberCfg, matches)
+				// Create hydrated configs
+				hydrated := HydrateConfig(plumberCfg, matches)
 
 				// Add each hydrated config as a separate container
 				for _, h := range hydrated {

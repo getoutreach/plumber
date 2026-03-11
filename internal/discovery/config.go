@@ -7,12 +7,20 @@ package discovery
 
 // Config represents the root configuration for plumber discovery
 type Config struct {
-	Applications []Application `yaml:"applications"`
+	Applications []Application   `yaml:"applications"`
+	Templates    TemplatesConfig `yaml:"templates,omitempty"`
+}
+
+// TemplatesConfig contains template definitions
+type TemplatesConfig struct {
+	Container string `yaml:"container,omitempty"`
 }
 
 // Application represents a single application module
 type Application struct {
 	Name       string      `yaml:"name"`
+	Module     string      `yaml:"module,omitempty"`
+	Config     string      `yaml:"config,omitempty"`
 	Containers []Container `yaml:"containers"`
 }
 
@@ -26,11 +34,11 @@ type Container struct {
 
 // PlumberContainerConfig contains the configuration for a plumber.container type
 type PlumberContainerConfig struct {
-	Comment   string               `yaml:"comment,omitempty"`
-	Name      string               `yaml:"name"`
-	Container ContainerPathConfig  `yaml:"container"`
-	Source    *SourcePathConfig    `yaml:"source,omitempty"`
-	Matchers  []Matcher            `yaml:"matchers,omitempty"`
+	Comment   string              `yaml:"comment,omitempty"`
+	Name      string              `yaml:"name"`
+	Container ContainerPathConfig `yaml:"container"`
+	Source    *SourcePathConfig   `yaml:"source,omitempty"`
+	Matchers  []Matcher           `yaml:"matchers,omitempty"`
 }
 
 // ContainerPathConfig specifies the path to the container definition
@@ -45,12 +53,7 @@ type SourcePathConfig struct {
 
 // Matcher represents a matcher configuration
 type Matcher struct {
-	// Type-specific matcher configurations
-	PlumberMatcherStruct *StructMatcherConfig `yaml:"plumber.matcher.struct,omitempty"`
-}
-
-// StructMatcherConfig contains configuration for struct-based matching
-type StructMatcherConfig struct {
+	// Constructor patterns with optional named capture groups
 	Constructors []string `yaml:"constructors,omitempty"`
 }
 

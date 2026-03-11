@@ -1,2 +1,2 @@
 #!/bin/sh
-go run ../cmd/plumber/main.go discovery -dir . -config plumber.yaml
+go run ../cmd/plumber/plumber.go discovery -config plumber.yaml

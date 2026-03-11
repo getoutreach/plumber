@@ -65,14 +65,10 @@ func printContainer(w io.Writer, idx int, container *Container, indent string) {
 }
 
 func printMatcher(w io.Writer, idx int, matcher *Matcher, indent string) {
-	if matcher.PlumberMatcherStruct != nil {
-		cfg := matcher.PlumberMatcherStruct
-		fmt.Fprintf(w, "%s├─ Matcher %d: struct\n", indent, idx)
-
-		if len(cfg.Constructors) > 0 {
-			fmt.Fprintf(w, "%s│  └─ Constructors: %s\n", indent,
-				strings.Join(cfg.Constructors, ", "))
-		}
+	if len(matcher.Constructors) > 0 {
+		fmt.Fprintf(w, "%s├─ Matcher %d: constructors\n", indent, idx)
+		fmt.Fprintf(w, "%s│  └─ Patterns: %s\n", indent,
+			strings.Join(matcher.Constructors, ", "))
 	}
 }
 
@@ -92,12 +88,10 @@ func PrintHydratedConfig(w io.Writer, hydrated []*PlumberContainerConfig) {
 		if len(cfg.Matchers) > 0 {
 			fmt.Fprintf(w, "  Matchers:\n")
 			for j, matcher := range cfg.Matchers {
-				if matcher.PlumberMatcherStruct != nil {
-					fmt.Fprintf(w, "    %d. Struct matcher\n", j+1)
-					if len(matcher.PlumberMatcherStruct.Constructors) > 0 {
-						fmt.Fprintf(w, "       Constructors: %s\n",
-							strings.Join(matcher.PlumberMatcherStruct.Constructors, ", "))
-					}
+				if len(matcher.Constructors) > 0 {
+					fmt.Fprintf(w, "    %d. Constructor patterns\n", j+1)
+					fmt.Fprintf(w, "       Patterns: %s\n",
+						strings.Join(matcher.Constructors, ", "))
 				}
 			}
 		}

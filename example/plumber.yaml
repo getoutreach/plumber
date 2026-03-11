@@ -1,5 +1,8 @@
 applications:
   - name: application
+    # fqn of the config struct to use for this application
+    module: github.com/getoutreach/plumber/example
+    config: '*"github.com/getoutreach/plumber/example".Config'
     # for each application we defined a plumber sub containers
     containers:
       - plumber.container:
@@ -9,14 +12,29 @@ applications:
             path: ./application_{{ .module }}.go
           source:
             path: ./adapter/{{ .module }}/
-          # matchers allows mark particular structure as providers so only those are considered
+          # matchers define constructor patterns to discover
           matchers:
-            # matcher taking into considiration structs
-            - plumber.matcher.struct:
-                # that has as well a constructing function matching flowing patterns
-                constructors:
-                  - New{{ .name | capitalize}}
+            - constructors:
+                # Named capture group "name" extracts the provider name
+                - New(?P<name>.*)
+                - Factory(?P<name>.*)
         # loop allows to define multiple containers using
         loop:
           # path allows scanning a folder structure and declares a variables using named re named group expression
           path: adapter/(?P<module>\w+)
+templates:
+  container: |
+    // Copyright 2025 Outreach Corporation. All Rights Reserved.
+    // Description: {{ .container.name }} related dependencies {{ .package_name}}
+    package {{ .package_name}}
+
+    import (
+      "context"
+    )
+
+    // {{ .container.name }} dependency container
+    type {{ .container.name }} struct {}
+
+    // Define dependency resolvers
+    func (c *{{ .container.name }}) Define(ctx context.Context, cf {{ .config.type }}, a *Container) {
+    }

@@ -3,6 +3,7 @@ module github.com/getoutreach/plumber
 go 1.24.0
 
 require (
+	github.com/dave/dst v0.27.3
 	github.com/samber/lo v1.50.0
 	github.com/sirupsen/logrus v1.9.3
 	golang.org/x/tools v0.42.0
@@ -69,7 +70,6 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_golang v1.22.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
@@ -110,12 +110,7 @@ require (
 )
 
 require (
-	github.com/getoutreach/datastores/v2 v2.26.1
 	github.com/getoutreach/gobox v1.107.1
-	github.com/getoutreach/httpx v1.18.0
-	github.com/getoutreach/mint v1.122.3
-	github.com/getoutreach/services v1.181.0
-	github.com/getoutreach/stencil-golang/pkg v0.0.0-20250109193043-fa44ea640e7e
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/urfave/cli/v2 v2.27.6
 	golang.org/x/sync v0.19.0

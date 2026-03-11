@@ -33,6 +33,7 @@ var TeleforkAPIKey = "NOTSET" //nolint:gochecknoglobals // Why: We can't compile
 // HoneycombDataset is a constant denoting the dataset that traces should be stored
 // in in honeycomb.
 const HoneycombDataset = ""
+
 // <</Stencil::Block>>
 
 // <<Stencil::Block(global)>>
@@ -50,7 +51,7 @@ func main() {
 
 	app := cli.App{
 		Version: oapp.Version,
-		Name: "plumber",
+		Name:    "plumber",
 		// <<Stencil::Block(app)>>
 
 		// <</Stencil::Block>>
@@ -84,7 +85,7 @@ func main() {
 
 	// Insert global flags, tracing, updating and start the application.
 	gcli.Run(ctx, cancel, &app, &gcli.Config{
-		Logger:    log,
+		Logger: log,
 		Telemetry: gcli.TelemetryConfig{
 			Otel: gcli.TelemetryOtelConfig{
 				Dataset:         HoneycombDataset,

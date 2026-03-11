@@ -9,10 +9,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/getoutreach/plumber/internal/discovery"
+	"github.com/getoutreach/plumber/internal/discovery/contract"
 	"github.com/urfave/cli/v2"
 )
 
@@ -43,7 +45,7 @@ func Run(c *cli.Context) error {
 
 	// Print expanded configuration
 	fmt.Println("Expanded Configuration:")
-	fmt.Println("=======================\n")
+	fmt.Println("=======================")
 	discovery.PrintConfig(os.Stdout, cfg)
 
 	// Process each application
@@ -51,7 +53,7 @@ func Run(c *cli.Context) error {
 		fmt.Printf("\nProcessing application: %s\n", app.Name)
 		fmt.Println(strings.Repeat("-", 50))
 
-		if err := processApplication(ctx, baseDir, &app); err != nil {
+		if err := processApplication(ctx, baseDir, &app, cfg); err != nil {
 			return fmt.Errorf("failed to process application %q: %w", app.Name, err)
 		}
 	}
@@ -65,9 +67,9 @@ type containerInfo struct {
 	sourcePaths   []string
 }
 
-func processApplication(ctx context.Context, baseDir string, app *discovery.Application) error {
+func processApplication(ctx context.Context, baseDir string, app *discovery.Application, cfg *discovery.Config) error {
 	// Collect container information and file paths
-	containers, allPaths := collectContainerInfo(baseDir, app)
+	containers, allPaths := collectContainerInfo(baseDir, app, cfg)
 	if len(containers) == 0 {
 		fmt.Printf("  No valid containers to process\n")
 		return nil
@@ -90,7 +92,7 @@ func processApplication(ctx context.Context, baseDir string, app *discovery.Appl
 	return nil
 }
 
-func collectContainerInfo(baseDir string, app *discovery.Application) ([]*containerInfo, []string) {
+func collectContainerInfo(baseDir string, app *discovery.Application, cfg *discovery.Config) ([]*containerInfo, []string) {
 	var allPaths []string
 	containers := make([]*containerInfo, 0)
 
@@ -99,31 +101,45 @@ func collectContainerInfo(baseDir string, app *discovery.Application) ([]*contai
 			continue
 		}
 
-		cfg := container.PlumberContainer
+		containerCfg := container.PlumberContainer
 		info := &containerInfo{
-			config:      cfg,
+			config:      containerCfg,
 			sourcePaths: []string{},
 		}
 
 		// Resolve container path
-		containerPath := cfg.Container.Path
+		containerPath := containerCfg.Container.Path
 		if !filepath.IsAbs(containerPath) {
 			containerPath = filepath.Join(baseDir, containerPath)
 		}
 
 		// Check if container file exists
 		if _, err := os.Stat(containerPath); os.IsNotExist(err) {
-			fmt.Printf("\n  Container: %s\n", cfg.Name)
-			fmt.Printf("    ⚠ Warning: Container file does not exist at %s (skipping)\n", containerPath)
-			continue
+			fmt.Printf("\n  Container: %s\n", containerCfg.Name)
+
+			// Try to render from template if available
+			if containerCfg.Source != nil {
+				sourceModule := getSourceModulePath(baseDir, containerCfg.Source.Path, app.Module)
+
+				if err := renderContainerFromTemplate(containerPath, containerCfg.Name, app, sourceModule, cfg); err != nil {
+					fmt.Printf("    ⚠ Warning: Failed to render template: %v\n", err)
+					fmt.Printf("    ⚠ Warning: Container file does not exist at %s (skipping)\n", containerPath)
+					continue
+				}
+
+				fmt.Printf("    ✓ Container file created from template at %s\n", containerPath)
+			} else {
+				fmt.Printf("    ⚠ Warning: Container file does not exist at %s (skipping)\n", containerPath)
+				continue
+			}
 		}
 
 		info.containerPath = containerPath
 		allPaths = append(allPaths, containerPath)
 
 		// Resolve source paths if specified
-		if cfg.Source != nil {
-			sourcePaths := resolveSourcePaths(baseDir, cfg)
+		if containerCfg.Source != nil {
+			sourcePaths := resolveSourcePaths(baseDir, containerCfg)
 			info.sourcePaths = sourcePaths
 			allPaths = append(allPaths, sourcePaths...)
 		}
@@ -177,9 +193,6 @@ func processContainer(astParser *discovery.ASTParser, info *containerInfo) error
 	fmt.Printf("\n  Container: %s\n", cfg.Name)
 	fmt.Printf("    Container path: %s\n", info.containerPath)
 
-	// Verify that container file has a struct matching the module name
-	containerStruct := verifyContainerStruct(astParser, info.containerPath, cfg.Name)
-
 	// Process source files for discovery with matchers
 	if len(info.sourcePaths) > 0 {
 		result, err := discoverSourceTypes(astParser, info.sourcePaths, cfg)
@@ -187,13 +200,30 @@ func processContainer(astParser *discovery.ASTParser, info *containerInfo) error
 			return err
 		}
 
-		// Match container fields with discovered structs
-		if containerStruct != nil {
-			matchContainerFields(containerStruct, result)
+		// Display discovered providers
+		if len(result.Providers) > 0 {
+			fmt.Printf("\n    Providers:\n")
+			for _, provider := range result.Providers {
+				typeName := "unknown"
+				if provider.Type != nil {
+					typeName = provider.Type.TypeName
+				}
+				fmt.Printf("      %s (Type: %s)\n", provider.Name, typeName)
+				if provider.Constructor != nil {
+					fmt.Printf("        - %s()\n", provider.Constructor.FunctionName)
+				}
+			}
 
-			// Augment container struct with missing fields (uses already-parsed AST)
-			if err := augmentContainerStruct(astParser, info.containerPath, cfg.Name, containerStruct, result); err != nil {
-				return fmt.Errorf("failed to augment container struct: %w", err)
+			// Augment the container struct with missing provider fields
+			if err := augmentContainerWithProviders(info.containerPath, cfg.Name, result.Providers); err != nil {
+				fmt.Printf("    ⚠ Warning: Failed to augment container: %v\n", err)
+			} else {
+				fmt.Printf("    ✓ Container augmented with discovered providers\n")
+
+				// Run goimports to fix imports
+				if err := runGoimports(info.containerPath); err != nil {
+					fmt.Printf("    ⚠ Warning: Failed to run goimports: %v\n", err)
+				}
 			}
 		}
 	} else {
@@ -203,27 +233,7 @@ func processContainer(astParser *discovery.ASTParser, info *containerInfo) error
 	return nil
 }
 
-func verifyContainerStruct(astParser *discovery.ASTParser, containerPath string, containerName string) *discovery.StructInfo {
-	containerFilter := map[string]bool{containerPath: true}
-	containerResult, err := astParser.DiscoverInFiles(nil, containerFilter)
-	if err != nil {
-		fmt.Printf("    ⚠ Warning: Failed to analyze container file: %v\n", err)
-		return nil
-	}
-
-	// Check for struct matching the container name
-	for _, s := range containerResult.Structs {
-		if s.Name == containerName {
-			fmt.Printf("    ✓ Container struct found: %s (%d fields)\n", s.Name, len(s.Fields))
-			return s
-		}
-	}
-
-	fmt.Printf("    ⚠ Warning: No struct named %q found in container file\n", containerName)
-	return nil
-}
-
-func discoverSourceTypes(astParser *discovery.ASTParser, sourcePaths []string, cfg *discovery.PlumberContainerConfig) (*discovery.DiscoveryResult, error) {
+func discoverSourceTypes(astParser *discovery.ASTParser, sourcePaths []string, cfg *discovery.PlumberContainerConfig) (*contract.DiscoveryResult, error) {
 	fmt.Printf("    Source path(s): %d file(s)\n", len(sourcePaths))
 
 	// Create file filter for source files
@@ -240,99 +250,67 @@ func discoverSourceTypes(astParser *discovery.ASTParser, sourcePaths []string, c
 
 	// Print discovered information
 	fmt.Printf("    Discovered in sources:\n")
-	fmt.Printf("      Structs: %d\n", len(result.Structs))
-	for _, s := range result.Structs {
-		fmt.Printf("        - %s (%d fields)\n", s.Name, len(s.Fields))
-	}
-
-	fmt.Printf("      Constructors: %d\n", len(result.Constructors))
-	for _, c := range result.Constructors {
-		fmt.Printf("        - %s() -> %s\n", c.Name, c.ReturnType)
+	fmt.Printf("      Providers: %d\n", len(result.Providers))
+	for _, provider := range result.Providers {
+		typeName := "unknown"
+		if provider.Type != nil {
+			typeName = provider.Type.TypeName
+		}
+		fmt.Printf("        - %s (Type: %s, %d constructor(s))\n",
+			provider.Name, typeName, 1)
 	}
 
 	return result, nil
 }
 
-func augmentContainerStruct(astParser *discovery.ASTParser, containerPath string, containerName string, containerStruct *discovery.StructInfo, result *discovery.DiscoveryResult) error {
-	// Get the already-parsed AST file from the parser
-	file, err := astParser.GetParsedFile(containerPath)
+// augmentContainerWithProviders adds missing provider fields to the container struct
+func augmentContainerWithProviders(containerPath, containerName string, providers []*contract.Provider) error {
+	// Create a new parser specifically for the container file
+	parser, err := discovery.NewASTParser(containerPath)
 	if err != nil {
-		return fmt.Errorf("failed to get parsed file: %w", err)
+		return fmt.Errorf("failed to create parser for container: %w", err)
 	}
 
-	// Get the file set
-	fset := astParser.GetFileSet()
+	// Get the file and decorator from the parser
+	file, dec := parser.GetFileAndDecorator(containerPath)
+	if file == nil {
+		return fmt.Errorf("failed to get AST for container file")
+	}
 
-	// Augment using the parsed AST
+	// Create augmenter
 	augmenter := discovery.NewAugmenter()
-	augmentResult, err := augmenter.AugmentContainerStruct(containerPath, containerName, containerStruct, result, file, fset)
+
+	// Augment the container struct
+	result, err := augmenter.AugmentContainerStruct(containerPath, containerName, providers, file, dec)
 	if err != nil {
 		return err
 	}
 
-	if len(augmentResult.Added) > 0 {
-		fmt.Printf("\n    Augmentation:\n")
-		fmt.Printf("      Added %d field(s):\n", len(augmentResult.Added))
-		for _, fieldName := range augmentResult.Added {
-			fmt.Printf("        + %s\n", fieldName)
-		}
+	// Report what was added
+	if len(result.Added) > 0 {
+		fmt.Printf("      Added fields: %s\n", strings.Join(result.Added, ", "))
+	}
+	if len(result.Skipped) > 0 {
+		fmt.Printf("      Skipped existing fields: %s\n", strings.Join(result.Skipped, ", "))
 	}
 
 	return nil
 }
 
-// matchContainerFields compares container struct fields with discovered source structs
-func matchContainerFields(container *discovery.StructInfo, sourceResult *discovery.DiscoveryResult) {
-	if len(container.Fields) == 0 {
-		return
+// runGoimports runs goimports on a file to clean up imports
+func runGoimports(filePath string) error {
+	// First run gofmt to ensure proper formatting
+	cmd := exec.Command("gofmt", "-w", filePath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("gofmt failed: %w\nOutput: %s", err, string(output))
 	}
 
-	fmt.Printf("\n    Field Matching:\n")
-
-	// Build a map of discovered struct names for quick lookup
-	sourceStructs := make(map[string]*discovery.StructInfo)
-	for _, s := range sourceResult.Structs {
-		sourceStructs[s.Name] = s
+	// Then run goimports to organize imports
+	cmd = exec.Command("goimports", "-w", filePath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("goimports failed: %w\nOutput: %s", err, string(output))
 	}
-
-	matched := 0
-	missing := 0
-	extra := 0
-
-	for _, field := range container.Fields {
-		// Extract the type from plumber wrappers: plumber.D[T] or plumber.R[T]
-		fieldType := extractPlumberType(field.TypeName)
-		if fieldType == "" {
-			continue // Skip non-plumber fields
-		}
-
-		// Check if a struct with matching name exists in source
-		if sourceStruct, found := sourceStructs[field.Name]; found {
-			// Check if types are compatible
-			if typesMatch(fieldType, sourceStruct.Name) {
-				matched++
-				fmt.Printf("      ✓ %s: %s matches source struct\n", field.Name, field.TypeName)
-			} else {
-				missing++
-				fmt.Printf("      ✗ %s: type mismatch (field: %s, source: %s)\n",
-					field.Name, fieldType, sourceStruct.Name)
-			}
-		} else {
-			// Check if this looks like a struct type (has package prefix or is capitalized)
-			// vs a primitive type (int32, string, etc.)
-			if isStructType(fieldType) {
-				missing++
-				fmt.Printf("      ⚠ %s: struct not found in source (expected: %s)\n", field.Name, fieldType)
-			} else {
-				extra++
-				fmt.Printf("      ℹ %s: %s (extra field)\n", field.Name, field.TypeName)
-			}
-		}
-	}
-
-	if matched > 0 || missing > 0 || extra > 0 {
-		fmt.Printf("      Summary: %d matched, %d missing, %d extra\n", matched, missing, extra)
-	}
+	return nil
 }
 
 // extractPlumberType extracts the wrapped type from plumber.D[T] or plumber.R[T]
@@ -399,4 +377,53 @@ func isStructType(typeStr string) bool {
 
 	// Lowercase types are primitives (int, string, bool, etc.)
 	return false
+}
+
+// renderContainerFromTemplate renders a container file from template
+func renderContainerFromTemplate(
+	containerPath string,
+	containerName string,
+	app *discovery.Application,
+	sourceModule string,
+	cfg *discovery.Config,
+) error {
+	// Check if template is available
+	if cfg.Templates.Container == "" {
+		return fmt.Errorf("no container template defined in configuration")
+	}
+
+	// Create template renderer
+	renderer := discovery.NewTemplateRenderer(cfg.Templates.Container)
+
+	// Render the container file
+	return renderer.RenderContainer(containerPath, containerName, app, sourceModule)
+}
+
+// getSourceModulePath determines the module path for the source package
+func getSourceModulePath(baseDir, sourcePath, appModule string) string {
+	if appModule == "" {
+		return ""
+	}
+
+	// Resolve source path to absolute
+	absSourcePath := sourcePath
+	if !filepath.IsAbs(sourcePath) {
+		absSourcePath = filepath.Join(baseDir, sourcePath)
+	}
+
+	// Get the relative path from baseDir
+	relPath, err := filepath.Rel(baseDir, absSourcePath)
+	if err != nil {
+		return appModule
+	}
+
+	// Clean up the relative path
+	relPath = filepath.ToSlash(relPath)
+
+	// Build module path by appending relative path to app module
+	if relPath != "" && relPath != "." {
+		return appModule + "/" + relPath
+	}
+
+	return appModule
 }

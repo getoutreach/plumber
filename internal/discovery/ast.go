@@ -8,58 +8,20 @@ package discovery
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
-	"go/token"
 	"go/types"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/dave/dst"
+	"github.com/dave/dst/decorator"
+	"github.com/getoutreach/plumber/internal/discovery/contract"
 	"golang.org/x/tools/go/packages"
 )
 
-// DiscoveryResult contains the discovered types and constructors
-type DiscoveryResult struct {
-	Structs      []*StructInfo
-	Constructors []*ConstructorInfo
-}
-
-// StructInfo contains information about a discovered struct
-type StructInfo struct {
-	Name       string
-	TypeName   string // Fully qualified type name
-	Fields     []*FieldInfo
-	Comment    string
-	File       string
-	Package    string
-}
-
-// FieldInfo contains information about a struct field
-type FieldInfo struct {
-	Name     string
-	TypeName string
-	IsPublic bool
-}
-
-// ConstructorInfo contains information about a constructor function
-type ConstructorInfo struct {
-	Name       string
-	ReturnType string
-	Parameters []*ParameterInfo
-	Comment    string
-	File       string
-	Package    string
-}
-
-// ParameterInfo contains information about a function parameter
-type ParameterInfo struct {
-	Name     string
-	TypeName string
-}
-
 // ASTParser parses Go source files and extracts type information
 type ASTParser struct {
-	fset *token.FileSet
+	dec  *decorator.Decorator
 	pkgs []*packages.Package
 }
 
@@ -112,45 +74,58 @@ func NewASTParser(paths ...string) (*ASTParser, error) {
 		}
 	}
 
+	// Create decorator for converting ast to dst
+	dec := decorator.NewDecorator(pkgs[0].Fset)
+
 	return &ASTParser{
-		fset: token.NewFileSet(),
+		dec:  dec,
 		pkgs: pkgs,
 	}, nil
 }
 
-// GetParsedFile returns the already-parsed AST file for a given path
-func (p *ASTParser) GetParsedFile(filepath string) (*ast.File, error) {
+// GetParsedFile returns the already-parsed AST file for a given path, converted to dst
+func (p *ASTParser) GetParsedFile(filepath string) (*dst.File, error) {
 	// Find the package that contains this file
 	for _, pkg := range p.pkgs {
 		for _, file := range pkg.Syntax {
 			pos := pkg.Fset.Position(file.Pos())
 			if pos.Filename == filepath {
-				return file, nil
+				// Convert ast.File to dst.File
+				dstFile, err := p.dec.DecorateFile(file)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert to dst: %w", err)
+				}
+				return dstFile, nil
 			}
 		}
 	}
 	return nil, fmt.Errorf("file %q not found in parsed packages", filepath)
 }
 
-// GetFileSet returns the token file set used by the parser
-func (p *ASTParser) GetFileSet() *token.FileSet {
-	if len(p.pkgs) > 0 {
-		return p.pkgs[0].Fset
+// GetFileAndDecorator returns the dst.File and decorator for augmentation purposes
+func (p *ASTParser) GetFileAndDecorator(filepath string) (*dst.File, *decorator.Decorator) {
+	file, err := p.GetParsedFile(filepath)
+	if err != nil {
+		return nil, nil
 	}
-	return token.NewFileSet()
+	return file, p.dec
+}
+
+// GetDecorator returns the decorator used by the parser
+func (p *ASTParser) GetDecorator() *decorator.Decorator {
+	return p.dec
 }
 
 // Discover finds all structs and their constructors based on matchers
-func (p *ASTParser) Discover(matchers []Matcher) (*DiscoveryResult, error) {
+func (p *ASTParser) Discover(matchers []Matcher) (*contract.DiscoveryResult, error) {
 	return p.DiscoverInFiles(matchers, nil)
 }
 
-// DiscoverInFiles finds structs and constructors in specific files, or all files if fileFilter is nil
-func (p *ASTParser) DiscoverInFiles(matchers []Matcher, fileFilter map[string]bool) (*DiscoveryResult, error) {
-	result := &DiscoveryResult{
-		Structs:      []*StructInfo{},
-		Constructors: []*ConstructorInfo{},
-	}
+// DiscoverInFiles finds constructors in specific files, or all files if fileFilter is nil
+func (p *ASTParser) DiscoverInFiles(matchers []Matcher, fileFilter map[string]bool) (*contract.DiscoveryResult, error) {
+	// First, collect all constructors
+	constructors := []*contract.ConstructorInfo{}
+	providerNames := make(map[string]string) // funcName -> providerName
 
 	for _, pkg := range p.pkgs {
 		for _, file := range pkg.Syntax {
@@ -162,140 +137,178 @@ func (p *ASTParser) DiscoverInFiles(matchers []Matcher, fileFilter map[string]bo
 				}
 			}
 
-			// Inspect the AST
-			ast.Inspect(file, func(n ast.Node) bool {
-				switch decl := n.(type) {
-				case *ast.GenDecl:
-					if decl.Tok == token.TYPE {
-						p.processTypeDecl(pkg, decl, result)
+			// Convert ast.File to dst.File for inspection
+			dstFile, err := p.dec.DecorateFile(file)
+			if err != nil {
+				// Skip files that can't be converted
+				continue
+			}
+
+			// Inspect the DST for function declarations
+			dst.Inspect(dstFile, func(n dst.Node) bool {
+				if decl, ok := n.(*dst.FuncDecl); ok {
+					ctor, providerName := p.processFuncDecl(pkg, dstFile, decl, matchers)
+					if ctor != nil {
+						constructors = append(constructors, ctor)
+						if providerName != "" {
+							providerNames[ctor.FunctionName] = providerName
+						}
 					}
-				case *ast.FuncDecl:
-					p.processFuncDecl(pkg, file, decl, matchers, result)
 				}
 				return true
 			})
 		}
 	}
 
+	// Build providers from constructors
+	result := &contract.DiscoveryResult{
+		Providers: p.buildProviders(constructors, providerNames),
+	}
+
 	return result, nil
 }
 
-func (p *ASTParser) processTypeDecl(pkg *packages.Package, decl *ast.GenDecl, result *DiscoveryResult) {
-	for _, spec := range decl.Specs {
-		typeSpec, ok := spec.(*ast.TypeSpec)
-		if !ok {
-			continue
+func (p *ASTParser) parametersInfo(pkg *packages.Package, params []*ast.Field) []*contract.ParameterInfo {
+	results := []*contract.ParameterInfo{}
+	for _, res := range params {
+		tp := pkg.TypesInfo.TypeOf(res.Type)
+		names := res.Names
+		if len(names) == 0 {
+			// If there are no names, we can create a synthetic one for the return value
+			names = []*ast.Ident{{Name: ""}}
 		}
-
-		structType, ok := typeSpec.Type.(*ast.StructType)
-		if !ok {
-			continue
+		for _, name := range names {
+			results = append(results, &contract.ParameterInfo{
+				Name:     name.Name,
+				TypeName: types.TypeString(tp, types.RelativeTo(pkg.Types)),
+				TypeInfo: &contract.TypeInfo{
+					Package: pkg,
+					Type:    tp,
+				},
+			})
 		}
-
-		// Extract struct information
-		structInfo := &StructInfo{
-			Name:     typeSpec.Name.Name,
-			TypeName: fmt.Sprintf("%s.%s", pkg.PkgPath, typeSpec.Name.Name),
-			Fields:   []*FieldInfo{},
-			Comment:  extractComment(decl.Doc),
-			Package:  pkg.PkgPath,
-		}
-
-		// Extract fields
-		for _, field := range structType.Fields.List {
-			typeName := types.ExprString(field.Type)
-			for _, name := range field.Names {
-				structInfo.Fields = append(structInfo.Fields, &FieldInfo{
-					Name:     name.Name,
-					TypeName: typeName,
-					IsPublic: ast.IsExported(name.Name),
-				})
-			}
-		}
-
-		result.Structs = append(result.Structs, structInfo)
 	}
+	return results
 }
 
 func (p *ASTParser) processFuncDecl(
 	pkg *packages.Package,
-	file *ast.File,
-	decl *ast.FuncDecl,
+	file *dst.File,
+	decl *dst.FuncDecl,
 	matchers []Matcher,
-	result *DiscoveryResult,
-) {
+) (*contract.ConstructorInfo, string) {
 	// Check if this function matches any constructor pattern
-	if !p.matchesConstructorPattern(decl.Name.Name, matchers) {
-		return
+	providerName, matched := p.matchConstructorPattern(decl.Name.Name, matchers)
+	if !matched {
+		return nil, ""
 	}
 
-	// Extract return type
-	if decl.Type.Results == nil || len(decl.Type.Results.List) == 0 {
-		return
+	// Extract return type only for functions has one or two return values (common for constructors)
+	if decl.Type.Results == nil || len(decl.Type.Results.List) == 0 || len(decl.Type.Results.List) > 2 {
+		return nil, ""
 	}
 
-	returnType := types.ExprString(decl.Type.Results.List[0].Type)
+	if decl.Recv != nil {
+		// Skip methods
+		return nil, ""
+	}
 
-	// Extract parameters
-	params := []*ParameterInfo{}
-	if decl.Type.Params != nil {
-		for _, param := range decl.Type.Params.List {
-			typeName := types.ExprString(param.Type)
-			for _, name := range param.Names {
-				params = append(params, &ParameterInfo{
-					Name:     name.Name,
-					TypeName: typeName,
-				})
+	f := p.dec.Ast.Nodes[decl]
+
+	var (
+		results = []*contract.ParameterInfo{}
+		params  = []*contract.ParameterInfo{}
+	)
+
+	if afd, ok := f.(*ast.FuncDecl); ok {
+		results = p.parametersInfo(pkg, afd.Type.Results.List)
+		params = p.parametersInfo(pkg, afd.Type.Params.List)
+	}
+
+	constructorInfo := &contract.ConstructorInfo{
+		FunctionName:     decl.Name.Name,
+		Parameters:       params,
+		ReturnParameters: results,
+		ReturnType:       results[0],
+		Comment:          extractComment(decl.Decs.Start),
+		Package:          pkg.PkgPath,
+	}
+
+	return constructorInfo, providerName
+}
+
+// buildProviders groups constructors by provider name and creates Provider entities
+// Deduplicates providers with the same name and type
+func (p *ASTParser) buildProviders(constructors []*contract.ConstructorInfo, providerNames map[string]string) []*contract.Provider {
+	providerMap := make(map[string]*contract.Provider)
+
+	for _, ctor := range constructors {
+		providerName := providerNames[ctor.FunctionName]
+
+		// If no provider name, skip (constructor without named group match)
+		if providerName == "" {
+			continue
+		}
+
+		// Check if provider already exists
+		if _, exists := providerMap[providerName]; exists {
+			continue
+		} else {
+			// Create new provider
+			provider := &contract.Provider{
+				Name:        providerName,
+				Type:        ctor.ReturnType,
+				Constructor: ctor,
 			}
+			providerMap[providerName] = provider
 		}
 	}
 
-	constructorInfo := &ConstructorInfo{
-		Name:       decl.Name.Name,
-		ReturnType: returnType,
-		Parameters: params,
-		Comment:    extractComment(decl.Doc),
-		Package:    pkg.PkgPath,
+	// Convert map to slice
+	providers := make([]*contract.Provider, 0, len(providerMap))
+	for _, provider := range providerMap {
+		providers = append(providers, provider)
 	}
 
-	result.Constructors = append(result.Constructors, constructorInfo)
+	return providers
 }
 
-func (p *ASTParser) matchesConstructorPattern(funcName string, matchers []Matcher) bool {
+// matchConstructorPattern checks if a function name matches any constructor pattern
+// Returns (providerName, matched) where providerName is extracted from the "name" capture group
+func (p *ASTParser) matchConstructorPattern(funcName string, matchers []Matcher) (string, bool) {
 	if len(matchers) == 0 {
-		return true
+		return "", true
 	}
 
 	for _, matcher := range matchers {
-		if matcher.PlumberMatcherStruct != nil {
-			for _, pattern := range matcher.PlumberMatcherStruct.Constructors {
-				// Handle template patterns by converting to regex
-				// Replace template variables with regex patterns
-				regexPattern := pattern
+		for _, pattern := range matcher.Constructors {
+			// Pattern uses named capture groups: New(?P<name>.*) or Factory(?P<name>.*)
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				continue
+			}
 
-				// Convert Go template syntax to regex patterns
-				// {{ .name }} or {{ .name | capitalize }} -> .*
-				// This matches any template variable regardless of filters
-				regexPattern = regexp.MustCompile(`\{\{\s*\.[\w]+(\s*\|[\w\s]+)?\s*\}\}`).ReplaceAllString(regexPattern, "*")
-
-				// Use filepath.Match for glob-style matching
-				if matched, _ := filepath.Match(regexPattern, funcName); matched {
-					return true
+			matches := re.FindStringSubmatch(funcName)
+			if matches != nil {
+				// Extract the "name" capture group if present
+				for i, groupName := range re.SubexpNames() {
+					if groupName == "name" && i < len(matches) {
+						return matches[i], true
+					}
 				}
+				// Match found but no named group
+				return "", true
 			}
 		}
 	}
 
-	return false
+	return "", false
 }
 
-func extractComment(commentGroup *ast.CommentGroup) string {
-	if commentGroup == nil {
-		return ""
-	}
+func extractComment(decorations dst.Decorations) string {
 	var lines []string
-	for _, comment := range commentGroup.List {
-		text := strings.TrimPrefix(comment.Text, "//")
+	for _, comment := range decorations.All() {
+		text := strings.TrimPrefix(comment, "//")
 		text = strings.TrimPrefix(text, "/*")
 		text = strings.TrimSuffix(text, "*/")
 		text = strings.TrimSpace(text)
@@ -306,12 +319,46 @@ func extractComment(commentGroup *ast.CommentGroup) string {
 	return strings.Join(lines, " ")
 }
 
-// ParseFile parses a single Go file and returns its AST
-func ParseFile(path string) (*ast.File, *token.FileSet, error) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+// ParseFile parses a single Go file and returns its DST
+func ParseFile(path string) (*dst.File, *decorator.Decorator, error) {
+	dec := decorator.NewDecoratorWithImports(nil, "", nil)
+	file, err := dec.ParseFile(path, nil, 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse file %q: %w", path, err)
 	}
-	return file, fset, nil
+	return file, dec, nil
+}
+
+// renderType converts a dst.Expr to a string representation
+func renderType(expr dst.Expr) string {
+	if expr == nil {
+		return ""
+	}
+
+	switch t := expr.(type) {
+	case *dst.Ident:
+		return t.Name
+	case *dst.StarExpr:
+		return "*" + renderType(t.X)
+	case *dst.SelectorExpr:
+		return renderType(t.X) + "." + t.Sel.Name
+	case *dst.ArrayType:
+		return "[]" + renderType(t.Elt)
+	case *dst.MapType:
+		return "map[" + renderType(t.Key) + "]" + renderType(t.Value)
+	case *dst.InterfaceType:
+		return "interface{}"
+	case *dst.IndexExpr:
+		// Generic type like Type[T]
+		return renderType(t.X) + "[" + renderType(t.Index) + "]"
+	case *dst.IndexListExpr:
+		// Generic type with multiple parameters like Type[T, U]
+		params := make([]string, len(t.Indices))
+		for i, idx := range t.Indices {
+			params[i] = renderType(idx)
+		}
+		return renderType(t.X) + "[" + strings.Join(params, ", ") + "]"
+	default:
+		return "unknown"
+	}
 }

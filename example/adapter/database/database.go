@@ -25,6 +25,11 @@ func NewRepository() (*Repository, error) {
 	return &Repository{}, nil
 }
 
+// FactoryRepository creates a new Repository with custom configuration
+func FactoryRepository(initialID int64) (*Repository, error) {
+	return &Repository{id: initialID}, nil
+}
+
 func (s *Repository) Get(ctx context.Context, id int64) (*contract.Entity, error) {
 	return &contract.Entity{
 		ID:   id,

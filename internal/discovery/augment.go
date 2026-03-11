@@ -8,11 +8,19 @@ package discovery
 import (
 	"bytes"
 	"fmt"
-	"go/ast"
 	"go/format"
 	"go/token"
+	"go/types"
 	"os"
 	"strings"
+
+	"github.com/dave/dst"
+	"github.com/dave/dst/decorator"
+	"github.com/dave/dst/decorator/resolver/gopackages"
+	"github.com/dave/dst/dstutil"
+	"github.com/getoutreach/plumber/internal/discovery/contract"
+	"github.com/getoutreach/plumber/internal/discovery/templates"
+	"github.com/samber/lo"
 )
 
 // AugmentResult contains information about the augmentation operation
@@ -29,55 +37,70 @@ func NewAugmenter() *Augmenter {
 	return &Augmenter{}
 }
 
-// AugmentContainerStruct adds missing fields to a container struct based on discovered source structs
-// It uses the already-parsed AST from the parser
+// AugmentContainerStruct adds missing fields to a container struct based on discovered providers
+// It parses the container file, finds missing provider fields, and adds them
 func (a *Augmenter) AugmentContainerStruct(
 	containerPath string,
 	containerName string,
-	containerStruct *StructInfo,
-	sourceResult *DiscoveryResult,
-	file *ast.File,
-	fset *token.FileSet,
+	providers []*contract.Provider,
+	file *dst.File,
+	dec *decorator.Decorator,
 ) (*AugmentResult, error) {
-	// Identify missing structs
-	missingStructs := a.findMissingStructs(containerStruct, sourceResult)
-	if len(missingStructs) == 0 {
-		return &AugmentResult{}, nil
-	}
-
-	// Build import alias map from the file
-	importAliases := a.buildImportAliasMap(file)
-
 	// Find the container struct in the AST
 	structDecl := a.findStructDecl(file, containerName)
 	if structDecl == nil {
 		return nil, fmt.Errorf("struct %q not found in file", containerName)
 	}
 
+	// Identify missing providers by checking existing struct fields
+	missingProviders := a.findMissingProvidersFromStruct(structDecl, providers)
+	if len(missingProviders) == 0 {
+		return &AugmentResult{}, nil
+	}
+
+	// Build import alias map from the file
+	importAliases := a.buildImportAliasMap(file)
+
 	// Add missing fields to the struct
-	result := a.addFieldsToStruct(structDecl, missingStructs, sourceResult, importAliases)
+	result, neededPackages := a.addFieldsToStruct(file, structDecl, missingProviders, importAliases)
+
+	// Add plumber import if not present
+	a.ensureImport(file, "github.com/getoutreach/plumber")
+
+	// Add context import for Define method
+	a.ensureImport(file, "context")
+
+	// Add imports for all packages used in the field types
+	for pkgPath := range neededPackages {
+		a.ensureImport(file, pkgPath)
+	}
 
 	// Write the modified AST back to the file
-	if err := a.writeFile(containerPath, file, fset); err != nil {
+	if err := a.writeFile(containerPath, file, dec); err != nil {
 		return nil, fmt.Errorf("failed to write file: %w", err)
 	}
 
 	return result, nil
 }
 
-// findMissingStructs identifies structs from source that are not in the container
-func (a *Augmenter) findMissingStructs(container *StructInfo, sourceResult *DiscoveryResult) []*StructInfo {
-	// Build a set of existing field names
+// findMissingProvidersFromStruct identifies providers that are not in the container struct
+// by examining the struct's field list directly
+func (a *Augmenter) findMissingProvidersFromStruct(structDecl *dst.StructType, providers []*contract.Provider) []*contract.Provider {
+	// Build a set of existing field names from the struct
 	existingFields := make(map[string]bool)
-	for _, field := range container.Fields {
-		existingFields[field.Name] = true
+	if structDecl.Fields != nil {
+		for _, field := range structDecl.Fields.List {
+			for _, name := range field.Names {
+				existingFields[name.Name] = true
+			}
+		}
 	}
 
-	// Find structs that don't have corresponding fields
-	var missing []*StructInfo
-	for _, sourceStruct := range sourceResult.Structs {
-		if !existingFields[sourceStruct.Name] {
-			missing = append(missing, sourceStruct)
+	// Find providers that don't have corresponding fields
+	var missing []*contract.Provider
+	for _, provider := range providers {
+		if !existingFields[provider.Name] {
+			missing = append(missing, provider)
 		}
 	}
 
@@ -85,12 +108,12 @@ func (a *Augmenter) findMissingStructs(container *StructInfo, sourceResult *Disc
 }
 
 // buildImportAliasMap creates a map from package path to import alias
-func (a *Augmenter) buildImportAliasMap(file *ast.File) map[string]string {
+func (a *Augmenter) buildImportAliasMap(file *dst.File) map[string]string {
 	aliases := make(map[string]string)
-	
+
 	for _, imp := range file.Imports {
 		pkgPath := strings.Trim(imp.Path.Value, `"`)
-		
+
 		var alias string
 		if imp.Name != nil {
 			// Explicit alias
@@ -100,23 +123,65 @@ func (a *Augmenter) buildImportAliasMap(file *ast.File) map[string]string {
 			parts := strings.Split(pkgPath, "/")
 			alias = parts[len(parts)-1]
 		}
-		
+
 		aliases[pkgPath] = alias
 	}
-	
+
 	return aliases
 }
 
-// findStructDecl finds a struct declaration by name in the AST
-func (a *Augmenter) findStructDecl(file *ast.File, structName string) *ast.StructType {
-	var structDecl *ast.StructType
+// ensureImport ensures an import is present in the file
+func (a *Augmenter) ensureImport(file *dst.File, importPath string) {
+	// Check if import already exists
+	for _, imp := range file.Imports {
+		if strings.Trim(imp.Path.Value, `"`) == importPath {
+			return
+		}
+	}
 
-	ast.Inspect(file, func(n ast.Node) bool {
-		if genDecl, ok := n.(*ast.GenDecl); ok && genDecl.Tok == token.TYPE {
+	// Add the import
+	newImport := &dst.ImportSpec{
+		Path: &dst.BasicLit{
+			Value: `"` + importPath + `"`,
+		},
+	}
+	file.Imports = append(file.Imports, newImport)
+
+	// Also add to declarations if needed
+	var found bool
+	for _, decl := range file.Decls {
+		if genDecl, ok := decl.(*dst.GenDecl); ok && genDecl.Tok == token.IMPORT {
+			genDecl.Specs = append(genDecl.Specs, newImport)
+			found = true
+			break
+		}
+	}
+
+	// If no import declaration exists, create one
+	if !found {
+		newGenDecl := &dst.GenDecl{
+			Tok:   token.IMPORT,
+			Specs: []dst.Spec{newImport},
+		}
+		// Set the token to import
+		newGenDecl.Decs.Before = dst.NewLine
+		newGenDecl.Decs.After = dst.NewLine
+
+		// Insert at the beginning of declarations (after package)
+		file.Decls = append([]dst.Decl{newGenDecl}, file.Decls...)
+	}
+}
+
+// findStructDecl finds a struct declaration by name in the AST
+func (a *Augmenter) findStructDecl(file *dst.File, structName string) *dst.StructType {
+	var structDecl *dst.StructType
+
+	dst.Inspect(file, func(n dst.Node) bool {
+		if genDecl, ok := n.(*dst.GenDecl); ok && genDecl.Tok.String() == "type" {
 			for _, spec := range genDecl.Specs {
-				if typeSpec, ok := spec.(*ast.TypeSpec); ok {
+				if typeSpec, ok := spec.(*dst.TypeSpec); ok {
 					if typeSpec.Name.Name == structName {
-						if structType, ok := typeSpec.Type.(*ast.StructType); ok {
+						if structType, ok := typeSpec.Type.(*dst.StructType); ok {
 							structDecl = structType
 							return false
 						}
@@ -130,172 +195,212 @@ func (a *Augmenter) findStructDecl(file *ast.File, structName string) *ast.Struc
 	return structDecl
 }
 
-// addFieldsToStruct adds missing fields to a struct declaration
-func (a *Augmenter) addFieldsToStruct(structDecl *ast.StructType, missingStructs []*StructInfo, sourceResult *DiscoveryResult, importAliases map[string]string) *AugmentResult {
+// addFieldsToStruct adds missing fields to a struct declaration based on discovered providers
+// Returns the result and a set of package paths that need to be imported
+func (a *Augmenter) addFieldsToStruct(file *dst.File, structDecl *dst.StructType, missingProviders []*contract.Provider, importAliases map[string]string) (*AugmentResult, map[string]bool) {
 	result := &AugmentResult{
 		Added:   []string{},
 		Skipped: []string{},
 	}
 
-	// Build constructor map for determining field types
-	constructors := make(map[string]*ConstructorInfo)
-	for _, ctor := range sourceResult.Constructors {
-		// Extract struct name from return type (e.g., "*Publisher" -> "Publisher")
-		structName := strings.TrimPrefix(ctor.ReturnType, "*")
-		constructors[structName] = ctor
-	}
+	// Track packages that need to be imported
+	neededPackages := make(map[string]bool)
 
-	for _, sourceStruct := range missingStructs {
-		// Determine field type based on constructor
-		fieldType := a.determineFieldType(sourceStruct, constructors, importAliases)
+	defineFuncDeclaration := templates.FuncDeclaration(file, "Define")
+
+	for _, provider := range missingProviders {
+		// Determine field type based on provider
+		fieldTypeExpr := a.determineFieldTypeExpr(provider)
+
+		// Collect packages that need to be imported from the provider's type
+		if provider.Type != nil && provider.Type.TypeInfo != nil {
+			a.collectPackagesFromType(provider.Type.TypeInfo.Type, neededPackages)
+		}
 
 		// Create new field
-		field := &ast.Field{
-			Names: []*ast.Ident{ast.NewIdent(sourceStruct.Name)},
-			Type:  a.createTypeExpr(fieldType),
+		field := &dst.Field{
+			Names: []*dst.Ident{{Name: provider.Name}},
+			Type:  fieldTypeExpr,
 		}
 
-		// Add field to struct - insert before the closing brace position
+		// Add decorations for better formatting
+		field.Decs.Before = dst.NewLine
+
+		// provider.Constructors
+
+		resolve := "Resolve" // Default to Resolve
+		if provider.Constructor != nil && provider.Constructor.ReturnsError() {
+			resolve = "ResolveError"
+		}
+
+		// Add field to struct
 		structDecl.Fields.List = append(structDecl.Fields.List, field)
-		result.Added = append(result.Added, sourceStruct.Name)
+		result.Added = append(result.Added, provider.Name)
+
+		args := lo.Map(provider.Constructor.Parameters, func(param *contract.ParameterInfo, _ int) dst.Expr {
+			return &dst.CallExpr{
+				Fun: &dst.IndexListExpr{
+					Indices: []dst.Expr{templates.ToTypeDefinition(param.TypeInfo.Package, param.TypeInfo.Type)},
+					X: &dst.Ident{
+						Name: "Undefined",
+						Path: "github.com/getoutreach/plumber/discovery",
+					},
+				},
+			}
+		})
+
+		resolver := templates.ContainerResolver(
+			templates.SelectorExprNameReplace(map[string]string{
+				"NAME":               provider.Name,
+				"DEPENDANCY_PACKAGE": "async",
+				"RESOLVE":            resolve,
+			}),
+			templates.IdentReplace(map[string]any{
+				"DEPENDANCY_TYPE": templates.TypeDefinition(*provider.Type),
+				"CONSTRUCTOR_FUNCTION": func(c *dstutil.Cursor) {
+					c.Replace(&dst.CallExpr{
+						Fun: &dst.Ident{
+							Name: provider.Constructor.FunctionName,
+							Path: provider.Constructor.Package},
+						Args: args,
+					})
+				},
+			}),
+		)
+
+		// Create a restorer with the import manager enabled, and print the result. As you can see, the
+		// import block is automatically managed, and the Println ident is converted to a SelectorExpr:
+		//r := decorator.NewRestorerWithImports("root", gopackages.New("."))
+		//restoredFile, err := r.RestoreFile(file)
+
+		f := templates.FuncDeclaration(resolver, "DependencyResolverResolve")
+
+		defineFuncDeclaration.Body.List = append(defineFuncDeclaration.Body.List, f.Body.List...)
 	}
 
-	// Update the struct's closing position to ensure proper formatting
-	if structDecl.Fields != nil && len(structDecl.Fields.List) > 0 {
-		// Set the closing position after the last field
-		structDecl.Fields.Closing = token.NoPos
-	}
-
-	return result
+	return result, neededPackages
 }
 
-// determineFieldType determines the appropriate plumber wrapper type for a field
-func (a *Augmenter) determineFieldType(sourceStruct *StructInfo, constructors map[string]*ConstructorInfo, importAliases map[string]string) string {
-	// Find the import alias for the package
-	pkgAlias := ""
-	if sourceStruct.Package != "" {
-		if alias, found := importAliases[sourceStruct.Package]; found {
-			pkgAlias = alias + "."
-		}
+// determineFieldTypeExpr determines the appropriate plumber wrapper type for a provider
+// Returns a dst.Expr representing plumber.D[T] (or plumber.R[T] for runners)
+func (a *Augmenter) determineFieldTypeExpr(provider *contract.Provider) dst.Expr {
+	// Default to plumber.D wrapper
+	wrapperSel := &dst.SelectorExpr{
+		X:   &dst.Ident{Name: "plumber"},
+		Sel: &dst.Ident{Name: "D"}, // Default to D (dependency)
 	}
 
-	// Check if there's a constructor
-	if ctor, hasConstructor := constructors[sourceStruct.Name]; hasConstructor {
-		// Use plumber.R for structs with constructors (runnable)
-		// Prepend the package alias to the return type
-		returnType := ctor.ReturnType
-		if !strings.Contains(returnType, ".") && pkgAlias != "" {
-			// Add package alias to pointer types or regular types
-			if strings.HasPrefix(returnType, "*") {
-				returnType = "*" + pkgAlias + strings.TrimPrefix(returnType, "*")
-			} else {
-				returnType = pkgAlias + returnType
+	// Determine the inner type from the provider's type
+	var innerType dst.Expr
+	if provider.Type != nil && provider.Type.TypeInfo != nil {
+		// Create a qualifier that uses the package from the type info
+		qualifier := func(pkg *types.Package) string {
+			if pkg == nil {
+				return ""
+			}
+			return pkg.Name()
+		}
+
+		innerType = TypeToExpr(provider.Type.TypeInfo.Type, qualifier)
+	} else {
+		// Fallback to using the provider name as the type
+		innerType = &dst.Ident{Name: provider.Name}
+	}
+
+	// Create the generic type expression plumber.D[Type]
+	return &dst.IndexExpr{
+		X:     wrapperSel,
+		Index: innerType,
+	}
+}
+
+// collectPackagesFromType recursively collects all packages used in a type
+func (a *Augmenter) collectPackagesFromType(typ types.Type, packages map[string]bool) {
+	if typ == nil {
+		return
+	}
+
+	switch t := typ.(type) {
+	case *types.Named:
+		if pkg := t.Obj().Pkg(); pkg != nil {
+			packages[pkg.Path()] = true
+		}
+		// Check type arguments for generics
+		if t.TypeArgs() != nil {
+			for i := 0; i < t.TypeArgs().Len(); i++ {
+				a.collectPackagesFromType(t.TypeArgs().At(i), packages)
 			}
 		}
-		return fmt.Sprintf("plumber.R[%s]", returnType)
-	}
 
-	// Use plumber.D for structs without constructors (dependency)
-	return fmt.Sprintf("plumber.D[%s%s]", pkgAlias, sourceStruct.Name)
-}
+	case *types.Pointer:
+		a.collectPackagesFromType(t.Elem(), packages)
 
-// createTypeExpr creates an AST type expression from a type string
-// Manually builds the AST for types like plumber.R[*async.Publisher]
-func (a *Augmenter) createTypeExpr(typeStr string) ast.Expr {
-	// Parse pattern: pkg.Type[innerType]
-	// Example: plumber.R[*async.Publisher]
-	
-	if !strings.Contains(typeStr, "[") {
-		// Simple type without generics
-		return a.parseSimpleType(typeStr)
-	}
-	
-	// Find the generic wrapper and inner type
-	bracketStart := strings.Index(typeStr, "[")
-	bracketEnd := strings.LastIndex(typeStr, "]")
-	
-	if bracketStart == -1 || bracketEnd == -1 {
-		// Fallback
-		return ast.NewIdent(typeStr)
-	}
-	
-	wrapperType := typeStr[:bracketStart]
-	innerType := typeStr[bracketStart+1 : bracketEnd]
-	
-	// Build the indexed expression: pkg.Type[innerType]
-	return &ast.IndexExpr{
-		X:     a.parseSimpleType(wrapperType),
-		Index: a.parseSimpleType(innerType),
-	}
-}
+	case *types.Slice:
+		a.collectPackagesFromType(t.Elem(), packages)
 
-// parseSimpleType parses a simple type expression (possibly with package prefix or pointer)
-func (a *Augmenter) parseSimpleType(typeStr string) ast.Expr {
-	// Handle pointer
-	if strings.HasPrefix(typeStr, "*") {
-		return &ast.StarExpr{
-			X: a.parseSimpleType(strings.TrimPrefix(typeStr, "*")),
+	case *types.Array:
+		a.collectPackagesFromType(t.Elem(), packages)
+
+	case *types.Map:
+		a.collectPackagesFromType(t.Key(), packages)
+		a.collectPackagesFromType(t.Elem(), packages)
+
+	case *types.Chan:
+		a.collectPackagesFromType(t.Elem(), packages)
+
+	case *types.Struct:
+		for i := 0; i < t.NumFields(); i++ {
+			a.collectPackagesFromType(t.Field(i).Type(), packages)
+		}
+
+	case *types.Interface:
+		for i := 0; i < t.NumMethods(); i++ {
+			a.collectPackagesFromType(t.Method(i).Type(), packages)
+		}
+		for i := 0; i < t.NumEmbeddeds(); i++ {
+			a.collectPackagesFromType(t.EmbeddedType(i), packages)
+		}
+
+	case *types.Signature:
+		// Collect from parameters
+		if params := t.Params(); params != nil {
+			for i := 0; i < params.Len(); i++ {
+				a.collectPackagesFromType(params.At(i).Type(), packages)
+			}
+		}
+		// Collect from results
+		if results := t.Results(); results != nil {
+			for i := 0; i < results.Len(); i++ {
+				a.collectPackagesFromType(results.At(i).Type(), packages)
+			}
 		}
 	}
-	
-	// Handle package-qualified type
-	if strings.Contains(typeStr, ".") {
-		parts := strings.SplitN(typeStr, ".", 2)
-		return &ast.SelectorExpr{
-			X:   ast.NewIdent(parts[0]),
-			Sel: ast.NewIdent(parts[1]),
-		}
-	}
-	
-	// Simple identifier
-	return ast.NewIdent(typeStr)
 }
 
 // writeFile writes the modified AST back to a file
-func (a *Augmenter) writeFile(filepath string, file *ast.File, fset *token.FileSet) error {
-	// Clear all position information to avoid conflicts
-	ast.Inspect(file, func(n ast.Node) bool {
-		if n != nil {
-			// Reset positions for all nodes
-			switch node := n.(type) {
-			case *ast.Field:
-				for _, name := range node.Names {
-					name.NamePos = token.NoPos
-				}
-			case *ast.Ident:
-				node.NamePos = token.NoPos
-			}
-		}
-		return true
-	})
-
+func (a *Augmenter) writeFile(filepath string, file *dst.File, dec *decorator.Decorator) error {
 	var buf bytes.Buffer
-	
-	// Create a new fileset for formatting
-	newFset := token.NewFileSet()
-	if err := format.Node(&buf, newFset, file); err != nil {
-		return fmt.Errorf("failed to format AST: %w", err)
+
+	// Use the working directory for the restorer
+	workDir := "."
+	if absPath, err := os.Getwd(); err == nil {
+		workDir = absPath
+	}
+
+	r := decorator.NewRestorerWithImports("main", gopackages.New(workDir))
+	restoredFile, err := r.RestoreFile(file)
+
+	if err != nil {
+		return fmt.Errorf("failed to restore file: %w", err)
+	}
+
+	if err := format.Node(&buf, r.Fset, restoredFile); err != nil {
+		return fmt.Errorf("failed to format file: %w", err)
 	}
 
 	// Write to file
 	if err := os.WriteFile(filepath, buf.Bytes(), 0644); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
-	}
-
-	// Run format.Source for final cleanup
-	content, err := os.ReadFile(filepath)
-	if err != nil {
-		return fmt.Errorf("failed to read file for formatting: %w", err)
-	}
-
-	formatted, err := format.Source(content)
-	if err != nil {
-		// If formatting fails, keep the unformatted version
-		return nil
-	}
-
-	if err := os.WriteFile(filepath, formatted, 0644); err != nil {
-		return fmt.Errorf("failed to write formatted file: %w", err)
 	}
 
 	return nil

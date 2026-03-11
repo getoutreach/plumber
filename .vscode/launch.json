@@ -5,7 +5,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Launch Debug Server",
+      "name": "Launch Debug - Discovery",
       "type": "go",
       "request": "launch",
       "mode": "debug",
@@ -13,13 +13,8 @@
       "go.testEnvFile": "${workspaceRoot}/.vscode/private.env",
       "program": "${workspaceRoot}/cmd/plumber/",
       "buildFlags": "-tags=or_dev",
-      "args": [
-        "discovery",
-        "-dir",
-        "${workspaceRoot}/example",
-        "-config",
-        "${workspaceRoot}/example/plumber.yaml"
-      ]
+      "cwd": "${workspaceRoot}/example",
+      "args": ["discovery", "-config", "${workspaceRoot}/example/plumber.yaml"]
     },
     {
       "name": "Attach to dev container",
