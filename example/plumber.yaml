@@ -22,6 +22,15 @@ applications:
         loop:
           # path allows scanning a folder structure and declares a variables using named re named group expression
           path: adapter/(?P<module>\w+)
+      - plumber.container:
+          name: "Scenario"
+          container:
+            path: ./application_scenario.go
+          source:
+            path: ./scenario/
+          matchers:
+            - constructors:
+                - New(?P<name>.*)
 templates:
   container: |
     // Copyright 2025 Outreach Corporation. All Rights Reserved.

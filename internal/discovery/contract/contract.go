@@ -6,6 +6,16 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+type ProviderMapping struct {
+	Type      types.Type
+	Providers []*ContainerProvider
+}
+
+type ContainerProvider struct {
+	ContainerName string
+	Provider      *Provider
+}
+
 // DiscoveryResult contains the discovered providers
 type DiscoveryResult struct {
 	Providers []*Provider

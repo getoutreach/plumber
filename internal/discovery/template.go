@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -113,15 +112,6 @@ func (r *TemplateRenderer) buildContextMap(
 			"remote": isRemote,
 		},
 	}
-}
-
-// formatWithGoimports runs goimports on the file to clean up imports
-func (r *TemplateRenderer) formatWithGoimports(filePath string) error {
-	cmd := exec.Command("goimports", "-w", filePath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("goimports failed: %w\nOutput: %s", err, string(output))
-	}
-	return nil
 }
 
 // extractPackageName extracts the package name from a module path

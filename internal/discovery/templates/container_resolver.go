@@ -10,7 +10,6 @@ import (
 	"github.com/dave/dst/decorator"
 	"github.com/dave/dst/dstutil"
 	"github.com/getoutreach/plumber/internal/discovery/contract"
-	"golang.org/x/tools/go/packages"
 )
 
 //go:embed fixtures/*.go
@@ -160,24 +159,78 @@ func FuncDeclaration(node dst.Node, name string) *dst.FuncDecl {
 	return funcDeclaration
 }
 
+func FindNodes(node dst.Node, predicate func(dst.Node) (match, recurse bool)) []dst.Node {
+	var selected []dst.Node
+	visitor := &RecursiveVisitor{
+		PreFunc: func(c *dstutil.Cursor) bool {
+			match, recurse := predicate(c.Node())
+			if match {
+				selected = append(selected, c.Node())
+			}
+			return recurse
+		},
+	}
+	walk(node, visitor)
+	return selected
+}
+
+func FindNode(node dst.Node, predicate func(dst.Node) (match, recurse bool)) dst.Node {
+	nodes := FindNodes(node, predicate)
+	if len(nodes) > 0 {
+		return nodes[0]
+	}
+	return nil
+}
+
+func IsFuncCallTo(node dst.Node, funcName string) bool {
+	if call, ok := node.(*dst.CallExpr); ok {
+		if sel, ok := call.Fun.(*dst.SelectorExpr); ok {
+			if sel.Sel.Name == funcName {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func FindOnly(b bool) (match, recurse bool) {
+	if b {
+		return true, false
+	}
+	return false, true
+}
+
+func FindCallbackBody(call dst.Node, argument int) dst.Node {
+	if call, ok := call.(*dst.CallExpr); ok {
+		if argument >= len(call.Args) {
+			return nil
+		}
+		arg := call.Args[argument]
+		if funcLit, ok := arg.(*dst.FuncLit); ok {
+			return funcLit.Body
+		}
+	}
+	return nil
+}
+
 func TypeDefinition(param contract.ParameterInfo) func(c *dstutil.Cursor) {
 	return func(c *dstutil.Cursor) {
-		c.Replace(ToTypeDefinition(param.TypeInfo.Package, param.TypeInfo.Type))
+		c.Replace(ToTypeDefinition(param.TypeInfo.Type))
 	}
 }
 
-func ToTypeDefinition(pkg *packages.Package, t types.Type) dst.Expr {
+func ToTypeDefinition(t types.Type) dst.Expr {
 	switch t := t.(type) {
 	case *types.Named:
-		return &dst.Ident{Name: t.Obj().Name(), Path: pkg.PkgPath}
+		return &dst.Ident{Name: t.Obj().Name(), Path: t.Obj().Pkg().Path()}
 	case *types.Pointer:
-		return &dst.StarExpr{X: ToTypeDefinition(pkg, t.Elem())}
+		return &dst.StarExpr{X: ToTypeDefinition(t.Elem())}
 	case *types.Slice:
-		return &dst.ArrayType{Elt: ToTypeDefinition(pkg, t.Elem())}
+		return &dst.ArrayType{Elt: ToTypeDefinition(t.Elem())}
 	case *types.Map:
 		return &dst.MapType{
-			Key:   ToTypeDefinition(pkg, t.Key()),
-			Value: ToTypeDefinition(pkg, t.Elem()),
+			Key:   ToTypeDefinition(t.Key()),
+			Value: ToTypeDefinition(t.Elem()),
 		}
 	default:
 		return &dst.Ident{Name: t.String()}

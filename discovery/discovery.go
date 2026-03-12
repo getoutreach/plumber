@@ -41,3 +41,8 @@ func Undefined[T any]() T {
 	var zero T
 	panic("undefined dependency of type " + fmt.Sprintf("%T", zero))
 }
+
+func OneOf[T any](...T) T {
+	var zero T
+	panic("unselected one of dependency of type " + fmt.Sprintf("%T", zero))
+}

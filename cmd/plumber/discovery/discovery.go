@@ -67,6 +67,12 @@ type containerInfo struct {
 	sourcePaths   []string
 }
 
+type discoveredProviders struct {
+	container   *containerInfo
+	providers   []*contract.Provider
+	providerMap map[string]*contract.ProviderMapping
+}
+
 func processApplication(ctx context.Context, baseDir string, app *discovery.Application, cfg *discovery.Config) error {
 	// Collect container information and file paths
 	containers, allPaths := collectContainerInfo(baseDir, app, cfg)
@@ -75,6 +81,9 @@ func processApplication(ctx context.Context, baseDir string, app *discovery.Appl
 		return nil
 	}
 
+	// Create a map to hold the provider mappings
+	var providerMap = make(map[string]*contract.ProviderMapping)
+
 	// Create AST parser once for all paths (loads all packages together)
 	fmt.Printf("\n  Loading %d file(s) across %d container(s) for analysis...\n", len(allPaths), len(containers))
 	astParser, err := discovery.NewASTParser(allPaths...)
@@ -82,9 +91,33 @@ func processApplication(ctx context.Context, baseDir string, app *discovery.Appl
 		return fmt.Errorf("failed to create AST parser: %w", err)
 	}
 
-	// Process each container
+	// Phase 1: Discover providers from all containers
+	fmt.Printf("\n  Phase 1: Discovering providers...\n")
+	allDiscovered := make([]*discoveredProviders, 0, len(containers))
 	for _, info := range containers {
-		if err := processContainer(astParser, info); err != nil {
+		discovered, err := discoverContainerProviders(astParser, info)
+		if err != nil {
+			return err
+		}
+		// Populate the provider map
+		for _, provider := range discovered.providers {
+			providerType := provider.Type.TypeInfo.Type.String()
+			if _, exists := providerMap[providerType]; !exists {
+				providerMap[providerType] = &contract.ProviderMapping{Type: provider.Type.TypeInfo.Type, Providers: []*contract.ContainerProvider{}}
+			}
+			providerMap[providerType].Providers = append(providerMap[providerType].Providers, &contract.ContainerProvider{
+				ContainerName: info.config.Name,
+				Provider:      provider,
+			})
+		}
+		discovered.providerMap = providerMap
+		allDiscovered = append(allDiscovered, discovered)
+	}
+
+	// Phase 2: Augment containers with discovered providers
+	fmt.Printf("\n  Phase 2: Augmenting containers...\n")
+	for _, discovered := range allDiscovered {
+		if err := augmentContainer(discovered); err != nil {
 			return err
 		}
 	}
@@ -188,17 +221,26 @@ func resolveSourcePaths(baseDir string, cfg *discovery.PlumberContainerConfig) [
 	return sourcePaths
 }
 
-func processContainer(astParser *discovery.ASTParser, info *containerInfo) error {
+// discoverContainerProviders discovers providers from a container's source files
+// Function definition corrected
+func discoverContainerProviders(astParser *discovery.ASTParser, info *containerInfo) (*discoveredProviders, error) {
 	cfg := info.config
 	fmt.Printf("\n  Container: %s\n", cfg.Name)
 	fmt.Printf("    Container path: %s\n", info.containerPath)
+
+	discovered := &discoveredProviders{
+		container: info,
+		providers: []*contract.Provider{},
+	}
 
 	// Process source files for discovery with matchers
 	if len(info.sourcePaths) > 0 {
 		result, err := discoverSourceTypes(astParser, info.sourcePaths, cfg)
 		if err != nil {
-			return err
+			return nil, err
 		}
+
+		discovered.providers = result.Providers
 
 		// Display discovered providers
 		if len(result.Providers) > 0 {
@@ -214,21 +256,37 @@ func processContainer(astParser *discovery.ASTParser, info *containerInfo) error
 					fmt.Printf("        Func: %s\n", provider.Constructor.FunctionName)
 				}
 			}
-
-			// Augment the container struct with missing provider fields
-			if err := augmentContainerWithProviders(info.containerPath, cfg.Name, result.Providers); err != nil {
-				fmt.Printf("    ⚠ Warning: Failed to augment container: %v\n", err)
-			} else {
-				fmt.Printf("    ✓ Container augmented with discovered providers\n")
-
-				// Run goimports to fix imports
-				if err := runGoimports(info.containerPath); err != nil {
-					fmt.Printf("    ⚠ Warning: Failed to run goimports: %v\n", err)
-				}
-			}
 		}
 	} else {
 		fmt.Printf("    No source paths configured\n")
+	}
+
+	return discovered, nil
+}
+
+// augmentContainer augments a container with its discovered providers
+func augmentContainer(discovered *discoveredProviders) error {
+	info := discovered.container
+	cfg := info.config
+
+	fmt.Printf("\n  Container: %s\n", cfg.Name)
+
+	if len(discovered.providers) == 0 {
+		fmt.Printf("    No providers to augment\n")
+		return nil
+	}
+
+	// Augment the container struct with missing provider fields
+	if err := augmentContainerWithProviders(info.containerPath, cfg.Name, discovered.providers, discovered.providerMap); err != nil {
+		fmt.Printf("    ⚠ Warning: Failed to augment container: %v\n", err)
+		return nil // Don't fail the entire process
+	}
+
+	fmt.Printf("    ✓ Container augmented with discovered providers\n")
+
+	// Run goimports to fix imports
+	if err := runGoimports(info.containerPath); err != nil {
+		fmt.Printf("    ⚠ Warning: Failed to run goimports: %v\n", err)
 	}
 
 	return nil
@@ -265,7 +323,11 @@ func discoverSourceTypes(astParser *discovery.ASTParser, sourcePaths []string, c
 }
 
 // augmentContainerWithProviders adds missing provider fields to the container struct
-func augmentContainerWithProviders(containerPath, containerName string, providers []*contract.Provider) error {
+func augmentContainerWithProviders(
+	containerPath, containerName string,
+	providers []*contract.Provider,
+	providerMap map[string]*contract.ProviderMapping,
+) error {
 	// Create a new parser specifically for the container file
 	parser, err := discovery.NewASTParser(containerPath)
 	if err != nil {
@@ -282,7 +344,7 @@ func augmentContainerWithProviders(containerPath, containerName string, provider
 	augmenter := discovery.NewAugmenter()
 
 	// Augment the container struct
-	result, err := augmenter.AugmentContainerStruct(containerPath, containerName, providers, file, dec)
+	result, err := augmenter.AugmentContainerStruct(containerPath, containerName, providers, file, dec, providerMap)
 	if err != nil {
 		return err
 	}
@@ -306,78 +368,12 @@ func runGoimports(filePath string) error {
 		return fmt.Errorf("gofmt failed: %w\nOutput: %s", err, string(output))
 	}
 
-	// Then run goimports to organize imports
-	cmd = exec.Command("goimports", "-w", filePath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("goimports failed: %w\nOutput: %s", err, string(output))
-	}
+	// // Then run goimports to organize imports
+	// cmd = exec.Command("goimports", "-w", filePath)
+	// if output, err := cmd.CombinedOutput(); err != nil {
+	// 	return fmt.Errorf("goimports failed: %w\nOutput: %s", err, string(output))
+	// }
 	return nil
-}
-
-// extractPlumberType extracts the wrapped type from plumber.D[T] or plumber.R[T]
-// Returns empty string if not a plumber wrapper type
-func extractPlumberType(typeStr string) string {
-	// Match plumber.D[...] or plumber.R[...]
-	if strings.HasPrefix(typeStr, "plumber.D[") || strings.HasPrefix(typeStr, "plumber.R[") {
-		start := strings.Index(typeStr, "[")
-		end := strings.LastIndex(typeStr, "]")
-		if start != -1 && end != -1 && end > start {
-			inner := typeStr[start+1 : end]
-			// Remove pointer prefix if present
-			return strings.TrimPrefix(inner, "*")
-		}
-	}
-	return ""
-}
-
-// typesMatch checks if a container field type matches a discovered struct
-// Handles package prefixes and pointer types
-func typesMatch(fieldType, structName string) bool {
-	// Remove package prefix from field type (e.g., "database.Repository" -> "Repository")
-	parts := strings.Split(fieldType, ".")
-	if len(parts) > 0 {
-		fieldBaseName := parts[len(parts)-1]
-		return fieldBaseName == structName
-	}
-	return fieldType == structName
-}
-
-// isStructType checks if a type looks like a struct (not a primitive)
-// Primitives: int, int32, string, bool, etc.
-// Structs: SomeName, package.SomeName, *SomeName
-func isStructType(typeStr string) bool {
-	// Remove pointer prefix
-	typeStr = strings.TrimPrefix(typeStr, "*")
-
-	// If it has a package prefix (contains .), it's a struct
-	if strings.Contains(typeStr, ".") {
-		return true
-	}
-
-	// If it starts with uppercase and is not a known primitive, it's likely a struct
-	if len(typeStr) > 0 && typeStr[0] >= 'A' && typeStr[0] <= 'Z' {
-		// Check for known primitive types that are capitalized
-		primitives := map[string]bool{
-			"String":  true,
-			"Int":     true,
-			"Int8":    true,
-			"Int16":   true,
-			"Int32":   true,
-			"Int64":   true,
-			"Uint":    true,
-			"Uint8":   true,
-			"Uint16":  true,
-			"Uint32":  true,
-			"Uint64":  true,
-			"Bool":    true,
-			"Float32": true,
-			"Float64": true,
-		}
-		return !primitives[typeStr]
-	}
-
-	// Lowercase types are primitives (int, string, bool, etc.)
-	return false
 }
 
 // renderContainerFromTemplate renders a container file from template

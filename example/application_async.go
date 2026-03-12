@@ -12,7 +12,8 @@ import (
 
 // Async service represents async processing related dependency container
 type Async struct {
-	Publisher plumber.D[*async.Publisher]
+	Publisher        plumber.D[*async.Publisher]
+	DelayedPublisher plumber.D[*async.Publisher]
 }
 
 // Define resolves dependencies
@@ -20,6 +21,11 @@ func (c *Async) Define(ctx context.Context, cf *Config, a *Container) {
 	c.Publisher.Resolver(func(r *plumber.Resolution[*async.Publisher]) {
 		r.Require().Then(func() {
 			r.Resolve(async.NewPublisher(discovery.Undefined[string]()))
+		})
+	})
+	c.DelayedPublisher.Resolver(func(r *plumber.Resolution[*async.Publisher]) {
+		r.Require().Then(func() {
+			r.Resolve(async.NewDelayedPublisher(discovery.Undefined[string]()))
 		})
 	})
 }

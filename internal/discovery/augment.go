@@ -32,6 +32,8 @@ type AugmentResult struct {
 // Augmenter handles AST modifications to add missing fields to container structs
 type Augmenter struct{}
 
+var instanceMethods = []string{"Instance", "InstanceError"}
+
 // NewAugmenter creates a new augmenter instance
 func NewAugmenter() *Augmenter {
 	return &Augmenter{}
@@ -45,6 +47,7 @@ func (a *Augmenter) AugmentContainerStruct(
 	providers []*contract.Provider,
 	file *dst.File,
 	dec *decorator.Decorator,
+	providerMap map[string]*contract.ProviderMapping,
 ) (*AugmentResult, error) {
 	// Find the container struct in the AST
 	structDecl := a.findStructDecl(file, containerName)
@@ -52,32 +55,40 @@ func (a *Augmenter) AugmentContainerStruct(
 		return nil, fmt.Errorf("struct %q not found in file", containerName)
 	}
 
+	var (
+		result         = &AugmentResult{}
+		neededPackages = make(map[string]bool)
+	)
+
 	// Identify missing providers by checking existing struct fields
 	missingProviders := a.findMissingProvidersFromStruct(structDecl, providers)
-	if len(missingProviders) == 0 {
-		return &AugmentResult{}, nil
+	if len(missingProviders) > 0 {
+
+		// Build import alias map from the file
+		importAliases := a.buildImportAliasMap(file)
+
+		// Add missing fields to the struct
+		result, neededPackages = a.addFieldsToStruct(file, containerName, structDecl, missingProviders, importAliases, providerMap)
+
+		// Add plumber import if not present
+		a.ensureImport(file, "github.com/getoutreach/plumber")
+
+		// Add context import for Define method
+		a.ensureImport(file, "context")
+
+		// Add imports for all packages used in the field types
+		for pkgPath := range neededPackages {
+			a.ensureImport(file, pkgPath)
+		}
 	}
 
-	// Build import alias map from the file
-	importAliases := a.buildImportAliasMap(file)
+	changed := a.ensureDependencyRequired(file, containerName)
 
-	// Add missing fields to the struct
-	result, neededPackages := a.addFieldsToStruct(file, structDecl, missingProviders, importAliases)
-
-	// Add plumber import if not present
-	a.ensureImport(file, "github.com/getoutreach/plumber")
-
-	// Add context import for Define method
-	a.ensureImport(file, "context")
-
-	// Add imports for all packages used in the field types
-	for pkgPath := range neededPackages {
-		a.ensureImport(file, pkgPath)
-	}
-
-	// Write the modified AST back to the file
-	if err := a.writeFile(containerPath, file, dec); err != nil {
-		return nil, fmt.Errorf("failed to write file: %w", err)
+	if changed || len(missingProviders) > 0 {
+		// Write the modified AST back to the file
+		if err := a.writeFile(containerPath, file, dec); err != nil {
+			return nil, fmt.Errorf("failed to write file: %w", err)
+		}
 	}
 
 	return result, nil
@@ -197,7 +208,14 @@ func (a *Augmenter) findStructDecl(file *dst.File, structName string) *dst.Struc
 
 // addFieldsToStruct adds missing fields to a struct declaration based on discovered providers
 // Returns the result and a set of package paths that need to be imported
-func (a *Augmenter) addFieldsToStruct(file *dst.File, structDecl *dst.StructType, missingProviders []*contract.Provider, importAliases map[string]string) (*AugmentResult, map[string]bool) {
+func (a *Augmenter) addFieldsToStruct(
+	file *dst.File,
+	containerName string,
+	structDecl *dst.StructType,
+	missingProviders []*contract.Provider,
+	importAliases map[string]string,
+	providerMap map[string]*contract.ProviderMapping,
+) (*AugmentResult, map[string]bool) {
 	result := &AugmentResult{
 		Added:   []string{},
 		Skipped: []string{},
@@ -238,14 +256,41 @@ func (a *Augmenter) addFieldsToStruct(file *dst.File, structDecl *dst.StructType
 		result.Added = append(result.Added, provider.Name)
 
 		args := lo.Map(provider.Constructor.Parameters, func(param *contract.ParameterInfo, _ int) dst.Expr {
-			return &dst.CallExpr{
-				Fun: &dst.IndexListExpr{
-					Indices: []dst.Expr{templates.ToTypeDefinition(param.TypeInfo.Package, param.TypeInfo.Type)},
-					X: &dst.Ident{
-						Name: "Undefined",
+			if mapping, ok := providerMap[param.TypeInfo.Type.String()]; ok {
+				mappedArgs := lo.Map(mapping.Providers, func(p *contract.ContainerProvider, _ int) dst.Expr {
+					exp := providerPathExpr(p, containerName)
+					return &dst.CallExpr{
+						Fun: &dst.SelectorExpr{
+							X: exp,
+							Sel: &dst.Ident{
+								Name: "Instance",
+							},
+						},
+					}
+				})
+				if len(mappedArgs) == 1 {
+					return mappedArgs[0]
+				}
+				c := &dst.CallExpr{
+					Fun: &dst.Ident{
+						Name: "OneOf",
 						Path: "github.com/getoutreach/plumber/discovery",
 					},
-				},
+					Args: newLinedArguments(mappedArgs),
+				}
+				c.Decs.Before = dst.NewLine
+				c.Decs.After = dst.NewLine
+				return c
+			} else {
+				return &dst.CallExpr{
+					Fun: &dst.IndexListExpr{
+						Indices: []dst.Expr{templates.ToTypeDefinition(param.TypeInfo.Type)},
+						X: &dst.Ident{
+							Name: "Undefined",
+							Path: "github.com/getoutreach/plumber/discovery",
+						},
+					},
+				}
 			}
 		})
 
@@ -375,6 +420,65 @@ func (a *Augmenter) collectPackagesFromType(typ types.Type, packages map[string]
 			}
 		}
 	}
+}
+
+func (a *Augmenter) ensureDependencyRequired(file *dst.File, containerName string) bool {
+	defineFuncDeclaration := templates.FuncDeclaration(file, "Define")
+
+	resolvers := templates.FindNodes(defineFuncDeclaration, func(node dst.Node) (match, recurse bool) {
+		return templates.FindOnly(templates.IsFuncCallTo(node, "Resolver"))
+	})
+
+	for _, resolver := range resolvers {
+		requireFunc := templates.FindNode(resolver, func(node dst.Node) (match bool, recurse bool) {
+			return templates.FindOnly(templates.IsFuncCallTo(node, "Require"))
+		})
+		thenFunc := templates.FindNode(resolver, func(node dst.Node) (match bool, recurse bool) {
+			return templates.FindOnly(templates.IsFuncCallTo(node, "Then"))
+		})
+
+		thenCallback := templates.FindCallbackBody(thenFunc, 0)
+
+		functionCalls := templates.FindNodes(thenCallback, func(node dst.Node) (match bool, recurse bool) {
+			_, ok := node.(*dst.CallExpr)
+			return ok, true
+		})
+
+		usedInstanceSelectorExpr := lo.Compact(
+			lo.Map(functionCalls, func(thenCallNode dst.Node, _ int) dst.Node {
+				thenCall := thenCallNode.(*dst.CallExpr)
+				if sel, ok := thenCall.Fun.(*dst.SelectorExpr); ok {
+					if lo.Contains(instanceMethods, sel.Sel.Name) {
+						return sel
+					}
+					if sel.Sel.Name == "Instance" {
+						fmt.Println("> ", sel.Sel.Name, sel.Sel.Path)
+					} else {
+						fmt.Println(sel.Sel.Name, sel.Sel.Path)
+					}
+				}
+				return nil
+			}))
+
+		if rf, ok := requireFunc.(*dst.CallExpr); ok {
+			if rf == nil {
+				return false
+			}
+			if len(rf.Args) == 0 {
+				fmt.Println("Adding args")
+				rf.Args = lo.Map(usedInstanceSelectorExpr, func(sel dst.Node, _ int) dst.Expr {
+					return &dst.UnaryExpr{
+						Op: token.AND,
+						X:  sel.(*dst.SelectorExpr),
+					}
+				})
+			}
+			return false
+		}
+	}
+
+	return false
+
 }
 
 // writeFile writes the modified AST back to a file
