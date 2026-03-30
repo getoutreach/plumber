@@ -21,6 +21,13 @@ func (c *Graphql) Define(ctx context.Context, cf *Config, a *Container) {
 
 	c.Server.Resolver(func(r *plumber.ResolutionR[*graphql.Server]) {
 		r.Require(
+			&c.Port,
+			&a.Service.Querier,
+			&a.Service.Mutator,
+			&c.Port,
+			&a.Service.Querier,
+			&a.Service.Mutator,
+			&c.Port,
 			&a.Service.Querier,
 			&a.Service.Mutator,
 		).Then(func() {

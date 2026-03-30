@@ -3,7 +3,7 @@ package contract
 import (
 	"go/types"
 
-	"golang.org/x/tools/go/packages"
+	"github.com/dave/dst/decorator"
 )
 
 type ProviderMapping struct {
@@ -51,7 +51,7 @@ type ParameterInfo struct {
 }
 
 type TypeInfo struct {
-	Package *packages.Package
+	Package *decorator.Package
 	Type    types.Type
 }
 

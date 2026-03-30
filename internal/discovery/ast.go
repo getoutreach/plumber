@@ -9,111 +9,29 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
+	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/discovery/contract"
-	"golang.org/x/tools/go/packages"
 )
 
 // ASTParser parses Go source files and extracts type information
 type ASTParser struct {
-	dec  *decorator.Decorator
-	pkgs []*packages.Package
+	*astx.Parser
 }
 
 // NewASTParser creates a new AST parser for the given paths
 func NewASTParser(paths ...string) (*ASTParser, error) {
-	if len(paths) == 0 {
-		return nil, fmt.Errorf("no paths provided")
-	}
-
-	// Get package directories from file paths
-	pkgDirs := make(map[string]bool)
-	for _, path := range paths {
-		dir := filepath.Dir(path)
-		pkgDirs[dir] = true
-	}
-
-	// Convert to slice
-	dirs := make([]string, 0, len(pkgDirs))
-	for dir := range pkgDirs {
-		dirs = append(dirs, dir)
-	}
-
-	// Use the first directory as the working directory
-	workDir := filepath.Dir(paths[0])
-
-	cfg := &packages.Config{
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedCompiledGoFiles |
-			packages.NeedImports |
-			packages.NeedTypes |
-			packages.NeedSyntax |
-			packages.NeedTypesInfo,
-		Dir: workDir,
-	}
-
-	pkgs, err := packages.Load(cfg, dirs...)
+	parser, err := astx.NewParser(paths, astx.WithTypeInfo())
 	if err != nil {
-		return nil, fmt.Errorf("failed to load packages: %w", err)
+		return nil, fmt.Errorf("failed to create AST parser: %w", err)
 	}
-
-	if len(pkgs) == 0 {
-		return nil, fmt.Errorf("no packages found for paths: %v", paths)
-	}
-
-	// Check for errors in packages
-	for _, pkg := range pkgs {
-		if len(pkg.Errors) > 0 {
-			return nil, fmt.Errorf("package %q has errors: %v", pkg.PkgPath, pkg.Errors)
-		}
-	}
-
-	// Create decorator for converting ast to dst
-	dec := decorator.NewDecorator(pkgs[0].Fset)
-
 	return &ASTParser{
-		dec:  dec,
-		pkgs: pkgs,
+		Parser: parser,
 	}, nil
-}
-
-// GetParsedFile returns the already-parsed AST file for a given path, converted to dst
-func (p *ASTParser) GetParsedFile(filepath string) (*dst.File, error) {
-	// Find the package that contains this file
-	for _, pkg := range p.pkgs {
-		for _, file := range pkg.Syntax {
-			pos := pkg.Fset.Position(file.Pos())
-			if pos.Filename == filepath {
-				// Convert ast.File to dst.File
-				dstFile, err := p.dec.DecorateFile(file)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert to dst: %w", err)
-				}
-				return dstFile, nil
-			}
-		}
-	}
-	return nil, fmt.Errorf("file %q not found in parsed packages", filepath)
-}
-
-// GetFileAndDecorator returns the dst.File and decorator for augmentation purposes
-func (p *ASTParser) GetFileAndDecorator(filepath string) (*dst.File, *decorator.Decorator) {
-	file, err := p.GetParsedFile(filepath)
-	if err != nil {
-		return nil, nil
-	}
-	return file, p.dec
-}
-
-// GetDecorator returns the decorator used by the parser
-func (p *ASTParser) GetDecorator() *decorator.Decorator {
-	return p.dec
 }
 
 // Discover finds all structs and their constructors based on matchers
@@ -127,27 +45,18 @@ func (p *ASTParser) DiscoverInFiles(matchers []Matcher, fileFilter map[string]bo
 	constructors := []*contract.ConstructorInfo{}
 	providerNames := make(map[string]string) // funcName -> providerName
 
-	for _, pkg := range p.pkgs {
+	for _, pkg := range p.Packages() {
 		for _, file := range pkg.Syntax {
-			// If file filter is provided, check if this file should be processed
 			if fileFilter != nil {
-				filePath := pkg.Fset.Position(file.Pos()).Filename
-				if !fileFilter[filePath] {
+				if !fileFilter[pkg.Decorator.Filenames[file]] {
 					continue
 				}
 			}
 
-			// Convert ast.File to dst.File for inspection
-			dstFile, err := p.dec.DecorateFile(file)
-			if err != nil {
-				// Skip files that can't be converted
-				continue
-			}
-
 			// Inspect the DST for function declarations
-			dst.Inspect(dstFile, func(n dst.Node) bool {
+			dst.Inspect(file, func(n dst.Node) bool {
 				if decl, ok := n.(*dst.FuncDecl); ok {
-					ctor, providerName := p.processFuncDecl(pkg, dstFile, decl, matchers)
+					ctor, providerName := p.processFuncDecl(pkg, file, decl, matchers)
 					if ctor != nil {
 						constructors = append(constructors, ctor)
 						if providerName != "" {
@@ -168,7 +77,7 @@ func (p *ASTParser) DiscoverInFiles(matchers []Matcher, fileFilter map[string]bo
 	return result, nil
 }
 
-func (p *ASTParser) parametersInfo(pkg *packages.Package, params []*ast.Field) []*contract.ParameterInfo {
+func (p *ASTParser) parametersInfo(pkg *decorator.Package, params []*ast.Field) []*contract.ParameterInfo {
 	results := []*contract.ParameterInfo{}
 	for _, res := range params {
 		tp := pkg.TypesInfo.TypeOf(res.Type)
@@ -192,7 +101,7 @@ func (p *ASTParser) parametersInfo(pkg *packages.Package, params []*ast.Field) [
 }
 
 func (p *ASTParser) processFuncDecl(
-	pkg *packages.Package,
+	pkg *decorator.Package,
 	file *dst.File,
 	decl *dst.FuncDecl,
 	matchers []Matcher,
@@ -213,7 +122,7 @@ func (p *ASTParser) processFuncDecl(
 		return nil, ""
 	}
 
-	f := p.dec.Ast.Nodes[decl]
+	f := pkg.Decorator.Ast.Nodes[decl]
 
 	var (
 		results = []*contract.ParameterInfo{}

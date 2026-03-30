@@ -1,0 +1,17 @@
+plumber.shape:
+  templates:
+    - plumber.template:
+        name: plumber.template
+        content: |
+          // template
+  mixins:
+    - plumber.mixin:
+        name: mixing.model.filtrable
+        annotations:
+          - name: plumber:filter
+            args:
+              - annotation.has
+              - is:filtrable
+          - name: plumber:template
+            args:
+              - tmp2

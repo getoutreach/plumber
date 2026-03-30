@@ -13,6 +13,8 @@ import (
 	"github.com/getoutreach/gobox/pkg/cfg"
 	gcli "github.com/getoutreach/gobox/pkg/cli"
 	"github.com/getoutreach/plumber/cmd/plumber/discovery"
+	"github.com/getoutreach/plumber/cmd/plumber/inspect"
+	"github.com/getoutreach/plumber/cmd/plumber/shape"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 	// Place any extra imports for your startup code here
@@ -73,6 +75,38 @@ func main() {
 					Aliases:  []string{"c"},
 					Usage:    "Path to plumber.yaml configuration file",
 					Required: true,
+				},
+			},
+		},
+		{
+			Name:   "shape",
+			Usage:  "Run shape command",
+			Action: shape.Run,
+			Flags: []cli.Flag{
+
+				&cli.StringFlag{
+					Name:    "config",
+					Aliases: []string{"c"},
+					Usage:   "Path to plumber.yaml configuration file",
+				},
+			},
+		},
+		{
+			Name:   "inspect",
+			Usage:  "Run inspect command",
+			Action: inspect.Run,
+			Flags: []cli.Flag{
+
+				&cli.StringFlag{
+					Name:    "config",
+					Aliases: []string{"c"},
+					Usage:   "Path to plumber.yaml configuration file",
+				},
+				&cli.StringFlag{
+					Name:    "format",
+					Aliases: []string{"f"},
+					Value:   "",
+					Usage:   "Output format for inspect command (json or yaml)",
 				},
 			},
 		},

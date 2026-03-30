@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/getoutreach/plumber/internal/command"
 	"github.com/getoutreach/plumber/internal/discovery"
 	"github.com/getoutreach/plumber/internal/discovery/contract"
 	"github.com/urfave/cli/v2"
@@ -33,7 +34,7 @@ func Run(c *cli.Context) error {
 	baseDir := filepath.Dir(absConfigPath)
 
 	// Parse the configuration
-	cfg, err := discovery.ParseConfig(absConfigPath)
+	cfg, err := command.ParseConfig[discovery.Config](absConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
@@ -335,7 +336,7 @@ func augmentContainerWithProviders(
 	}
 
 	// Get the file and decorator from the parser
-	file, dec := parser.GetFileAndDecorator(containerPath)
+	file, pkg, dec := parser.GetFileAndDecorator(containerPath)
 	if file == nil {
 		return fmt.Errorf("failed to get AST for container file")
 	}
@@ -344,7 +345,7 @@ func augmentContainerWithProviders(
 	augmenter := discovery.NewAugmenter()
 
 	// Augment the container struct
-	result, err := augmenter.AugmentContainerStruct(containerPath, containerName, providers, file, dec, providerMap)
+	result, err := augmenter.AugmentContainerStruct(pkg, containerPath, containerName, providers, file, dec, providerMap)
 	if err != nil {
 		return err
 	}

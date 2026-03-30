@@ -17,6 +17,23 @@
       "args": ["discovery", "-config", "${workspaceRoot}/example/plumber.yaml"]
     },
     {
+      "name": "Launch Debug - Shape",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "envFile": "${workspaceRoot}/.vscode/private.env",
+      "go.testEnvFile": "${workspaceRoot}/.vscode/private.env",
+      "program": "${workspaceRoot}/cmd/plumber/",
+      "buildFlags": "-tags=or_dev",
+      "cwd": "${workspaceRoot}/example",
+      "args": [
+        "shape",
+        "-config",
+        "${workspaceRoot}/example/plumber.shape.yaml",
+        "./contract/..."
+      ]
+    },
+    {
       "name": "Attach to dev container",
       "type": "go",
       "debugAdapter": "dlv-dap",

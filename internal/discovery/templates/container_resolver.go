@@ -101,6 +101,11 @@ func ContainerResolver(visitors ...Visitor) *dst.File {
 	return decorated
 }
 
+func Walk(node dst.Node, visitors ...Visitor) dst.Node {
+	walk(node, visitors...)
+	return node
+}
+
 func SelectorExprNameReplace(mapping map[string]string) Visitor {
 	v := &RecursiveVisitor{}
 	v.PreFunc = func(c *dstutil.Cursor) bool {
@@ -193,9 +198,51 @@ func IsFuncCallTo(node dst.Node, funcName string) bool {
 	return false
 }
 
-func FindOnly(b bool) (match, recurse bool) {
+func MatchOnly(b bool) (match, recurse bool) {
 	if b {
 		return true, false
+	}
+	return false, true
+}
+
+func MatchType[T any](node dst.Node, predicates ...func(T) (match bool)) (match, recurse bool) {
+	if n, ok := node.(T); ok {
+		for _, predicate := range predicates {
+			if !predicate(n) {
+				return false, true
+			}
+		}
+		return true, false
+	}
+	return false, true
+}
+
+func Matcher(match, recurse bool) func() (match, recurse bool) {
+	return func() (match, recurse bool) {
+		return match, recurse
+	}
+}
+
+func StopRecurseOnMatch(pred func() (match, recurse bool)) func() (match, recurse bool) {
+	return func() (match, recurse bool) {
+		match, _ = pred()
+		if match {
+			return false, false
+		}
+		return false, true
+	}
+}
+
+func MatchAny(predicates ...func() (match, recurse bool)) (match, recurse bool) {
+	for _, predicate := range predicates {
+		if match, recurse := predicate(); match {
+			if !match && !recurse {
+				return false, false
+			}
+			if match {
+				return true, recurse
+			}
+		}
 	}
 	return false, true
 }

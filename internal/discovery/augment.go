@@ -8,7 +8,6 @@ package discovery
 import (
 	"bytes"
 	"fmt"
-	"go/format"
 	"go/token"
 	"go/types"
 	"os"
@@ -18,6 +17,7 @@ import (
 	"github.com/dave/dst/decorator"
 	"github.com/dave/dst/decorator/resolver/gopackages"
 	"github.com/dave/dst/dstutil"
+	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/discovery/contract"
 	"github.com/getoutreach/plumber/internal/discovery/templates"
 	"github.com/samber/lo"
@@ -42,6 +42,7 @@ func NewAugmenter() *Augmenter {
 // AugmentContainerStruct adds missing fields to a container struct based on discovered providers
 // It parses the container file, finds missing provider fields, and adds them
 func (a *Augmenter) AugmentContainerStruct(
+	pkg *decorator.Package,
 	containerPath string,
 	containerName string,
 	providers []*contract.Provider,
@@ -71,20 +72,21 @@ func (a *Augmenter) AugmentContainerStruct(
 		result, neededPackages = a.addFieldsToStruct(file, containerName, structDecl, missingProviders, importAliases, providerMap)
 
 		// Add plumber import if not present
-		a.ensureImport(file, "github.com/getoutreach/plumber")
+		astx.EnsureImport(pkg, file, "github.com/getoutreach/plumber")
 
 		// Add context import for Define method
-		a.ensureImport(file, "context")
+		astx.EnsureImport(pkg, file, "context")
 
 		// Add imports for all packages used in the field types
 		for pkgPath := range neededPackages {
-			a.ensureImport(file, pkgPath)
+			astx.EnsureImport(pkg, file, pkgPath)
 		}
 	}
 
-	changed := a.ensureDependencyRequired(file, containerName)
+	changed := a.ensureDependencyRequired(dec, file, containerName)
 
 	if changed || len(missingProviders) > 0 {
+
 		// Write the modified AST back to the file
 		if err := a.writeFile(containerPath, file, dec); err != nil {
 			return nil, fmt.Errorf("failed to write file: %w", err)
@@ -422,19 +424,19 @@ func (a *Augmenter) collectPackagesFromType(typ types.Type, packages map[string]
 	}
 }
 
-func (a *Augmenter) ensureDependencyRequired(file *dst.File, containerName string) bool {
+func (a *Augmenter) ensureDependencyRequired(dec *decorator.Decorator, file *dst.File, containerName string) bool {
 	defineFuncDeclaration := templates.FuncDeclaration(file, "Define")
 
 	resolvers := templates.FindNodes(defineFuncDeclaration, func(node dst.Node) (match, recurse bool) {
-		return templates.FindOnly(templates.IsFuncCallTo(node, "Resolver"))
+		return templates.MatchOnly(templates.IsFuncCallTo(node, "Resolver"))
 	})
 
 	for _, resolver := range resolvers {
 		requireFunc := templates.FindNode(resolver, func(node dst.Node) (match bool, recurse bool) {
-			return templates.FindOnly(templates.IsFuncCallTo(node, "Require"))
+			return templates.MatchOnly(templates.IsFuncCallTo(node, "Require"))
 		})
 		thenFunc := templates.FindNode(resolver, func(node dst.Node) (match bool, recurse bool) {
-			return templates.FindOnly(templates.IsFuncCallTo(node, "Then"))
+			return templates.MatchOnly(templates.IsFuncCallTo(node, "Then"))
 		})
 
 		thenCallback := templates.FindCallbackBody(thenFunc, 0)
@@ -444,17 +446,31 @@ func (a *Augmenter) ensureDependencyRequired(file *dst.File, containerName strin
 			return ok, true
 		})
 
+		// functionCalls := templates.FindNodes(thenCallback, func(node dst.Node) (match bool, recurse bool) {
+		//             return templates.MatchType[*dst.CallExpr](node)
+		//             return templates.MatchAny(
+		//                 // templates.StopRecurseOnMatch(
+		//                 // 	templates.Matcher(
+		//                 // 		templates.MatchType(node, func(n *dst.CallExpr) (match bool) {
+		//                 // 			if sel, ok := n.Fun.(*dst.Ident); ok {
+		//                 // 				if sel.Name == "OneOf" && sel.Path == "github.com/getoutreach/plumber/discovery" {
+		//                 // 					return true
+		//                 // 				}
+		//                 // 			}
+		//                 // 			return false
+		//                 // 		}),
+		//                 // 	),
+		//                 // ),
+		//                 templates.Matcher(templates.MatchType[*dst.CallExpr](node)),
+		//             )
+		//         })
+
 		usedInstanceSelectorExpr := lo.Compact(
 			lo.Map(functionCalls, func(thenCallNode dst.Node, _ int) dst.Node {
 				thenCall := thenCallNode.(*dst.CallExpr)
 				if sel, ok := thenCall.Fun.(*dst.SelectorExpr); ok {
 					if lo.Contains(instanceMethods, sel.Sel.Name) {
 						return sel
-					}
-					if sel.Sel.Name == "Instance" {
-						fmt.Println("> ", sel.Sel.Name, sel.Sel.Path)
-					} else {
-						fmt.Println(sel.Sel.Name, sel.Sel.Path)
 					}
 				}
 				return nil
@@ -464,42 +480,44 @@ func (a *Augmenter) ensureDependencyRequired(file *dst.File, containerName strin
 			if rf == nil {
 				return false
 			}
-			if len(rf.Args) == 0 {
-				fmt.Println("Adding args")
-				rf.Args = lo.Map(usedInstanceSelectorExpr, func(sel dst.Node, _ int) dst.Expr {
+			if len(rf.Args) == 0 || len(usedInstanceSelectorExpr) > 0 {
+				used := lo.Map(usedInstanceSelectorExpr, func(sel dst.Node, _ int) dst.Expr {
 					return &dst.UnaryExpr{
 						Op: token.AND,
-						X:  sel.(*dst.SelectorExpr),
+						X:  dst.Clone(sel).(*dst.SelectorExpr).X,
 					}
 				})
+				used = filterExistingDependecySelectors(used, rf.Args)
+				rf.Args = append(rf.Args, newLinedArguments(used)...)
+				return true
 			}
 			return false
 		}
 	}
 
 	return false
+}
 
+func filterExistingDependecySelectors(selectors []dst.Expr, args []dst.Expr) []dst.Expr {
+	if len(args) == 0 || len(selectors) == 0 {
+		return selectors
+	}
+	existing := make(map[string]bool)
+	for _, arg := range args {
+		existing[ExprToString(arg)] = true
+	}
+	return lo.Filter(selectors, func(sel dst.Expr, _ int) bool {
+		return !existing[ExprToString(sel)]
+	})
 }
 
 // writeFile writes the modified AST back to a file
 func (a *Augmenter) writeFile(filepath string, file *dst.File, dec *decorator.Decorator) error {
 	var buf bytes.Buffer
 
-	// Use the working directory for the restorer
-	workDir := "."
-	if absPath, err := os.Getwd(); err == nil {
-		workDir = absPath
-	}
-
-	r := decorator.NewRestorerWithImports("main", gopackages.New(workDir))
-	restoredFile, err := r.RestoreFile(file)
-
-	if err != nil {
-		return fmt.Errorf("failed to restore file: %w", err)
-	}
-
-	if err := format.Node(&buf, r.Fset, restoredFile); err != nil {
-		return fmt.Errorf("failed to format file: %w", err)
+	r := decorator.NewRestorerWithImports("root", gopackages.New("./"))
+	if err := r.Fprint(&buf, file); err != nil {
+		panic(err)
 	}
 
 	// Write to file
