@@ -1,0 +1,27 @@
+plumber.shape:
+  type:
+    wrappers:
+      - plumber.wrapper:
+          name: model.filter
+          expressions:
+            - plumber.wrapper_expression:
+                type: |
+                  "github.com/getoutreach/plumber/example/contract".Filtrable
+                matches:
+                  - rule: |
+                      fqn:"time".Time
+                  - rule: |
+                      fqn:"github.com/getoutreach/plumber/example/contract".OpenCloser
+                  - rule: |
+                      fqn:"github.com/getoutreach/plumber/example/contract".Name
+  mixins:
+    - plumber.mixin:
+        name: mixing.model.filtrable
+        annotations:
+          - name: plumber:filter
+            args:
+              - annotation.has
+              - is:filtrable
+          - name: plumber:field_wrapper
+            args:
+              - model.filter

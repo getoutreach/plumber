@@ -380,8 +380,6 @@ func (w *blockWriter) Close() error {
 		// body = re.ReplaceAll(body, w.buf.Bytes())
 	}
 
-	fmt.Println(blocks)
-
 	var buf bytes.Buffer
 	// Restore blocks
 	if blocks != nil {
@@ -448,7 +446,7 @@ type WriterConfig struct {
 	BlockName      string
 	PostProcessors PostProcessors
 	WriterOptions  []BlockWriterOption
-	FileOpener    FileOpener
+	FileOpener     FileOpener
 }
 
 func WithFileOpener(op FileOpener) WriterOption {
@@ -472,7 +470,7 @@ func (c WriterConfig) Clone() WriterConfig {
 		BlockName:      c.BlockName,
 		ByteProcessors: c.ByteProcessors,
 		PostProcessors: c.PostProcessors,
-		FileOpener:    c.FileOpener,
+		FileOpener:     c.FileOpener,
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/internal/render/view"
 	"github.com/getoutreach/plumber/query/model"
 )
@@ -75,7 +76,7 @@ func TestTesting(t *testing.T) {
 				model.NewAnnotation("plumber:comment", "Better struct comment"),
 			},
 		},
-	}, "derived_output.go")
+	}, "derived_output.go", gen.NewBufferFileOpener())
 	if err != nil {
 		fmt.Println("Error during rendering:", err)
 	}

@@ -4,33 +4,37 @@ package contract
 import (
 	"time"
 	// <<plumber::Block(imports)>>
-	"fmt"
 	// <</plumber::Block>>
 )
 
 // <<plumber::Block(header)>>
-func init() {
-	fmt.Println("test")
-}
 
 // <</plumber::Block>>
 
+// ForwardingCloser is derived from "github.com/getoutreach/plumber/example/contract".Closer.
+type ForwardingCloser struct {
+}
+
 // DerivedWorker is derived from "github.com/getoutreach/plumber/example/contract".Worker.
-// You can customize it but some fields may be automatically re-introduced based on the original struct definition.
 type DerivedWorker struct {
-	Name         string
+	Name         Name
 	Concurrency  int
 	CreatedAt    time.Time
 	ComplexField OpenCloser
 	Queues       []string
+	// <<plumber::Block(extra-DerivedWorker)>>
+	// <</plumber::Block>>
+
 }
 
 // WorkerFilter is derived from "github.com/getoutreach/plumber/example/contract".Worker.
-// You can customize it but some fields may be automatically re-introduced based on the original struct definition.
 type WorkerFilter struct {
-	Name         string
-	CreatedAt    time.Time
-	ComplexField OpenCloser
+	Name         Filtrable[Name]
+	CreatedAt    Filtrable[time.Time]
+	ComplexField Filtrable[OpenCloser]
+	// <<plumber::Block(extra-WorkerFilter)>>
+	// <</plumber::Block>>
+
 }
 
 // <<plumber::Block(footer)>>

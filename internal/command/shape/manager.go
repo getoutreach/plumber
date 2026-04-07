@@ -15,23 +15,26 @@ import (
 type GeneratorManager struct {
 	output  string
 	pkgPath string
+	cfg     *ShapeConfig
 }
 
-func NewGeneratorManager(pkgPath, output string) *GeneratorManager {
+func NewGeneratorManager(cfg *ShapeConfig, pkgPath, output string) *GeneratorManager {
 	return &GeneratorManager{
 		output:  output,
 		pkgPath: pkgPath,
+		cfg:     cfg,
 	}
 }
 
-func managerRender(pkgPath string, opener gen.MemoryFileOpener, transformations []Transformation, scope map[string]any, output string) ([]*render.Output, error) {
+func managerRender(cfg *ShapeConfig, pkgPath string, opener gen.MemoryFileOpener, transformations []Transformation, scope map[string]any, output string) ([]*render.Output, error) {
 	context := render.Context{
 		PkgPath: pkgPath,
 		Modules: render.NewModuleRegister(),
+		Wrapper: NewTypeWrapper(cfg),
 	}
 	var contents []string
 
-	err := runTransformations(context, opener, transformations, func(content string) {
+	err := runTransformations(context, gen.NewBufferFileOpener(), scope, transformations, func(content string) {
 		contents = append(contents, content)
 	})
 	if err != nil {
@@ -52,34 +55,20 @@ func (m *GeneratorManager) Render(_ []*model.Package, transformations []Transfor
 		}
 		opener = gen.NewSystemFileOpener()
 	)
-	return managerRender(m.pkgPath, opener, transformations, scope, m.output)
+	return managerRender(m.cfg, m.pkgPath, opener, transformations, scope, m.output)
 }
-
-// func (m *GeneratorManager) Postprocess(output *ManagerOutput, content *dst.File, pkg *decorator.Package) error {
-// 	var buf bytes.Buffer
-// 	r := decorator.NewRestorerWithImports("root", gopackages.New("./"))
-
-// 	if err := r.Fprint(&buf, content); err != nil {
-// 		return fmt.Errorf("failed to restore AST for file %q: %w", output.Output.Filename, err)
-// 	}
-
-// 	// Write to file
-// 	if err := os.WriteFile(output.Output.Filename, buf.Bytes(), 0644); err != nil {
-// 		return fmt.Errorf("failed to write file: %w", err)
-// 	}
-
-// 	return nil
-// }
 
 type InplaceManager struct {
 	output  string
 	pkgPath string
+	cfg     *ShapeConfig
 }
 
-func NewInplaceManager(pkgPath, output string) *InplaceManager {
+func NewInplaceManager(cfg *ShapeConfig, pkgPath, output string) *InplaceManager {
 	return &InplaceManager{
 		output:  output,
 		pkgPath: pkgPath,
+		cfg:     cfg,
 	}
 }
 
@@ -109,17 +98,17 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 		context := render.Context{
 			PkgPath: pkg.Path,
 			Modules: modules,
+			Wrapper: NewTypeWrapper(m.cfg),
 		}
 
 		var content string
 
-		err := runTransformations(context, opener, []Transformation{t}, func(c string) {
+		err := runTransformations(context, opener, scope, []Transformation{t}, func(c string) {
 			content = c
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error during rendering: %w", err)
 		}
-		//outout := path.Join(path.Dir(m.output), "inplacehelperpath", path.Base(m.output))
 
 		filename := path.Join(pkg.Path, "plumber_inplace_helper.go")
 
@@ -153,33 +142,35 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 	return outputs, nil
 }
 
-// func (m *InplaceManager) Postprocess(output *ManagerOutput, content *dst.File, pkg *decorator.Package) error {
-// 	return nil
-// }
-
-func runTransformations(state render.Context, opener gen.MemoryFileOpener, transformations []Transformation, contentFunc func(string)) (err error) {
+func runTransformations(
+	state render.Context,
+	opener gen.MemoryFileOpener,
+	scope map[string]any,
+	transformations []Transformation, contentFunc func(string),
+) (err error) {
 	for _, t := range transformations {
 		ignores := state.Ignores
 		if ignores == nil {
-			ignores = render.NewIgnores(t.Transformer.GetAnnotations().FindAll("plumber:ignore").Values())
+			ignores = render.NewIgnores(t.Transformer.GetAnnotations().FindAll(OptionIgnore).Values())
 		}
 
 		ctx := render.Context{
 			Ignores: ignores,
 			Modules: state.Modules,
 			PkgPath: state.PkgPath,
+			Wrapper: state.Wrapper,
 		}
 
 		fmt.Printf("  > Transformer[%s], Line: %d\n",
 			t.Transformer.GetName(),
 			t.Node.GetNode().GetPosition().Line,
 		)
-		//fmt.Println(t.Transformer.GetAnnotations())
-		content, err := render.Derive(ctx, t.Node.(*model.Type), map[string]any{
-			"Derive": view.Annotable{
-				Annotations: t.Transformer.GetAnnotations(),
-			},
-		}, t.Transformer.Output(), opener)
+
+		scope["Subject"] = view.Annotable{
+			Annotations: t.Transformer.GetAnnotations(),
+		}
+
+		content, err := t.Transformer.Render(ctx, t.Node.(*model.Type), scope, t.Transformer.Output(), opener)
 		if err != nil {
 			fmt.Println("Error during rendering:", err)
 		}

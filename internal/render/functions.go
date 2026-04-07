@@ -28,6 +28,9 @@ func extend(v any, kv ...any) (any, error) {
 	}
 	switch v := v.(type) {
 	case *view.Struct:
+		for k := range v.Scope {
+			scope[k] = v.Scope[k]
+		}
 		return &typeScope{Type: model.Type{}, Scope: scope}, nil
 	case *typeScope:
 		for k := range v.Scope {
@@ -150,6 +153,28 @@ func typesRenderer(currentPkgPath string, register *ModuleRegister) func(spec mo
 	}
 }
 
+func typesRendererWithWrapper(currentPkgPath string, register *ModuleRegister, wrapper TypeWrapperProvider) func(o any, spec model.TypeSpec) (string, error) {
+	c := typesRenderer(currentPkgPath, register)
+	return func(o any, spec model.TypeSpec) (string, error) {
+		if n, ok := o.(model.AnnotationProvider); ok {
+			wn := n.GetAnnotations().Find("plumber:field_wrapper")
+			if wn != nil {
+				wrapperType := wn.Value()
+				wrapped, err := wrapper.WrapType(wrapperType, &spec)
+				if err != nil {
+					return "", fmt.Errorf("failed to wrap type with wrapper %q: %w", wrapperType, err)
+				}
+				if wrapped != nil {
+					return c(*wrapped)
+				}
+				return "", fmt.Errorf("wrapper %q returned nil", wrapperType)
+			}
+			return c(spec)
+		}
+		return "", fmt.Errorf("%T does not implement model.AnnotationProvider\n", o)
+	}
+}
+
 func annotation(o any, name string) *model.Annotation {
 	if n, ok := o.(model.AnnotationProvider); ok {
 		for _, ann := range n.GetAnnotations() {
@@ -177,6 +202,10 @@ func comment(o any) string {
 		fmt.Printf("%T does not implement model.AnnotationProvider\n", o)
 	}
 	return ""
+}
+
+func placeholder(name ...string) string {
+	return fmt.Sprintf("// <<plumber::Block(%s)>>\n// <</plumber::Block>>\n", strings.Join(name, "-"))
 }
 
 func ignored(ignores *Ignores) func(groups ...string) bool {

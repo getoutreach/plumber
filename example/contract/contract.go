@@ -25,6 +25,10 @@ type Entity struct {
 	Name string `json:"name" yaml:"name"`
 }
 
+type Filtrable[T any] struct {
+	Value T
+}
+
 // Repository describes a database repository
 //
 // plumber.shape 1
@@ -41,6 +45,9 @@ type MutatorService interface {
 }
 
 // Worker a named worker
+//
+// plumber:shape ForwardingCloser
+// plumber:output generated.go
 type Closer interface {
 	Close(ctx context.Context) error
 }
@@ -50,6 +57,8 @@ type OpenCloser interface {
 	Closer
 	Open(ctx context.Context) error
 }
+
+type Name string
 
 // Worker a named worker
 //
@@ -71,7 +80,7 @@ type Worker struct {
 	// Name of the worker
 	//
 	// is:filtrable
-	Name string
+	Name Name
 
 	Concurrency int
 
@@ -88,6 +97,13 @@ type Worker struct {
 
 	Queues []string
 }
+
+// @comment
+// Neco nekde
+//
+// plumber:context "github.com/getoutreach/plumber/example/contract".Worker
+// plumber:derive WorkerFilterBlended3
+// plumber:mode inplace
 
 // NewWorker return instance of the worker
 func NewWorker(name string) *plumber.BaseLooper {

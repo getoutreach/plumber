@@ -1,6 +1,8 @@
 package shape
 
 import (
+	"fmt"
+
 	"github.com/dave/dst"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/internal/render"
@@ -9,25 +11,29 @@ import (
 )
 
 const (
-	OptionTemplate = "plumber:template"
-	OptionIgnore   = "plumber:ignore"
-	OptionComment  = "plumber:comment"
-	OptionName     = "plumber:name"
-	OptionFilter   = "plumber:filter"
-	OptionMixin    = "plumber:mixin"
-	OptionOutput   = "plumber:output"
-	OptionMode     = "plumber:mode"
+	OptionTemplate     = "plumber:template"
+	OptionIgnore       = "plumber:ignore"
+	OptionContext      = "plumber:context"
+	OptionComment      = "plumber:comment"
+	OptionName         = "plumber:name"
+	OptionFilter       = "plumber:filter"
+	OptionMixin        = "plumber:mixin"
+	OptionOutput       = "plumber:output"
+	OptionMode         = "plumber:mode"
+	OptionFieldWrapper = "plumber:field_wrapper"
 )
 
 var defaultOptions = []string{
 	OptionTemplate,
 	OptionIgnore,
+	OptionContext,
 	OptionComment,
 	OptionName,
 	OptionFilter,
 	OptionMixin,
 	OptionOutput,
 	OptionMode,
+	OptionFieldWrapper,
 }
 
 var defaultValues = map[string]string{
@@ -37,6 +43,7 @@ var defaultValues = map[string]string{
 type BasicTransformer struct {
 	Name           string
 	AllowedOptions []string
+	Options        model.Annotation
 	Annotations    model.Annotations
 }
 
@@ -45,6 +52,14 @@ func (t *BasicTransformer) GetName() string {
 }
 
 func (t *BasicTransformer) Validate() error {
+	if t.Annotations.Find(OptionName) == nil {
+		if len(t.Options.Args) > 0 {
+			t.Annotations.Append(model.Annotation{
+				Name: OptionName,
+				Args: t.Options.Args,
+			})
+		}
+	}
 	return nil
 }
 
@@ -71,32 +86,6 @@ func (t *BasicTransformer) Output() string {
 	return "generated/generated.go"
 }
 
-type DeriveTransformer struct {
-	BasicTransformer
-}
-
-type ShapeTransformer struct {
-	BasicTransformer
-}
-
-func NewDeriveTransformer() *DeriveTransformer {
-	return &DeriveTransformer{
-		BasicTransformer: BasicTransformer{
-			Name:           "derive",
-			AllowedOptions: defaultOptions,
-		},
-	}
-}
-
-func NewShapeTransformer() *ShapeTransformer {
-	return &ShapeTransformer{
-		BasicTransformer: BasicTransformer{
-			Name:           "shape",
-			AllowedOptions: defaultOptions,
-		},
-	}
-}
-
 func (t BasicTransformer) Accepts(annotation string) bool {
 	return lo.Contains(t.AllowedOptions, annotation)
 }
@@ -105,14 +94,61 @@ func (t *BasicTransformer) Add(annotation model.Annotation) {
 	t.Annotations = append(t.Annotations, annotation)
 }
 
+type DeriveTransformer struct {
+	BasicTransformer
+}
+
+type ShapeTransformer struct {
+	BasicTransformer
+}
+
+func NewDeriveTransformer(a model.Annotation) *DeriveTransformer {
+	return &DeriveTransformer{
+		BasicTransformer: BasicTransformer{
+			Name:           "derive",
+			AllowedOptions: defaultOptions,
+			Options:        a,
+		},
+	}
+}
+
+func (t *DeriveTransformer) Render(context render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error) {
+	if tp.Struct == nil {
+		return "", fmt.Errorf("derive transformer can only be applied to struct types, got %s", tp.Spec.Kind)
+	}
+	return render.Derive(context, tp, scope, output, opener)
+}
+
+func NewShapeTransformer(a model.Annotation) *ShapeTransformer {
+	return &ShapeTransformer{
+		BasicTransformer: BasicTransformer{
+			Name:           "shape",
+			AllowedOptions: defaultOptions,
+			Options:        a,
+		},
+	}
+}
+
+func (t *ShapeTransformer) Render(context render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error) {
+	if tp.Interface == nil {
+		return "", fmt.Errorf("shape transformer can only be applied to interface types, got %s", tp.Spec.Kind)
+	}
+	return render.Shape(context, tp, scope, output, opener)
+}
+
+type Annotable interface {
+	GetAnnotations() model.Annotations
+}
+
 type Transformer interface {
+	Annotable
 	Accepts(annotation string) bool
 	Add(annotation model.Annotation)
 	Validate() error
 	Output() string
 	GetName() string
 	Mode() string
-	GetAnnotations() model.Annotations
+	Render(context render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error)
 }
 
 type Transformation struct {

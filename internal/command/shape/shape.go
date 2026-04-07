@@ -21,7 +21,7 @@ func Run(config *ShapeConfig, args []string) error {
 		return fmt.Errorf("failed to scan files: %w", err)
 	}
 
-	pkgs, err := inspect.Inspect(filenames)
+	pkgs, err := inspect.Inspect(filenames, "./")
 	if err != nil {
 		return fmt.Errorf("failed to inspect files: %w", err)
 	}
@@ -38,17 +38,47 @@ func Run(config *ShapeConfig, args []string) error {
 		}))
 
 	var transformations []Transformation
-	for _, node := range transformingNodes {
-		ts, err := buildTransformers(config, node)
-		if err != nil {
-			return fmt.Errorf("failed to build transformers for node %q: %w", node.GetNode().GetPosition(), err)
-		}
+
+	appendTransformer := func(node model.Node, ts []Transformer) {
 		for _, t := range ts {
 			transformations = append(transformations, Transformation{
 				Node:        node,
 				Transformer: t,
 				Path:        buildPath(t.Mode(), node.GetPackage().Path, node.GetNode().GetPosition().Filename, t.Output()),
 			})
+		}
+	}
+
+	for _, node := range transformingNodes {
+		ts, err := buildTransformers(config, node.GetNode())
+		if err != nil {
+			return fmt.Errorf("failed to build transformers for node %q: %w", node.GetNode().GetPosition(), err)
+		}
+		appendTransformer(node, ts)
+	}
+
+	// process package-level comments for transformations
+	for _, pkg := range pkgs {
+		for _, comment := range pkg.Comments {
+			m := comment.Annotations.Find(OptionContext)
+			if m == nil {
+				continue
+			}
+			fqn, err := astx.ParseFQN(m.Value())
+			if err != nil {
+				return fmt.Errorf("failed to parse model FQN %q: %w", m.Value(), err)
+			}
+			t := pkgs.TypeByFQN(fqn)
+			if t == nil {
+				return fmt.Errorf("model type %q not found in packages", fqn)
+			}
+			ts, err := buildTransformers(config, comment.FilterAnnotations(func(a model.Annotation) bool {
+				return a.Name != OptionContext
+			}))
+			if err != nil {
+				return fmt.Errorf("failed to build transformers for node %q: %w", t.GetNode().GetPosition(), err)
+			}
+			appendTransformer(t, ts)
 		}
 	}
 
@@ -66,7 +96,7 @@ func Run(config *ShapeConfig, args []string) error {
 		})
 
 		for filename, transformations := range byOutput {
-			manager := buildModeManager(mode, transformations[0].Path.Package, filename)
+			manager := buildModeManager(config, mode, transformations[0].Path.Package, filename)
 
 			fmt.Printf("Found %d transformations for output %q\n", len(transformations), filename)
 
@@ -105,22 +135,24 @@ func restoreOutputs(output []*ManagerOutput) error {
 		overlay[o.Output.Filename] = o.Output.Content
 	}
 
-	parser, err := astx.NewParser(filenames, astx.WithReplacement(), astx.WithOverlay(overlay))
-	if err != nil {
-		return fmt.Errorf("failed to create parser for post-processing: %w", err)
-	}
+	if len(filenames) > 0 {
+		parser, err := astx.NewParser(filenames, astx.WithReplacement(), astx.WithOverlay(overlay))
+		if err != nil {
+			return fmt.Errorf("failed to create parser for post-processing: %w", err)
+		}
 
-	for _, o := range output {
-		if o.Output.Dst != nil {
-			continue
-		}
-		content, pkg, err := parser.GetParsedFile(o.Output.Filename)
-		if err != nil {
-			return fmt.Errorf("failed to parse generated file %q: %w", o.Output.Filename, err)
-		}
-		err = restoreOutput(o, content, pkg)
-		if err != nil {
-			return fmt.Errorf("failed to restore generated file %q: %w", o.Output.Filename, err)
+		for _, o := range output {
+			if o.Output.Dst != nil {
+				continue
+			}
+			content, pkg, err := parser.GetParsedFile(o.Output.Filename)
+			if err != nil {
+				return fmt.Errorf("failed to parse generated file %q: %w", o.Output.Filename, err)
+			}
+			err = restoreOutput(o, content, pkg)
+			if err != nil {
+				return fmt.Errorf("failed to restore generated file %q: %w", o.Output.Filename, err)
+			}
 		}
 	}
 
@@ -129,7 +161,7 @@ func restoreOutputs(output []*ManagerOutput) error {
 		if o.Output.Dst == nil {
 			continue
 		}
-		err = restoreOutput(o, o.Output.Dst.File, o.Output.Dst.Package)
+		err := restoreOutput(o, o.Output.Dst.File, o.Output.Dst.Package)
 		if err != nil {
 			return fmt.Errorf("failed to restore generated dst file %q: %w", o.Output.Filename, err)
 		}
@@ -171,48 +203,48 @@ func buildPath(mode, pkgPath, filename, output string) Pathinfo {
 		RelPath:  output,
 		Package:  pkg,
 	}
-
-	switch mode {
-	case "inplace":
-		return Pathinfo{
-			Filename: baseDir,
-			BaseDir:  baseDir,
-			RelPath:  "",
-			Package:  pkgPath,
-		}
-	default:
-		return Pathinfo{
-			Filename: path.Join(baseDir, output),
-			BaseDir:  baseDir,
-			RelPath:  output,
-			Package:  path.Join(pkgPath, path.Dir(output)),
-		}
-	}
 }
 
-func buildModeManager(mode string, pkgPath string, output string) Manager {
+func buildModeManager(cfg *ShapeConfig, mode string, pkgPath string, output string) Manager {
 	switch mode {
 	case "inplace":
-		return NewInplaceManager(pkgPath, output)
+		return NewInplaceManager(cfg, pkgPath, output)
 	case "generated":
-		return NewGeneratorManager(pkgPath, output)
+		return NewGeneratorManager(cfg, pkgPath, output)
 	}
 	return nil
 
 }
 
-func buildTransformers(config *ShapeConfig, node model.Node) (transformers []Transformer, err error) {
+func buildTransformers(config *ShapeConfig, node Annotable) (transformers []Transformer, err error) {
 	var (
 		lastTransformer Transformer
 	)
+
+	changeTransformer := func(t Transformer) error {
+		if lastTransformer != nil {
+			if err := lastTransformer.Validate(); err != nil {
+				return err
+			}
+		}
+		if t != nil {
+			lastTransformer = t
+		}
+		return nil
+	}
+
 	transformers = []Transformer{}
-	for _, annotation := range node.GetNode().GetAnnotations() {
+	for _, annotation := range node.GetAnnotations() {
 		switch annotation.Name {
 		case "plumber:shape":
-			lastTransformer = NewShapeTransformer()
+			if err := changeTransformer(NewShapeTransformer(annotation)); err != nil {
+				return nil, err
+			}
 			transformers = append(transformers, lastTransformer)
 		case "plumber:derive":
-			lastTransformer = NewDeriveTransformer()
+			if err := changeTransformer(NewDeriveTransformer(annotation)); err != nil {
+				return nil, err
+			}
 			transformers = append(transformers, lastTransformer)
 		default:
 			if lastTransformer == nil {
@@ -228,7 +260,6 @@ func buildTransformers(config *ShapeConfig, node model.Node) (transformers []Tra
 					return mixin.PlumberMixin != nil && mixin.PlumberMixin.Name == mixinName
 				})
 				if !ok {
-					fmt.Println(config.Mixins)
 					return nil, fmt.Errorf("mixin %q not found in config", mixinName)
 				}
 				for _, mixinAnnotation := range mixinConfig.PlumberMixin.Annotations {
@@ -241,6 +272,9 @@ func buildTransformers(config *ShapeConfig, node model.Node) (transformers []Tra
 				}
 			}
 		}
+	}
+	if err := changeTransformer(nil); err != nil {
+		return nil, err
 	}
 	return transformers, nil
 }

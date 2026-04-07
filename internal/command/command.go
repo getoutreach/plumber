@@ -3,6 +3,7 @@ package command
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -25,4 +26,29 @@ func ParseConfig[T any](path string) (*T, error) {
 	}
 
 	return ParseConfigBytes[T](data)
+}
+
+// ParseConfig parses a YAML configuration file
+func ParseConfigs[T any](paths ...string) ([]*T, error) {
+	var configs []*T
+	for _, path := range paths {
+		matches, err := filepath.Glob(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to glob path %q: %w", path, err)
+		}
+		for _, match := range matches {
+			fmt.Println("Loading", match)
+			data, err := os.ReadFile(match)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read config file %q: %w", match, err)
+			}
+
+			cfg, err := ParseConfigBytes[T](data)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse config file %q: %w", match, err)
+			}
+			configs = append(configs, cfg)
+		}
+	}
+	return configs, nil
 }

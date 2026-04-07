@@ -6,6 +6,7 @@ import (
 
 	"github.com/getoutreach/plumber/internal/command"
 	"github.com/getoutreach/plumber/internal/command/shape"
+	"github.com/samber/lo"
 	"github.com/urfave/cli/v2"
 )
 
@@ -33,6 +34,18 @@ func Run(c *cli.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to parse config: %w", err)
 		}
+
+		includes, err := command.ParseConfigs[shape.Config](
+			lo.Map(
+				cfg.Includes,
+				func(include shape.IncludeConfig, _ int) string { return include.Path },
+			)...,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to parse included configs: %w", err)
+		}
+		cfg.Merge(includes...)
+
 		shapeConfig = cfg.Shape
 	}
 

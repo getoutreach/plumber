@@ -20,10 +20,15 @@ var (
 	embededTemplates embed.FS
 )
 
+type TypeWrapperProvider interface {
+	WrapType(name string, t *model.TypeSpec) (*model.TypeSpec, error)
+}
+
 type Context struct {
 	Modules *ModuleRegister
 	Ignores *Ignores
 	PkgPath string
+	Wrapper TypeWrapperProvider
 }
 
 type DstOutput struct {
@@ -42,11 +47,13 @@ func withRenderFuncMap(context Context) gen.RenderOptionsFunc {
 	functions := template.FuncMap{
 		"extend":           extend,
 		"type":             typesRenderer(context.PkgPath, context.Modules),
+		"type_wrap":        typesRendererWithWrapper(context.PkgPath, context.Modules, context.Wrapper),
 		"annotation":       annotation,
 		"annotation_value": annotationValue,
 		"comment":          comment,
 		"ignored":          ignored(context.Ignores),
 		"filter_elements":  filterElements,
+		"placeholder":      placeholder,
 	}
 	return gen.WithFuncMap(functions)
 }
@@ -75,6 +82,7 @@ func Derive(context Context, tp *model.Type, scope map[string]any, output string
 				return gen.RenderContent(ctx, "plumber/command/derive", w, c,
 					withRenderFuncMap(context),
 					gen.WithFS(embededTemplates,
+						"templates/command/command.gtpl",
 						"templates/command/command_derive.gtpl",
 					),
 					gen.WithTemplateFunc(gen.LoadBaseTemplate(
@@ -118,6 +126,7 @@ func Finalize(context Context, scope map[string]any, parts []string, output stri
 				return gen.RenderContent(ctx, "plumber/command/derive/file/content", w, c,
 					withRenderFuncMap(context),
 					gen.WithFS(embededTemplates,
+						"templates/command/command.gtpl",
 						"templates/command/command_derive.gtpl",
 					),
 					gen.WithTemplateFunc(gen.LoadBaseTemplate(

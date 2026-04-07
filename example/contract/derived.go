@@ -14,6 +14,14 @@ type WorkerFilterBlended struct {
 	Queues       []string
 }
 
+type WorkerFilterBlended3 struct {
+	Name         string
+	Concurrency  int
+	CreatedAt    time.Time
+	ComplexField OpenCloser
+	Queues       []string
+}
+
 func test(ctx context.Context) {
 
 }

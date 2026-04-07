@@ -10,7 +10,7 @@ import (
 
 func TestBlockWriter(t *testing.T) {
 	t.Skip("Blocks not supported")
-	op := NewBufferFileOpenner()
+	op := NewBufferFileOpener()
 
 	op.Write("test.go", []byte(`
 // header
@@ -31,7 +31,7 @@ footer content
 // <</Stencil::Block>>
 `))
 
-	bw := NewBlockWriterWithOpenner("test.go", op)
+	bw := NewBlockWriterWithOpener("test.go", op)
 
 	bw.Write([]byte(`
 // <<plumber::Block(inner)>>
@@ -66,7 +66,7 @@ footer content
 }
 
 func TestWriterWithEmptyBlocks(t *testing.T) {
-	op := NewBufferFileOpenner()
+	op := NewBufferFileOpener()
 
 	op.Write("test.go", []byte(`
 	import (
@@ -89,7 +89,7 @@ func TestWriterWithEmptyBlocks(t *testing.T) {
     }
 `))
 
-	bw := NewBlockWriterWithOpenner("test.go", op)
+	bw := NewBlockWriterWithOpener("test.go", op)
 
 	bw.Write([]byte(`
 	import (
@@ -128,7 +128,7 @@ func TestWriterWithEmptyBlocks(t *testing.T) {
 }
 
 func TestWriterHashes(t *testing.T) {
-	op := NewBufferFileOpenner()
+	op := NewBufferFileOpener()
 
 	op.Write("test.go", []byte(`
 	import (
@@ -151,7 +151,7 @@ func TestWriterHashes(t *testing.T) {
     }
 `))
 
-	bw := NewBlockWriterWithOpenner("test.go", op)
+	bw := NewBlockWriterWithOpener("test.go", op)
 
 	bw.Write([]byte(`
 	import (
@@ -190,7 +190,7 @@ func TestWriterHashes(t *testing.T) {
 }
 
 func TestWriterFragment(t *testing.T) {
-	op := NewBufferFileOpenner()
+	op := NewBufferFileOpener()
 
 	op.Write("test.go", []byte(`
 
@@ -210,7 +210,7 @@ func TestWriterFragment(t *testing.T) {
     }
 `))
 
-	bw := NewBlockWriterWithOpenner("test.go", op)
+	bw := NewBlockWriterWithOpener("test.go", op)
 
 	bw.Write([]byte(`
 	import (

@@ -239,10 +239,15 @@ func (p *fqnParser) parse() (ast.Expr, error) {
 		if name == "" {
 			return nil, fmt.Errorf("expected type name after '.'")
 		}
-		return &ast.SelectorExpr{
+		result := &ast.SelectorExpr{
 			X:   &ast.Ident{Name: pkg},
 			Sel: &ast.Ident{Name: name},
-		}, nil
+		}
+		// Generic instantiation: TypeName[TypeArg] or TypeName[T1, T2, ...]
+		if p.peek() == '[' {
+			return p.parseTypeArgs(result)
+		}
+		return result, nil
 
 	case p.has("interface{}"):
 		p.pos += len("interface{}")
@@ -266,6 +271,39 @@ func (p *fqnParser) parse() (ast.Expr, error) {
 		}
 		return &ast.Ident{Name: name}, nil
 	}
+}
+
+// parseTypeArgs parses generic type arguments [ T ] or [ T1, T2, ... ] that
+// follow a named type, wrapping base in an *ast.IndexExpr (single arg) or
+// *ast.IndexListExpr (multiple args).
+func (p *fqnParser) parseTypeArgs(base ast.Expr) (ast.Expr, error) {
+	p.pos++ // consume '['
+	first, err := p.parse()
+	if err != nil {
+		return nil, fmt.Errorf("type argument: %w", err)
+	}
+	if p.peek() == ']' {
+		p.pos++ // consume ']'
+		return &ast.IndexExpr{X: base, Index: first}, nil
+	}
+	// Multiple type arguments.
+	indices := []ast.Expr{first}
+	for p.peek() == ',' {
+		p.pos++ // consume ','
+		if p.peek() == ' ' {
+			p.pos++ // consume optional space
+		}
+		arg, err := p.parse()
+		if err != nil {
+			return nil, fmt.Errorf("type argument: %w", err)
+		}
+		indices = append(indices, arg)
+	}
+	if p.peek() != ']' {
+		return nil, fmt.Errorf("expected ']' after type arguments, got %q", p.s[p.pos:])
+	}
+	p.pos++ // consume ']'
+	return &ast.IndexListExpr{X: base, Indices: indices}, nil
 }
 
 // ident reads a Go identifier (letters, digits, underscore) from the current position.
@@ -299,6 +337,15 @@ func (f *FQN) WalkPackages(fn func(pkgPath, typeName string) (string, bool)) {
 	f.Expression = walkExpr(f.Expression, fn)
 }
 
+func (f *FQN) Wrap(o *FQN) *FQN {
+	return &FQN{
+		Expression: &ast.IndexExpr{
+			X:     f.Expression,
+			Index: o.Expression,
+		},
+	}
+}
+
 // walkExpr recursively walks an ast.Expr, replacing remote-package SelectorExprs
 // via fn and returning the (possibly replaced) expression.
 func walkExpr(expr ast.Expr, fn func(pkgPath, typeName string) (string, bool)) ast.Expr {
@@ -312,6 +359,14 @@ func walkExpr(expr ast.Expr, fn func(pkgPath, typeName string) (string, bool)) a
 		e.Value = walkExpr(e.Value, fn)
 	case *ast.ChanType:
 		e.Value = walkExpr(e.Value, fn)
+	case *ast.IndexExpr:
+		e.X = walkExpr(e.X, fn)
+		e.Index = walkExpr(e.Index, fn)
+	case *ast.IndexListExpr:
+		e.X = walkExpr(e.X, fn)
+		for i, idx := range e.Indices {
+			e.Indices[i] = walkExpr(idx, fn)
+		}
 	case *ast.SelectorExpr:
 		if ident, ok := e.X.(*ast.Ident); ok {
 			empty := false

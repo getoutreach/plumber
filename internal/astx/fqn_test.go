@@ -126,6 +126,7 @@ func TestParseFQN(t *testing.T) {
 		{"bidirectional chan", `chan int`},
 		{"send-only chan", `chan<- int`},
 		{"recv-only chan", `<-chan int`},
+		{"generic type", `"github.com/getoutreach/plumber/example/contract".Filtrable["github.com/getoutreach/plumber/example/contract".Name]`},
 	}
 
 	for _, tt := range tests {
@@ -191,13 +192,13 @@ func TestFQNWalkPackages(t *testing.T) {
 			assert.Equal(t, "UUID", typeName)
 			return "MyUUID", true
 		})
-		assert.Equal(t, "MyUUID", fqn.String())
+		assert.Equal(t, "MyUUID.UUID", fqn.String())
 	})
 
 	t.Run("replaces named type inside pointer", func(t *testing.T) {
 		fqn := FQNFromGoType(types.NewPointer(typeUUID))
 		fqn.WalkPackages(func(_, _ string) (string, bool) { return "X", true })
-		assert.Equal(t, "*X", fqn.String())
+		assert.Equal(t, "*X.UUID", fqn.String())
 	})
 
 	t.Run("replaces named type inside slice", func(t *testing.T) {
@@ -207,7 +208,7 @@ func TestFQNWalkPackages(t *testing.T) {
 			assert.Equal(t, "Dir", typeName)
 			return "MyDir", true
 		})
-		assert.Equal(t, "[]MyDir", fqn.String())
+		assert.Equal(t, "[]MyDir.Dir", fqn.String())
 	})
 
 	t.Run("replaces both key and value in map", func(t *testing.T) {
@@ -215,16 +216,16 @@ func TestFQNWalkPackages(t *testing.T) {
 		calls := map[string]string{}
 		fqn.WalkPackages(func(pkgPath, typeName string) (string, bool) {
 			calls[pkgPath] = typeName
-			return typeName + "Local", true
+			return "", true
 		})
 		assert.Equal(t, 2, len(calls))
-		assert.Equal(t, "map[BarLocal]UUIDLocal", fqn.String())
+		assert.Equal(t, "map[Bar]UUID", fqn.String())
 	})
 
 	t.Run("replaces named type inside chan", func(t *testing.T) {
 		fqn := FQNFromGoType(types.NewChan(types.SendOnly, typeUUID))
 		fqn.WalkPackages(func(_, _ string) (string, bool) { return "T", true })
-		assert.Equal(t, "chan<- T", fqn.String())
+		assert.Equal(t, "chan<- T.UUID", fqn.String())
 	})
 
 	t.Run("nil return leaves node unchanged", func(t *testing.T) {

@@ -16,6 +16,7 @@ type Parser struct {
 }
 
 type ParserConfig struct {
+	WorkingDir string
 	Mode       packages.LoadMode
 	Overlay    map[string][]byte
 	BuildFlags []string
@@ -65,13 +66,21 @@ func WithBuildFlags(flags []string) ParserOption {
 	}
 }
 
+func WithWorkingDir(dir string) ParserOption {
+	return func(config *ParserConfig) {
+		config.WorkingDir = dir
+	}
+}
+
 // NewParser creates a new AST parser for the given paths
 func NewParser(paths []string, options ...ParserOption) (*Parser, error) {
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("no paths provided")
 	}
 
-	opts := &ParserConfig{}
+	opts := &ParserConfig{
+		WorkingDir: "./",
+	}
 	for _, opt := range options {
 		opt(opts)
 	}
@@ -90,7 +99,7 @@ func NewParser(paths []string, options ...ParserOption) (*Parser, error) {
 	}
 
 	// Use the first directory as the working directory
-	workDir := filepath.Dir("./")
+	workDir := filepath.Dir(opts.WorkingDir)
 
 	cfg := &packages.Config{
 		Mode:       opts.Mode,

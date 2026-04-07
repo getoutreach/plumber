@@ -14,7 +14,7 @@ func Run(config *InspectConfig, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to scan files: %w", err)
 	}
-	pkgs, err := inspect.Inspect(filenames)
+	pkgs, err := inspect.Inspect(filenames, "./")
 	if err != nil {
 		return fmt.Errorf("failed to inspect files: %w", err)
 	}

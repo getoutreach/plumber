@@ -2,6 +2,7 @@ package inspect
 
 import (
 	"fmt"
+	"go/ast"
 	"go/types"
 	"io/fs"
 	"iter"
@@ -51,8 +52,8 @@ func ScanFiles(baseDir string, args []string) (filenames []string, err error) {
 	return filenames, nil
 }
 
-func Inspect(filenames []string) (pkgs []*model.Package, err error) {
-	parser, err := astx.NewParser(filenames, astx.WithTypeInfo())
+func Inspect(filenames []string, workingDir string) (pkgs model.Packages, err error) {
+	parser, err := astx.NewParser(filenames, astx.WithTypeInfo(), astx.WithWorkingDir(workingDir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create parser: %w", err)
 	}
@@ -62,14 +63,67 @@ func Inspect(filenames []string) (pkgs []*model.Package, err error) {
 			Name:    pkg.Name,
 			Path:    pkg.PkgPath,
 		}
+
+		for _, file := range pkg.Package.Syntax {
+			pm.Comments = append(pm.Comments, processComments(file)...)
+		}
+
 		processScope(pkg.Package.Types.Scope(), pm)
 		pkgs = append(pkgs, pm)
 	}
 	return pkgs, nil
 }
 
+func processComments(f *ast.File) []*model.CommentGroup {
+	var comments []*model.CommentGroup
+
+	for _, cg := range f.Comments {
+		txt := strings.TrimSpace(cg.Text())
+		if !strings.HasPrefix(txt, "@comment") {
+			continue
+		}
+		txt = strings.TrimPrefix(txt, "@comment")
+		txt = strings.TrimSpace(txt)
+		comments = append(comments, &model.CommentGroup{
+			Doc:         txt,
+			Annotations: ParseAnnotations(txt),
+		})
+	}
+
+	// ast.Inspect(f, func(node ast.Node) bool {
+	// 	switch n := node.(type) {
+	// 	case *ast.CommentGroup:
+	// 		comments = append(comments, &model.CommentGroup{
+	// 			Position: model.Position{
+	// 				Filename: f.Name.Name,
+	// 				Line:     int(n.Pos()),
+	// 			},
+	// 			Doc:         n.Text(),
+	// 			Annotations: ParseAnnotations(n.Text()),
+	// 		})
+	// 		return false
+	// 	// case *ast.GenDecl:
+	// 	// 	if n.Doc != nil {
+	// 	// 		comments = append(comments, &model.CommentGroup{
+	// 	// 			Position: model.Position{
+	// 	// 				Filename: f.Name.Name,
+	// 	// 				Line:     int(n.Pos()),
+	// 	// 			},
+	// 	// 			Doc:         n.Doc.Text(),
+	// 	// 			Annotations: ParseAnnotations(n.Doc.Text()),
+	// 	// 		})
+	// 	// 	}
+	// 	// 	return false
+	// 	default:
+	// 		return true
+	// 	}
+	// })
+	return comments
+}
+
 func processScope(scope *types.Scope, pkgModel *model.Package) {
 	pkg := pkgModel.Package
+
 	for _, name := range scope.Names() {
 
 		obj := scope.Lookup(name)
@@ -95,14 +149,13 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 			if !t.Exported() {
 				continue
 			}
+			spec := model.NewTypeSpec(astx.FQNFromGoType(obj.Type()), obj.Type())
+			spec.Object = t
+
 			tp := &model.Type{
 				TypeNode: &node,
-				Spec: model.TypeSpec{
-					Object: t,
-					Type:   obj.Type(),
-					FQN:    astx.FQNFromGoType(obj.Type()).String(),
-				},
-				Name: obj.Name(),
+				Spec:     spec,
+				Name:     obj.Name(),
 			}
 			pkgModel.Types = append(pkgModel.Types, tp)
 
@@ -174,10 +227,7 @@ func buildVar(pkg *decorator.Package, v *types.Var) *model.Var {
 		Doc:         doc,
 		Annotations: ParseAnnotations(doc),
 		Type: &model.TypeDefinition{
-			Spec: model.TypeSpec{
-				Type: t,
-				FQN:  astx.FQNFromGoType(t).String(),
-			},
+			Spec: model.NewTypeSpec(astx.FQNFromGoType(t), t),
 		},
 	}
 }
