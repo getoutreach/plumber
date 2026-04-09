@@ -65,7 +65,7 @@ func Inspect(filenames []string, workingDir string) (pkgs model.Packages, err er
 		}
 
 		for _, file := range pkg.Package.Syntax {
-			pm.Comments = append(pm.Comments, processComments(file)...)
+			pm.Comments = append(pm.Comments, processComments(pkg, file)...)
 		}
 
 		processScope(pkg.Package.Types.Scope(), pm)
@@ -74,7 +74,7 @@ func Inspect(filenames []string, workingDir string) (pkgs model.Packages, err er
 	return pkgs, nil
 }
 
-func processComments(f *ast.File) []*model.CommentGroup {
+func processComments(pkg *decorator.Package, f *ast.File) []*model.CommentGroup {
 	var comments []*model.CommentGroup
 
 	for _, cg := range f.Comments {
@@ -84,9 +84,17 @@ func processComments(f *ast.File) []*model.CommentGroup {
 		}
 		txt = strings.TrimPrefix(txt, "@comment")
 		txt = strings.TrimSpace(txt)
+
+		cg.Pos()
+
 		comments = append(comments, &model.CommentGroup{
 			Doc:         txt,
 			Annotations: ParseAnnotations(txt),
+			Position: model.Position{
+				Filename: pkg.Fset.Position(cg.Pos()).Filename,
+				Line:     pkg.Fset.Position(cg.Pos()).Line,
+				Column:   pkg.Fset.Position(cg.Pos()).Column,
+			},
 		})
 	}
 
@@ -167,7 +175,13 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 					s := buildStruct(pkg, tp, ut)
 					// Collect methods defined on the named type (pointer and value receivers)
 					for method := range named.Methods() {
-						s.Methods = append(s.Methods, buildFunction(pkg, method, model.TypeNode{}))
+						s.Methods = append(s.Methods, buildFunction(pkg, method, model.TypeNode{
+							Position: model.Position{
+								Filename: pkg.Fset.Position(method.Pos()).Filename,
+								Line:     pkg.Fset.Position(method.Pos()).Line,
+								Column:   pkg.Fset.Position(method.Pos()).Column,
+							},
+						}))
 					}
 				}
 			}
@@ -249,8 +263,14 @@ func buildFunction(pkg *decorator.Package, obj *types.Func, node model.TypeNode)
 	for i := 0; i < params; i++ {
 		f.Args = append(f.Args, buildVar(pkg, signature.Params().At(i)))
 	}
+	unnamed := 0
 	for i := 0; i < results; i++ {
-		f.Results = append(f.Results, buildVar(pkg, signature.Results().At(i)))
+		v := buildVar(pkg, signature.Results().At(i))
+		if v.Name == "" {
+			unnamed++
+			v.FallbackName = fmt.Sprintf("out%d", unnamed)
+		}
+		f.Results = append(f.Results, v)
 	}
 
 	return f

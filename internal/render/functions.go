@@ -2,19 +2,22 @@ package render
 
 import (
 	"fmt"
+	"html/template"
 	"path"
 	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/getoutreach/plumber/internal/astx"
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/internal/render/view"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
 
 type typeScope struct {
-	Type  model.Type
+	Type  *model.Type
 	Scope map[any]any
 }
 
@@ -31,7 +34,7 @@ func extend(v any, kv ...any) (any, error) {
 		for k := range v.Scope {
 			scope[k] = v.Scope[k]
 		}
-		return &typeScope{Type: model.Type{}, Scope: scope}, nil
+		return &typeScope{Type: v.Type, Scope: scope}, nil
 	case *typeScope:
 		for k := range v.Scope {
 			scope[k] = v.Scope[k]
@@ -157,7 +160,7 @@ func typesRendererWithWrapper(currentPkgPath string, register *ModuleRegister, w
 	c := typesRenderer(currentPkgPath, register)
 	return func(o any, spec model.TypeSpec) (string, error) {
 		if n, ok := o.(model.AnnotationProvider); ok {
-			wn := n.GetAnnotations().Find("plumber:field_wrapper")
+			wn := n.GetAnnotations().Find(contract.OptionFieldWrapper)
 			if wn != nil {
 				wrapperType := wn.Value()
 				wrapped, err := wrapper.WrapType(wrapperType, &spec)
@@ -195,7 +198,7 @@ func annotationValue(o any, name string) string {
 
 func comment(o any) string {
 	if n, ok := o.(model.AnnotationProvider); ok {
-		if a, ok := lo.Find(n.GetAnnotations(), func(a model.Annotation) bool { return a.Name == "plumber:comment" }); ok {
+		if a, ok := lo.Find(n.GetAnnotations(), func(a model.Annotation) bool { return a.Name == contract.OptionComment }); ok {
 			return "// " + a.Value() + "\n"
 		}
 	} else {
@@ -204,8 +207,32 @@ func comment(o any) string {
 	return ""
 }
 
+func receiver(o any) string {
+	if n, ok := o.(model.AnnotationProvider); ok {
+		if a, ok := lo.Find(n.GetAnnotations(), func(a model.Annotation) bool { return a.Name == contract.OptionReceiver }); ok {
+			return a.Value()
+		}
+	} else {
+		fmt.Printf("%T does not implement model.AnnotationProvider\n", o)
+	}
+	name := annotationValue(o, contract.OptionName)
+	name = strings.ToLower(name)
+	if name == "" {
+		return "r"
+	}
+	return name[:1]
+}
+
 func placeholder(name ...string) string {
 	return fmt.Sprintf("// <<plumber::Block(%s)>>\n// <</plumber::Block>>\n", strings.Join(name, "-"))
+}
+
+func fragment_start(name ...string) string {
+	return fmt.Sprintf("// <<plumber::Fragment(%s)>>\n", strings.Join(name, "-"))
+}
+
+func fragment_end() string {
+	return "// <</plumber::Fragment>>"
 }
 
 func ignored(ignores *Ignores) func(groups ...string) bool {
@@ -222,7 +249,7 @@ func filterElements(provider any, elements any, groups ...string) (any, error) {
 		return nil, fmt.Errorf("filterElements:%T does not implement model.AnnotationProvider", provider)
 	}
 
-	filters := annotations.GetAnnotations().FindAll("plumber:filter")
+	filters := annotations.GetAnnotations().FindAll(contract.OptionFilter)
 
 	// find filters that match the groups or have no subject
 	filters = lo.Filter(filters, func(f model.Annotation, _ int) bool {
@@ -269,4 +296,64 @@ func filterElement(element any, a model.Annotation) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func withRenderFuncMap(context Context, output string) (opt gen.RenderOptionsFunc, dispose func()) {
+	var tp *model.Type
+	dispose = func() {
+		if tp != nil {
+			tp = nil
+		}
+	}
+	functions := template.FuncMap{
+		"extend":    extend,
+		"type":      typesRenderer(context.PkgPath, context.Modules),
+		"type_wrap": typesRendererWithWrapper(context.PkgPath, context.Modules, context.Wrapper),
+		"type_set": func(name string) (string, error) {
+			fqn, err := astx.CraftFQN(context.PkgPath, name)
+			if err != nil {
+				return "", fmt.Errorf("failed to craft FQN for type %q: %w", name, err)
+			}
+			fmt.Println("!!!", fqn.String())
+			tp = &model.Type{
+				Spec: model.TypeSpec{
+					FQN: fqn.String(),
+				},
+				TypeNode: &model.TypeNode{
+					Position: model.Position{
+						Filename: context.Output,
+					},
+				},
+			}
+			return "", nil
+		},
+		"type_method_undefined": func(methodName string) (bool, error) {
+			if tp == nil {
+				return false, fmt.Errorf("type not set by type_set function")
+			}
+			_, ok := lo.Find(context.Package.Types, func(t *model.Type) bool {
+				if t.Spec.FQN == tp.Spec.FQN {
+					for _, m := range t.Struct.Methods {
+						if m.Name == methodName {
+							if m.Position.Filename != context.Output {
+								return true
+							}
+						}
+					}
+				}
+				return false
+			})
+			return !ok, nil
+		},
+		"annotation":       annotation,
+		"annotation_value": annotationValue,
+		"comment":          comment,
+		"ignored":          ignored(context.Ignores),
+		"filter_elements":  filterElements,
+		"placeholder":      placeholder,
+		"fragment_start":   fragment_start,
+		"fragment_end":     fragment_end,
+		"receiver":         receiver,
+	}
+	return gen.WithFuncMap(functions), dispose
 }

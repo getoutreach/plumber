@@ -125,6 +125,62 @@ func ParseFQN(s string) (*FQN, error) {
 	return &FQN{Expression: expr}, nil
 }
 
+func CraftFQN(pkgPath, typeName string) (*FQN, error) {
+	fqn, err := ParseFQN(typeName)
+	if err != nil {
+		return nil, err
+	}
+	if pkgPath != "" {
+		fqn.Expression = injectPackage(fqn.Expression, pkgPath)
+	}
+	return fqn, nil
+}
+
+// injectPackage recursively walks an expression produced by ParseFQN on a
+// short (package-local) type name and qualifies every bare identifier that is
+// not a builtin by wrapping it in a SelectorExpr carrying the quoted pkgPath.
+func injectPackage(expr ast.Expr, pkgPath string) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		if !isBuiltinType(e.Name) {
+			return &ast.SelectorExpr{
+				X:   &ast.Ident{Name: strconv.Quote(pkgPath)},
+				Sel: e,
+			}
+		}
+	case *ast.StarExpr:
+		e.X = injectPackage(e.X, pkgPath)
+	case *ast.ArrayType:
+		e.Elt = injectPackage(e.Elt, pkgPath)
+	case *ast.MapType:
+		e.Key = injectPackage(e.Key, pkgPath)
+		e.Value = injectPackage(e.Value, pkgPath)
+	case *ast.ChanType:
+		e.Value = injectPackage(e.Value, pkgPath)
+	case *ast.IndexExpr:
+		e.X = injectPackage(e.X, pkgPath)
+		e.Index = injectPackage(e.Index, pkgPath)
+	case *ast.IndexListExpr:
+		e.X = injectPackage(e.X, pkgPath)
+		for i, idx := range e.Indices {
+			e.Indices[i] = injectPackage(idx, pkgPath)
+		}
+	}
+	return expr
+}
+
+func isBuiltinType(name string) bool {
+	switch name {
+	case "bool", "byte", "rune", "error", "nil", "any",
+		"int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"float32", "float64", "complex64", "complex128",
+		"string":
+		return true
+	}
+	return false
+}
+
 // fqnParser is a small recursive-descent parser for the FQN string format
 // produced by FQN.String / FQNFromGoType.
 type fqnParser struct {

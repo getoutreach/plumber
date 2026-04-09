@@ -1,0 +1,70 @@
+
+    // Generated file by plumber shape function. DON'T edit manually.
+package contract
+    import (
+        "time"
+        // <<plumber::Block(imports)>>
+        // <</plumber::Block>>
+        )
+    
+// <<plumber::Block(header)>>
+// <</plumber::Block>>
+
+    
+
+
+// ForwardingCloser is shaped from "github.com/getoutreach/plumber/example/contract".Closer.
+// <<plumber::Fragment(struct-ForwardingCloser)>>
+type ForwardingCloser struct {
+
+}
+
+// NewForwardingCloser creates a new instance of ForwardingCloser.
+func NewForwardingCloser(
+    
+) *ForwardingCloser {
+	return &ForwardingCloser{
+        
+}
+}
+// <</plumber::Fragment>>
+
+
+    
+
+    
+
+
+
+
+
+
+// DerivedWorker is derived from "github.com/getoutreach/plumber/example/contract".Worker.
+type DerivedWorker struct {
+    Name Name
+Concurrency int
+CreatedAt time.Time
+ComplexField OpenCloser
+Queues []string
+// <<plumber::Block(extra-DerivedWorker)>>
+// <</plumber::Block>>
+
+}
+
+
+
+
+
+// WorkerFilter is derived from "github.com/getoutreach/plumber/example/contract".Worker.
+type WorkerFilter struct {
+    Name Filtrable[Name]
+CreatedAt Filtrable[time.Time]
+ComplexField Filtrable[OpenCloser]
+// <<plumber::Block(extra-WorkerFilter)>>
+// <</plumber::Block>>
+
+}
+
+    // <<plumber::Block(footer)>>
+// <</plumber::Block>>
+

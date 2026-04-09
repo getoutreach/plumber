@@ -58,6 +58,7 @@ type (
 	CommentGroup struct {
 		Doc         string      `json:"doc,omitempty" yaml:"doc,omitempty"`
 		Annotations Annotations `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+		Position    Position
 	}
 
 	TypeSpec struct {
@@ -93,11 +94,12 @@ type (
 	}
 
 	Var struct {
-		Name        string          `json:"name,omitempty" yaml:"name,omitempty"`
-		Doc         string          `json:"doc,omitempty" yaml:"doc,omitempty"`
-		Annotations Annotations     `json:"annotations,omitempty" yaml:"annotations,omitempty"`
-		Type        *TypeDefinition `json:"type" yaml:"type"`
-		Tags        []Tag
+		Name         string          `json:"name,omitempty" yaml:"name,omitempty"`
+		FallbackName string          `json:"fallbackName,omitempty" yaml:"fallbackName,omitempty"`
+		Doc          string          `json:"doc,omitempty" yaml:"doc,omitempty"`
+		Annotations  Annotations     `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+		Type         *TypeDefinition `json:"type" yaml:"type"`
+		Tags         []Tag
 	}
 
 	Function struct {
@@ -190,6 +192,12 @@ func (aa Annotations) Values() []string {
 	})
 }
 
+func (aa Annotations) FlatArgs() []string {
+	return lo.FlatMap(aa, func(a Annotation, _ int) []string {
+		return a.Args
+	})
+}
+
 func (n *TypeNode) GetNode() *TypeNode {
 	return n
 }
@@ -225,6 +233,10 @@ func (n *CommentGroup) GetAnnotations() Annotations {
 	return n.Annotations
 }
 
+func (n *CommentGroup) GetPosition() Position {
+	return n.Position
+}
+
 func (n *CommentGroup) FilterAnnotations(expressions ...func(a Annotation) bool) *CommentGroup {
 	aa := lo.Filter(n.Annotations, func(a Annotation, _ int) bool {
 		for _, expr := range expressions {
@@ -236,6 +248,7 @@ func (n *CommentGroup) FilterAnnotations(expressions ...func(a Annotation) bool)
 	})
 	return &CommentGroup{
 		Annotations: aa,
+		Position:    n.Position,
 	}
 }
 

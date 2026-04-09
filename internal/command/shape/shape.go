@@ -11,11 +11,18 @@ import (
 	"github.com/dave/dst/decorator/resolver/gopackages"
 	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/astx/inspect"
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/command/shape/templates"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
 
 func Run(config *ShapeConfig, args []string) error {
+	err := templates.Checkout(&config.Templates, config.CacheDir)
+	if err != nil {
+		return fmt.Errorf("failed to checkout templates: %w", err)
+	}
+
 	filenames, err := inspect.ScanFiles("./", args)
 	if err != nil {
 		return fmt.Errorf("failed to scan files: %w", err)
@@ -60,7 +67,7 @@ func Run(config *ShapeConfig, args []string) error {
 	// process package-level comments for transformations
 	for _, pkg := range pkgs {
 		for _, comment := range pkg.Comments {
-			m := comment.Annotations.Find(OptionContext)
+			m := comment.Annotations.Find(contract.OptionContext)
 			if m == nil {
 				continue
 			}
@@ -73,7 +80,7 @@ func Run(config *ShapeConfig, args []string) error {
 				return fmt.Errorf("model type %q not found in packages", fqn)
 			}
 			ts, err := buildTransformers(config, comment.FilterAnnotations(func(a model.Annotation) bool {
-				return a.Name != OptionContext
+				return a.Name != contract.OptionContext
 			}))
 			if err != nil {
 				return fmt.Errorf("failed to build transformers for node %q: %w", t.GetNode().GetPosition(), err)
@@ -216,7 +223,7 @@ func buildModeManager(cfg *ShapeConfig, mode string, pkgPath string, output stri
 
 }
 
-func buildTransformers(config *ShapeConfig, node Annotable) (transformers []Transformer, err error) {
+func buildTransformers(config *ShapeConfig, node Node) (transformers []Transformer, err error) {
 	var (
 		lastTransformer Transformer
 	)
@@ -237,12 +244,12 @@ func buildTransformers(config *ShapeConfig, node Annotable) (transformers []Tran
 	for _, annotation := range node.GetAnnotations() {
 		switch annotation.Name {
 		case "plumber:shape":
-			if err := changeTransformer(NewShapeTransformer(annotation)); err != nil {
+			if err := changeTransformer(NewShapeTransformer(node.GetPosition(), annotation)); err != nil {
 				return nil, err
 			}
 			transformers = append(transformers, lastTransformer)
 		case "plumber:derive":
-			if err := changeTransformer(NewDeriveTransformer(annotation)); err != nil {
+			if err := changeTransformer(NewDeriveTransformer(node.GetPosition(), annotation)); err != nil {
 				return nil, err
 			}
 			transformers = append(transformers, lastTransformer)

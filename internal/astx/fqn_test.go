@@ -138,6 +138,35 @@ func TestParseFQN(t *testing.T) {
 	}
 }
 
+func TestCraftFQN(t *testing.T) {
+	tests := []struct {
+		name   string
+		pkg    string
+		tp     string
+		output string
+	}{
+		{"plain named type", "github.com/google/uuid", "UUID", `"github.com/google/uuid".UUID`},
+		{"pointer to named type", "github.com/google/uuid", "*UUID", `*"github.com/google/uuid".UUID`},
+		{"slice of named type", "net/http", "[]Dir", `[]"net/http".Dir`},
+		{"pointer to slice of named type", "net/http", "*[]Dir", `*[]"net/http".Dir`},
+		{"map of named types", "github.com/example/foo", "map[string]Bar", `map[string]"github.com/example/foo".Bar`},
+		{"chan of named type", "github.com/google/uuid", "chan UUID", `chan "github.com/google/uuid".UUID`},
+		{"send chan of named type", "github.com/google/uuid", "chan<- UUID", `chan<- "github.com/google/uuid".UUID`},
+		{"recv chan of named type", "github.com/google/uuid", "<-chan UUID", `<-chan "github.com/google/uuid".UUID`},
+		{"basic type with no pkg", "", "int", `int`},
+		{"pointer to basic type with no pkg", "", "*string", `*string`},
+		{"already qualified type", "", `*"github.com/google/uuid".UUID`, `*"github.com/google/uuid".UUID`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fqn, err := CraftFQN(tt.pkg, tt.tp)
+			assert.NilError(t, err)
+			assert.Equal(t, tt.output, fqn.String())
+		})
+	}
+}
+
 func TestParseFQNRoundTrip(t *testing.T) {
 	types_ := []struct {
 		name string

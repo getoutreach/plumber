@@ -25,3 +25,13 @@ plumber.shape:
           - name: plumber:field_wrapper
             args:
               - model.filter
+    - plumber.mixin:
+        name: mixing.model.accessor
+        annotations:
+          - name: plumber:template
+            args:
+              - plumber:object/accessor
+              - plumber:object/getter
+          - name: plumber:output
+            args:
+              - generated.go

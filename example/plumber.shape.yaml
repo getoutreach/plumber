@@ -2,7 +2,18 @@ includes:
   - path: plumber.d/*.yaml
 plumber.shape:
   templates:
-    - plumber.template:
-        name: plumber.template
+    sources:
+      - local:
+          path: ./templates
+          templates:
+            - name: plumber.template
+      - git:
+          repository: https://github.com/getoutreach/protoapi
+          ref: main
+          templates:
+            - name: protoapi.template
+              path: scripts/protoapi.gtpl
+    content:
+      - name: plumber.template
         content: |
           // template

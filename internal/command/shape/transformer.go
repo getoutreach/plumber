@@ -2,45 +2,40 @@ package shape
 
 import (
 	"fmt"
+	"path"
+	"regexp"
+	"strings"
 
 	"github.com/dave/dst"
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
 
-const (
-	OptionTemplate     = "plumber:template"
-	OptionIgnore       = "plumber:ignore"
-	OptionContext      = "plumber:context"
-	OptionComment      = "plumber:comment"
-	OptionName         = "plumber:name"
-	OptionFilter       = "plumber:filter"
-	OptionMixin        = "plumber:mixin"
-	OptionOutput       = "plumber:output"
-	OptionMode         = "plumber:mode"
-	OptionFieldWrapper = "plumber:field_wrapper"
-)
-
 var defaultOptions = []string{
-	OptionTemplate,
-	OptionIgnore,
-	OptionContext,
-	OptionComment,
-	OptionName,
-	OptionFilter,
-	OptionMixin,
-	OptionOutput,
-	OptionMode,
-	OptionFieldWrapper,
+	contract.OptionTemplate,
+	contract.OptionIgnore,
+	contract.OptionContext,
+	contract.OptionComment,
+	contract.OptionName,
+	contract.OptionFilter,
+	contract.OptionMixin,
+	contract.OptionOutput,
+	contract.OptionMode,
+	contract.OptionFieldWrapper,
+	contract.OptionReceiver,
 }
 
 var defaultValues = map[string]string{
-	OptionMode: "generated",
+	contract.OptionMode: "generated",
 }
 
+var reSuffixed = regexp.MustCompile(`{suffix:([^}]+)}`)
+
 type BasicTransformer struct {
+	Position       model.Position
 	Name           string
 	AllowedOptions []string
 	Options        model.Annotation
@@ -52,10 +47,10 @@ func (t *BasicTransformer) GetName() string {
 }
 
 func (t *BasicTransformer) Validate() error {
-	if t.Annotations.Find(OptionName) == nil {
+	if t.Annotations.Find(contract.OptionName) == nil {
 		if len(t.Options.Args) > 0 {
 			t.Annotations.Append(model.Annotation{
-				Name: OptionName,
+				Name: contract.OptionName,
 				Args: t.Options.Args,
 			})
 		}
@@ -68,22 +63,44 @@ func (t *BasicTransformer) GetAnnotations() model.Annotations {
 }
 
 func (t *BasicTransformer) Mode() string {
-	a := t.Annotations.Find(OptionMode)
+	a := t.Annotations.Find(contract.OptionMode)
 	if a != nil {
 		return a.Value()
 	}
-	return defaultValues[OptionMode]
+	return defaultValues[contract.OptionMode]
 }
 
 func (t *BasicTransformer) Output() string {
 	if t.Mode() == "inplace" {
 		return "inplace.go"
 	}
-	a := t.Annotations.Find(OptionOutput)
+	output := "generated.go"
+	a := t.Annotations.Find(contract.OptionOutput)
 	if a != nil {
-		return a.Value()
+		output = a.Value()
 	}
-	return "generated/generated.go"
+	baseFilename := path.Base(t.Position.Filename)
+	ext := path.Ext(baseFilename)
+
+	name := strings.TrimSuffix(baseFilename, ext)
+
+	output = strings.NewReplacer(
+		"{filename}", baseFilename,
+		"{name}", name,
+		"{ext}", ext,
+	).Replace(output)
+
+	output = reSuffixed.ReplaceAllStringFunc(output, func(s string) string {
+		// Extract the suffix value from the match
+		matches := reSuffixed.FindStringSubmatch(s)
+		if len(matches) > 1 {
+			suffix := matches[1]
+			return name + "_" + suffix + ext
+		}
+		return s
+	})
+
+	return output
 }
 
 func (t BasicTransformer) Accepts(annotation string) bool {
@@ -102,9 +119,10 @@ type ShapeTransformer struct {
 	BasicTransformer
 }
 
-func NewDeriveTransformer(a model.Annotation) *DeriveTransformer {
+func NewDeriveTransformer(pos model.Position, a model.Annotation) *DeriveTransformer {
 	return &DeriveTransformer{
 		BasicTransformer: BasicTransformer{
+			Position:       pos,
 			Name:           "derive",
 			AllowedOptions: defaultOptions,
 			Options:        a,
@@ -119,9 +137,10 @@ func (t *DeriveTransformer) Render(context render.Context, tp *model.Type, scope
 	return render.Derive(context, tp, scope, output, opener)
 }
 
-func NewShapeTransformer(a model.Annotation) *ShapeTransformer {
+func NewShapeTransformer(pos model.Position, a model.Annotation) *ShapeTransformer {
 	return &ShapeTransformer{
 		BasicTransformer: BasicTransformer{
+			Position:       pos,
 			Name:           "shape",
 			AllowedOptions: defaultOptions,
 			Options:        a,
@@ -130,14 +149,19 @@ func NewShapeTransformer(a model.Annotation) *ShapeTransformer {
 }
 
 func (t *ShapeTransformer) Render(context render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error) {
-	if tp.Interface == nil {
-		return "", fmt.Errorf("shape transformer can only be applied to interface types, got %s", tp.Spec.Kind)
+	if tp.Interface == nil && tp.Struct == nil {
+		return "", fmt.Errorf("shape transformer can only be applied to interface or struct types, got %s", tp.Spec.Kind)
 	}
 	return render.Shape(context, tp, scope, output, opener)
 }
 
 type Annotable interface {
 	GetAnnotations() model.Annotations
+}
+
+type Node interface {
+	Annotable
+	GetPosition() model.Position
 }
 
 type Transformer interface {

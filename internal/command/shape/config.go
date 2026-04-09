@@ -1,6 +1,9 @@
 package shape
 
-import "github.com/getoutreach/plumber/internal/command/inspect"
+import (
+	"github.com/getoutreach/plumber/internal/command/inspect"
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
+)
 
 type Config struct {
 	Shape    ShapeConfig     `yaml:"plumber.shape"`
@@ -9,10 +12,11 @@ type Config struct {
 }
 
 type ShapeConfig struct {
-	WorkingDir string           `yaml:"workingDir,omitempty"`
-	Templates  []TemplateConfig `yaml:"templates,omitempty"`
-	Mixins     []MixinConfig    `yaml:"mixins,omitempty"`
-	Type       TypeConfig       `yaml:"type,omitempty"`
+	WorkingDir string                          `yaml:"workingDir,omitempty"`
+	CacheDir   string                          `yaml:"cacheDir,omitempty"`
+	Templates  contract.PlumberTemplatesConfig `yaml:"templates,omitempty"`
+	Mixins     []MixinConfig                   `yaml:"mixins,omitempty"`
+	Type       TypeConfig                      `yaml:"type,omitempty"`
 }
 
 type TypeConfig struct {
@@ -60,19 +64,10 @@ type AnnotationConfig struct {
 	NamedArgs map[string]string `yaml:"namedArgs,omitempty"`
 }
 
-type TemplateConfig struct {
-	PlumberTemplate *PlumberTemplateConfig `yaml:"plumber.template,omitempty"`
-}
-
-type PlumberTemplateConfig struct {
-	Name     string  `yaml:"name"`
-	Content  *string `yaml:"content"`
-	FileName *string `yaml:"filename,omitempty"`
-}
-
 func (c *Config) Merge(includes ...*Config) {
 	for _, include := range includes {
-		c.Shape.Templates = append(c.Shape.Templates, include.Shape.Templates...)
+		c.Shape.Templates.Sources = append(c.Shape.Templates.Sources, include.Shape.Templates.Sources...)
+		c.Shape.Templates.Content = append(c.Shape.Templates.Content, include.Shape.Templates.Content...)
 		c.Shape.Mixins = append(c.Shape.Mixins, include.Shape.Mixins...)
 		c.Shape.Type.Wrappers = append(c.Shape.Type.Wrappers, include.Shape.Type.Wrappers...)
 	}

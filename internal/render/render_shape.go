@@ -19,7 +19,10 @@ func Shape(context Context, tp *model.Type, scope map[string]any, output string,
 
 	ctx := gen.NewContext("neco")
 
-	scope = DefaultScope(scope, output)
+	scope = DefaultScope(context, scope, output)
+
+	fm, dispose := withRenderFuncMap(context, output)
+	defer dispose()
 
 	features := gen.Features{
 		gen.FeatureFunc(func(ctx *gen.Context, wr *gen.Writer) error {
@@ -31,14 +34,13 @@ func Shape(context Context, tp *model.Type, scope map[string]any, output string,
 			}
 			return ctx.Write(wr, output, func(ctx *gen.Context, w io.Writer) error {
 				return gen.RenderContent(ctx, "plumber/command/shape", w, c,
-					withRenderFuncMap(context),
-					gen.WithFS(embededTemplates,
+					fm,
+					gen.WithFS(EmbededTemplates,
 						"templates/command/command.gtpl",
 						"templates/command/command_shape.gtpl",
+						"templates/command/command_shape_interface.gtpl",
 					),
-					gen.WithTemplateFunc(gen.LoadBaseTemplate(
-						"templates/new.gtpl",
-					)),
+					gen.WithRenderOptions(context.RenderOptions...),
 				)
 			})
 		}),

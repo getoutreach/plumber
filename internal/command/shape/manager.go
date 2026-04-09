@@ -5,12 +5,36 @@ import (
 	"path"
 
 	"github.com/dave/dst/decorator"
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/command/shape/templates"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/internal/render/view"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
+
+func buildContext(cfg *ShapeConfig, modules *render.ModuleRegister, pkg *model.Package, output string) render.Context {
+	context := render.Context{
+		PkgPath: pkg.Path,
+		Modules: modules,
+		Wrapper: NewTypeWrapper(cfg),
+		Output:  output,
+		Package: pkg,
+	}
+	return context
+}
+
+func transformationContext(context render.Context, cfg *ShapeConfig, t Transformation) (render.Context, error) {
+	names := t.Transformer.GetAnnotations().FindAll(contract.OptionTemplate).FlatArgs()
+	opts, err := templates.Load(&cfg.Templates, cfg.CacheDir, names, render.EmbededTemplates)
+	if err != nil {
+		return context, err
+	}
+	context.RenderOptions = append(context.RenderOptions, opts...)
+
+	return context, nil
+}
 
 type GeneratorManager struct {
 	output  string
@@ -26,15 +50,12 @@ func NewGeneratorManager(cfg *ShapeConfig, pkgPath, output string) *GeneratorMan
 	}
 }
 
-func managerRender(cfg *ShapeConfig, pkgPath string, opener gen.MemoryFileOpener, transformations []Transformation, scope map[string]any, output string) ([]*render.Output, error) {
-	context := render.Context{
-		PkgPath: pkgPath,
-		Modules: render.NewModuleRegister(),
-		Wrapper: NewTypeWrapper(cfg),
-	}
+func managerRender(cfg *ShapeConfig, pkg *model.Package, opener gen.MemoryFileOpener, transformations []Transformation, scope map[string]any, output string) ([]*render.Output, error) {
+	context := buildContext(cfg, render.NewModuleRegister(), pkg, output)
+
 	var contents []string
 
-	err := runTransformations(context, gen.NewBufferFileOpener(), scope, transformations, func(content string) {
+	err := runTransformations(cfg, context, gen.NewBufferFileOpener(), scope, transformations, func(content string) {
 		contents = append(contents, content)
 	})
 	if err != nil {
@@ -48,14 +69,24 @@ func managerRender(cfg *ShapeConfig, pkgPath string, opener gen.MemoryFileOpener
 	return []*render.Output{o}, nil
 }
 
-func (m *GeneratorManager) Render(_ []*model.Package, transformations []Transformation) ([]*render.Output, error) {
+func (m *GeneratorManager) Render(pkgs []*model.Package, transformations []Transformation) ([]*render.Output, error) {
 	var (
 		scope = map[string]any{
 			"Mode": "generated",
 		}
 		opener = gen.NewSystemFileOpener()
 	)
-	return managerRender(m.cfg, m.pkgPath, opener, transformations, scope, m.output)
+
+	pkg, ok := lo.Find(pkgs, func(p *model.Package) bool {
+		return p.Path == m.pkgPath
+	})
+	if !ok {
+		pkg = &model.Package{
+			Path: m.pkgPath,
+		}
+	}
+
+	return managerRender(m.cfg, pkg, opener, transformations, scope, m.output)
 }
 
 type InplaceManager struct {
@@ -95,15 +126,11 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 		var (
 			opener = gen.NewBufferFileOpener()
 		)
-		context := render.Context{
-			PkgPath: pkg.Path,
-			Modules: modules,
-			Wrapper: NewTypeWrapper(m.cfg),
-		}
+		context := buildContext(m.cfg, modules, pkg, m.output)
 
 		var content string
 
-		err := runTransformations(context, opener, scope, []Transformation{t}, func(c string) {
+		err := runTransformations(m.cfg, context, opener, scope, []Transformation{t}, func(c string) {
 			content = c
 		})
 		if err != nil {
@@ -143,6 +170,7 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 }
 
 func runTransformations(
+	cfg *ShapeConfig,
 	state render.Context,
 	opener gen.MemoryFileOpener,
 	scope map[string]any,
@@ -151,14 +179,13 @@ func runTransformations(
 	for _, t := range transformations {
 		ignores := state.Ignores
 		if ignores == nil {
-			ignores = render.NewIgnores(t.Transformer.GetAnnotations().FindAll(OptionIgnore).Values())
+			ignores = render.NewIgnores(t.Transformer.GetAnnotations().FindAll(contract.OptionIgnore).Values())
 		}
+		ctx := state.WithIgnores(ignores)
 
-		ctx := render.Context{
-			Ignores: ignores,
-			Modules: state.Modules,
-			PkgPath: state.PkgPath,
-			Wrapper: state.Wrapper,
+		ctx, err = transformationContext(ctx, cfg, t)
+		if err != nil {
+			return fmt.Errorf("error building transformation context for transformer %q: %w", t.Transformer.GetName(), err)
 		}
 
 		fmt.Printf("  > Transformer[%s], Line: %d\n",

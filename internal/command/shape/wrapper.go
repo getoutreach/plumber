@@ -60,8 +60,6 @@ func (w *TypeWrapper) wrap(tp string, ts *model.TypeSpec) (*model.TypeSpec, erro
 		return nil, fmt.Errorf("failed to parse current type FQN %q: %w", ts.FQN, err)
 	}
 
-	fmt.Println("Result", wrapping.Wrap(current).String())
-
 	return &model.TypeSpec{
 		FQN: wrapping.Wrap(current).String(),
 	}, nil

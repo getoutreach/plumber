@@ -47,9 +47,10 @@ type MutatorService interface {
 // Worker a named worker
 //
 // plumber:shape ForwardingCloser
-// plumber:output generated.go
+// plumber:output {suffix:generated}
+// plumber:receiver c
 type Closer interface {
-	Close(ctx context.Context) error
+	Close(ctx context.Context) (err error)
 }
 
 // OpenCloser describes a resource that can be opened and closed
@@ -65,16 +66,19 @@ type Name string
 // plumber:derive
 // plumber:name DerivedWorker
 // plumber:template tmp1
-// plumber:output generated.go
+// plumber:output {suffix:generated}
 //
 // plumber:derive
 // plumber:name WorkerFilter
 // plumber:mixin mixing.model.filtrable
-// plumber:output generated.go
+// plumber:output {suffix:generated}
 //
 // plumber:derive
 // plumber:mode inplace
 // plumber:name WorkerFilterBlended
+//
+// plumber:shape
+// plumber:mixin mixing.model.accessor
 type Worker struct {
 
 	// Name of the worker
@@ -96,6 +100,10 @@ type Worker struct {
 	ComplexField OpenCloser
 
 	Queues []string
+}
+
+func (r Worker) SetQueues(value []string) {
+	r.Queues = value
 }
 
 // @comment
