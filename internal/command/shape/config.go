@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines configuration types for the shape command including template, mixin, wrapper, and include settings.
+
 package shape
 
 import (

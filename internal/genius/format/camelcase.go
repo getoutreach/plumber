@@ -1,5 +1,7 @@
 // Copyright 2023 Outreach Corporation. All Rights Reserved.
 
+// Description: This file provides CamelCase conversion utilities adapted from the Go protobuf generator.
+
 // Copyright 2010 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.

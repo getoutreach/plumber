@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the shape command runner, orchestrating annotation discovery, transformer building, and output restoration.
+
+// Package shape implements the internal logic for the plumber shape command, transforming annotated Go types into generated or inplace output files.
 package shape
 
 import (

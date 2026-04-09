@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements Git-based template source checkout using sparse clones for the shape command template loader.
+
 package templates
 
 import (

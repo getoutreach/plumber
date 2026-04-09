@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides date, timestamp, and duration conversion utilities between Go time types and protobuf well-known types.
+
 // Copied from SmartStore convert package but using protoapi's own Date struct
 package format
 

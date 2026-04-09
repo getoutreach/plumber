@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines core contract types for the discovery system including Provider, ConstructorInfo, ParameterInfo, and ProviderMapping.
+
+// Package contract defines shared types for the plumber discovery system including providers, constructors, and parameter information.
 package contract
 
 import (

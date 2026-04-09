@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides base template loading, sprig and custom function maps, and pluralization support for the code generation engine.
+
 package gen
 
 import (

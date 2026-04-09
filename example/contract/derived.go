@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file contains derived/blended struct types generated from Worker contract types for the example package.
+
 package contract
 
 import (

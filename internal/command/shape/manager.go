@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the GeneratorManager and InplaceManager for orchestrating shape transformations and rendering outputs.
+
 package shape
 
 import (

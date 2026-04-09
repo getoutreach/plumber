@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements template loading and checkout for the shape command, supporting local, git, and embedded template sources.
+
+// Package templates provides template loading and Git checkout utilities for shape command template sources.
 package templates
 
 import (

@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides DST expression helpers for constructing provider path expressions and converting DST expressions to strings.
+
+// Package discovery implements automatic dependency graph discovery from Go source code using AST analysis.
 package discovery
 
 import (

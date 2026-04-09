@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the template rendering engine including RenderContent, byte processors, render options, and utility functions for code generation.
+
+// Package gen provides a template-based code generation engine with configurable byte processors, file I/O abstractions, and sprig-enhanced template rendering.
 package gen
 
 import (

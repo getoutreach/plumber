@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements Writer, ByteProcessingWriter, BlockWriter, and MemoryFileOpener for file I/O and plumber-block-aware content merging.
+
 package gen
 
 import (

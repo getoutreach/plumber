@@ -3,7 +3,12 @@ name: lint-file-header
 description: Checks for the presence of a file header with appropriate description
 ---
 
-Every Go file that is NOT generated or has `managed: true` in the file header should have:
+Every Go file that is
+- NOT generated
+- NOT a test file (ending with _test.go)
+- has `managed: true` in the file header
+
+Should have:
 1. Copyright notice `// Copyright 2026 Outreach Corporation. All Rights Reserved.`
 2. a file header that includes a description `Description:` of the file's purpose and functionality.
 3. In case of package info file, it should also include a package-level comment describing the purpose of the package.

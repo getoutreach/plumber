@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines configuration types for the inspect command, including format and annotation settings.
+
 package inspect
 
 type Config struct {

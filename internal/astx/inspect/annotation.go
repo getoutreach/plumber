@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements parsing of plumber annotations and struct tags from Go doc comment strings.
+
 package inspect
 
 import (

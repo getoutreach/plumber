@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements DST-based template rendering and AST manipulation for generating container resolver code.
+
+// Package templates provides DST template rendering utilities for generating container resolver code in the discovery system.
 package templates
 
 import (

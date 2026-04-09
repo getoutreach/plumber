@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides file path utility functions for extending filenames, modifying directories, and checking path existence.
+
+// Package pathutil provides file path manipulation utilities used during code generation.
 package pathutil
 
 import (

@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines the render Context, Output, and ModuleRegister types used to coordinate Go type rendering from the plumber query model.
+
+// Package render provides utilities for rendering Go type definitions from the plumber query model into generated source files.
 package render
 
 import (

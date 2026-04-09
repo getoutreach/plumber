@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines annotation option constants and template configuration types used by the shape command.
+
+// Package contract defines the annotation constants and template configuration types for the plumber shape command.
 package contract
 
 const (

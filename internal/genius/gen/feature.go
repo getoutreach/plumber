@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines the Feature interface and FeatureFunc adapter for composable code generation units.
+
 package gen
 
 import "strings"

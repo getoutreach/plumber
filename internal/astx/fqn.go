@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the FQN type and helpers for converting between go/types.Type and fully-qualified name string representations.
+
 package astx
 
 import (

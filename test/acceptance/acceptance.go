@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides acceptance test helpers including fixture management, golden file comparison, and plumber shape invocation utilities.
+
+// Package acceptance_test provides shared helpers for acceptance tests that verify plumber shape and derive code generation against golden fixtures.
 package acceptance_test
 
 import (

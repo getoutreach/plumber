@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the inspect CLI command entry point, parsing config and delegating to the internal inspect runner.
+
+// Package inspect provides the inspect subcommand for discovering and printing type information from Go source files.
 package inspect
 
 import (

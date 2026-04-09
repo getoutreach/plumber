@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements TypeWrapper for wrapping Go type specs based on configured wrapper rules and FQN matching.
+
 package shape
 
 import (

@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the Parser type for loading and accessing Go packages as decorated AST (dst) structures.
+
 package astx
 
 import (

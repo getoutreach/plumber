@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements inplace merging of generated struct fields into existing Go source files using the DST AST.
+
 package shape
 
 import (

@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides utilities for extracting doc comments from Go AST nodes including types, fields, and value specs.
+
+// Package astx provides Go AST parsing and manipulation utilities using the dave/dst decorator library.
 package astx
 
 import (

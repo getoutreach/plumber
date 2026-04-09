@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides miscellaneous string utility functions including random string generation.
+
+// Package stringutils provides miscellaneous string utility functions for use across the plumber codebase.
 package stringutils
 
 import (

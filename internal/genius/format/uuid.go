@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides UUID conversion utilities between uuid.UUID and string representations.
+
 package format
 
 import "github.com/google/uuid"

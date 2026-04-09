@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines the Model fixture type annotated with plumber:derive directives for acceptance testing of generated code output.
+
+// Package generated provides fixture types used to test plumber shape and derive code generation producing separate output files.
 package generated
 
 import "github.com/getoutreach/plumber/test/acceptance/fixture/complex"

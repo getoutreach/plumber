@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the Derive renderer which generates blended/filtered struct variants from annotated source types.
+
 package render
 
 import (

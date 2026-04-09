@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the shape CLI command entry point, parsing config and delegating to the internal shape runner.
+
+// Package shape provides the shape subcommand for generating and transforming Go type definitions via plumber annotations.
 package shape
 
 import (

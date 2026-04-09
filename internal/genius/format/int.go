@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides integer conversion utilities for format transformations.
+
 package format
 
 import "strconv"

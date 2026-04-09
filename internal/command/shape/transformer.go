@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines the Transformer interface and concrete ShapeTransformer and DeriveTransformer implementations for rendering annotated types.
+
 package shape
 
 import (

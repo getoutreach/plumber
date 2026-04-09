@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides Walk and annotation-filtering helpers for traversing the plumber query model node tree.
+
 package inspect
 
 import (

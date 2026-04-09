@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements YAML configuration parsing helpers used across plumber CLI commands.
+
+// Package command provides shared utilities for parsing YAML configuration files used by plumber CLI commands.
 package command
 
 import (

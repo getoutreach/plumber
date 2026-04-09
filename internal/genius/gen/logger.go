@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the Logger type wrapping pterm for structured, leveled log output during code generation.
+
 package gen
 
 import (

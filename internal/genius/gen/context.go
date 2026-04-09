@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines the Context type that tracks generation state including output directory, filename rewrites, template stack, and error/warning accumulation.
+
 package gen
 
 import (

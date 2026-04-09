@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides conversion utilities between protobuf Struct and Go map types.
+
 package format
 
 import (

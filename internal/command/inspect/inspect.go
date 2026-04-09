@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the inspect command runner, orchestrating file scanning, AST inspection, and output formatting.
+
+// Package inspect implements the internal logic for the plumber inspect command, scanning Go packages and printing discovered type information.
 package inspect
 
 import (

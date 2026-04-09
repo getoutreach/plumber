@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file contains commented-out lint/package description generation utilities, preserved for future reference.
+
 package gen
 
 // func PackageDescription(outputDir, p, description, packageDescription string) Features {

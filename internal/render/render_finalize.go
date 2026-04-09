@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the Finalize function that merges rendered content parts and writes the final output file.
+
 package render
 
 import (

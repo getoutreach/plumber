@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the Shape renderer which generates forwarding/wrapper struct definitions from annotated source types.
+
 package render
 
 import (

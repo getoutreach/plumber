@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides name formatting utilities including PascalCase, CamelCase, SnakeCase, and Go struct name normalization with common initialisms.
+
+// Package format provides type and value formatting utilities including case conversion, name normalization, and type serialization helpers.
 package format
 
 import (

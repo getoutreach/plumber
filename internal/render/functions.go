@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements template functions registered into the gen engine for type formatting, import path resolution, and annotation lookups during rendering.
+
 package render
 
 import (

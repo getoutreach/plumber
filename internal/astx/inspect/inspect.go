@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements Go source file scanning and AST inspection to extract types, functions, and annotations into the query model.
+
+// Package inspect provides utilities for scanning Go source files and extracting type and annotation information into the plumber query model.
 package inspect
 
 import (

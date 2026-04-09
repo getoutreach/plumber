@@ -1,3 +1,8 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines the core AST data model for the plumber pipeline including Package, Type, Annotation, TypeKind, Function, Struct, and Interface types.
+
+// Package model defines the core data model representing Go packages, types, annotations, and functions discovered by the plumber AST inspection pipeline.
 package model
 
 import (

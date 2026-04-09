@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file contains tests for annotation and struct tag parsing.
+
 package inspect
 
 import (

@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides utilities for managing import declarations in dst.File AST structures.
+
 package astx
 
 import (

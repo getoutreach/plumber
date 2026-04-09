@@ -1,3 +1,7 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file provides filename rewriting utilities for remapping output paths during code generation.
+
 package gen
 
 import (
