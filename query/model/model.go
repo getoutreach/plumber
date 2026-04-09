@@ -14,28 +14,34 @@ import (
 	"github.com/samber/lo"
 )
 
+// Types
 type (
-	Kind     string
-	Category string
-	Family   string
+	// Kind represents the kind of a type, such as struct, interface, func, map, slice, array, pointer, chan, or basic types like string, int, etc.
+	Kind string
+
+	// Position represents the position of a node in the source code.
 	Position struct {
 		Filename string `json:"filename" yaml:"filename"`
 		Line     int    `json:"line" yaml:"line"`
 		Column   int    `json:"column" yaml:"column"`
 	}
 
+	// AnnotationProvider is an interface for nodes that can provide annotations.
 	AnnotationProvider interface {
 		GetAnnotations() Annotations
 	}
 
+	// Annotation represents a metadata annotation that can be attached to a node.
 	Annotation struct {
 		Name      string            `json:"name" yaml:"name"`
 		Args      []string          `json:"args,omitempty" yaml:"args,omitempty"`
 		NamedArgs map[string]string `json:"namedArgs,omitempty" yaml:"namedArgs,omitempty"`
 	}
 
+	// Annotations is a slice of Annotation, providing utility methods for searching and filtering annotations.
 	Annotations []Annotation
 
+	// TypeNode represents a node in the type system, including its package, position, documentation, and annotations.
 	TypeNode struct {
 		Package     *Package    `json:"-" yaml:"-"`
 		Position    Position    `json:"position" yaml:"position,omitempty"`
@@ -43,11 +49,13 @@ type (
 		Annotations Annotations `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 	}
 
+	// Node is an interface implemented by all AST nodes in the model, providing access to the underlying TypeNode and its associated package.
 	Node interface {
 		GetNode() *TypeNode
 		GetPackage() *Package
 	}
 
+	// Package represents a Go package, containing its name, path, types, functions, and comments.
 	Package struct {
 		Package *decorator.Package `json:"-" yaml:"-"`
 		Name    string             `json:"name" yaml:"name"`
@@ -58,6 +66,7 @@ type (
 		Comments  []*CommentGroup `json:"comments" yaml:"comments"`
 	}
 
+	// Packages is a collection of Package, providing utility methods for looking up types by their fully qualified name (FQN).
 	Packages []*Package
 
 	CommentGroup struct {
@@ -66,6 +75,8 @@ type (
 		Position    Position
 	}
 
+	// TypeSpec represents the specification of a type, including its kind (struct, interface, func, etc.),
+	// fully qualified name (FQN), underlying go/types.Type, and associated *types.TypeName object for named types.
 	TypeSpec struct {
 		TypeKind `json:",inline" yaml:",inline"`
 		FQN      string          `json:"fqn" yaml:"fqn"`
@@ -73,6 +84,9 @@ type (
 		Object   *types.TypeName `json:"-" yaml:"-"`
 	}
 
+	// TypeKind holds information about the kind of a type
+	// (struct, interface, func, map, slice, array, pointer, chan, or basic types)
+	// and its key/element types for composite types.
 	TypeKind struct {
 		Kind        Kind      `json:"kind" yaml:"kind,omitempty"`
 		Key         *TypeKind `json:"key" yaml:"key,omitempty"`
@@ -80,6 +94,7 @@ type (
 		Underlaying *TypeKind `json:"underlaying" yaml:"underlaying,omitempty"`
 	}
 
+	// Type represents a Go type discovered in the AST, including its specification, name, and associated function, struct, or interface details if applicable.
 	Type struct {
 		*TypeNode `json:",inline" yaml:",inline"`
 		Spec      TypeSpec   `json:"spec" yaml:"spec"`
@@ -89,15 +104,20 @@ type (
 		Interface *Interface `json:"interface,omitempty" yaml:"interface,omitempty"`
 	}
 
+	// TypeDefinition represents a type definition in the AST, containing its specification.
+	// It is used mostly for representing types of the arguments and results of functions,
+	// where we don't want to include the full struct/interface details due to finite serialization depth.
 	TypeDefinition struct {
 		Spec TypeSpec `json:"spec" yaml:"spec"`
 	}
 
+	// Tag represents a struct field tag, including its name and value.
 	Tag struct {
 		Name  string `json:"name" yaml:"name"`
 		Value string `json:"value" yaml:"value"`
 	}
 
+	// Var represents a variable, function argument, or struct field, including its name, type, documentation, annotations, and tags (for struct fields).
 	Var struct {
 		Name         string          `json:"name,omitempty" yaml:"name,omitempty"`
 		FallbackName string          `json:"fallbackName,omitempty" yaml:"fallbackName,omitempty"`
@@ -107,6 +127,7 @@ type (
 		Tags         []Tag
 	}
 
+	// Function represents a function or method, including its name, receiver (for methods), arguments, results, and associated documentation and annotations.
 	Function struct {
 		TypeNode `json:",inline" yaml:",inline"`
 		Name     string `json:"name" yaml:"name"`
@@ -115,11 +136,13 @@ type (
 		Results  []*Var `json:"results,omitempty" yaml:"returns,omitempty"`
 	}
 
+	// Interface represents an interface type, including its underlying *types.Interface and its methods.
 	Interface struct {
 		Interface *types.Interface `json:"-" yaml:"-"`
 		Methods   []*Function      `json:"methods,omitempty" yaml:"methods,omitempty"`
 	}
 
+	// Struct represents a struct type, including its underlying *types.Struct and its fields.
 	Struct struct {
 		Struct  *types.Struct `json:"-" yaml:"-"`
 		Methods []*Function   `json:"methods,omitempty" yaml:"methods,omitempty"`
@@ -127,19 +150,34 @@ type (
 	}
 )
 
+// Kind constants for TypeKind.Kind
 const (
-	KindStruct    Kind = "struct"
+	// KindStruct represents a struct type.
+	KindStruct Kind = "struct"
+	// KindInterface represents an interface type.
 	KindInterface Kind = "interface"
-	KindFunc      Kind = "func"
-	KindMap       Kind = "map"
-	KindSlice     Kind = "slice"
-	KindArray     Kind = "array"
-	KindPointer   Kind = "pointer"
-	KindChan      Kind = "chan"
-	KindString    Kind = "string"
-	KindInt       Kind = "int"
-	KindFloat     Kind = "float"
-	KindBool      Kind = "bool"
+	// KindFunc represents a function type.
+	KindFunc Kind = "func"
+	// KindMap represents a map type.
+	KindMap Kind = "map"
+	// KindSlice represents a slice type.
+	KindSlice Kind = "slice"
+	// KindArray represents an array type.
+	KindArray Kind = "array"
+	// KindPointer represents a pointer type.
+	KindPointer Kind = "pointer"
+	// KindChan represents a channel type.
+	KindChan Kind = "chan"
+	// KindUnknown represents an unknown or unsupported type kind.
+	KindUnknown Kind = "unknown"
+	// KindString represents a string type.
+	KindString Kind = "string"
+	// KindInt represents an integer type.
+	KindInt Kind = "int"
+	// KindFloat represents a floating-point type.
+	KindFloat Kind = "float"
+	// KindBool represents a boolean type.
+	KindBool Kind = "bool"
 )
 
 func (p Packages) TypeByFQN(fqn *astx.FQN) *Type {

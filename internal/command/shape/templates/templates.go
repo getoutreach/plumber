@@ -17,6 +17,7 @@ import (
 	"github.com/getoutreach/plumber/internal/genius/gen"
 )
 
+// DefaultCacheDir is the default directory used for caching Git repositories when checking out templates for the shape command.
 const DefaultCacheDir = "~/.outreach/.plumber"
 
 func Checkout(cfg *contract.PlumberTemplatesConfig, cacheDir string) error {

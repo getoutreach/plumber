@@ -19,6 +19,7 @@ type Parser struct {
 	pkgs []*decorator.Package
 }
 
+// ParserConfig holds configuration options for the AST parser
 type ParserConfig struct {
 	WorkingDir string
 	Mode       packages.LoadMode
@@ -26,6 +27,7 @@ type ParserConfig struct {
 	BuildFlags []string
 }
 
+// ParserOption defines a functional option for configuring the Parser
 type ParserOption func(*ParserConfig)
 
 func WithLoadMode(mode packages.LoadMode) ParserOption {

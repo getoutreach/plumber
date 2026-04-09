@@ -102,35 +102,6 @@ func processComments(pkg *decorator.Package, f *ast.File) []*model.CommentGroup 
 			},
 		})
 	}
-
-	// ast.Inspect(f, func(node ast.Node) bool {
-	// 	switch n := node.(type) {
-	// 	case *ast.CommentGroup:
-	// 		comments = append(comments, &model.CommentGroup{
-	// 			Position: model.Position{
-	// 				Filename: f.Name.Name,
-	// 				Line:     int(n.Pos()),
-	// 			},
-	// 			Doc:         n.Text(),
-	// 			Annotations: ParseAnnotations(n.Text()),
-	// 		})
-	// 		return false
-	// 	// case *ast.GenDecl:
-	// 	// 	if n.Doc != nil {
-	// 	// 		comments = append(comments, &model.CommentGroup{
-	// 	// 			Position: model.Position{
-	// 	// 				Filename: f.Name.Name,
-	// 	// 				Line:     int(n.Pos()),
-	// 	// 			},
-	// 	// 			Doc:         n.Doc.Text(),
-	// 	// 			Annotations: ParseAnnotations(n.Doc.Text()),
-	// 	// 		})
-	// 	// 	}
-	// 	// 	return false
-	// 	default:
-	// 		return true
-	// 	}
-	// })
 	return comments
 }
 

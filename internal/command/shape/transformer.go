@@ -18,6 +18,7 @@ import (
 	"github.com/samber/lo"
 )
 
+// defaultOptions defines the set of annotation options that are allowed for shape and derive transformers.
 var defaultOptions = []string{
 	contract.OptionTemplate,
 	contract.OptionIgnore,
@@ -32,12 +33,75 @@ var defaultOptions = []string{
 	contract.OptionReceiver,
 }
 
+// defaultValues defines the default values for certain annotation options when they are not explicitly provided.
 var defaultValues = map[string]string{
 	contract.OptionMode: "generated",
 }
 
+// reSuffixed is a regular expression used to identify and replace {suffix:...} patterns in output filenames for generated code.
 var reSuffixed = regexp.MustCompile(`{suffix:([^}]+)}`)
 
+// Annotable represents an entity that can have annotations, such as a struct or interface type in the AST.
+type Annotable interface {
+	GetAnnotations() model.Annotations
+}
+
+// Node represents a node in the AST that can be transformed by a Transformer, such as a struct or interface type.
+type Node interface {
+	Annotable
+	GetPosition() model.Position
+}
+
+// Transformer defines the interface for all transformers that can be applied to annotated nodes in the shape command.
+type Transformer interface {
+	Annotable
+	Accepts(annotation string) bool
+	Add(annotation model.Annotation)
+	Validate() error
+	Output() string
+	GetName() string
+	Mode() string
+	Render(context render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error)
+}
+
+// Transformation represents a single transformation to be applied to a node,
+// including the node itself, the transformer to be applied, and the path information for the output file.
+type Transformation struct {
+	Node        model.Node
+	Transformer Transformer
+	Path        Pathinfo
+}
+
+// Pathinfo represents the information about the output path for a generated file,
+// including the filename, relative path, base directory, and package name.
+type Pathinfo struct {
+	Filename string
+	RelPath  string
+	BaseDir  string
+	Package  string
+}
+
+// ManagerOutput represents the output of a Manager's Render method,
+// including the generated output, the corresponding dst.File, the Manager that produced it, and the raw content bytes.
+type ManagerOutput struct {
+	Output  *render.Output
+	File    *dst.File
+	Manager Manager
+	Content []byte
+}
+
+// RenderFunc defines the function signature for rendering transformations,
+// which takes a render context, a memory file opener, a list of transformations,
+// and a content function for handling generated content. It returns an error if the rendering process fails.
+type RenderFunc func(state render.Context, opener gen.MemoryFileOpener, transformations []Transformation, contentFunc func(string)) (err error)
+
+type Manager interface {
+	Render(pkgs []*model.Package, transformations []Transformation) ([]*render.Output, error)
+	// Postprocess(output *ManagerOutput, content *dst.File, pkg *decorator.Package) error
+}
+
+// BasicTransformer provides a base implementation of the Transformer interface,
+// handling common annotation processing and output path generation logic for shape and derive transformers.
 type BasicTransformer struct {
 	Position       model.Position
 	Name           string
@@ -115,11 +179,8 @@ func (t *BasicTransformer) Add(annotation model.Annotation) {
 	t.Annotations = append(t.Annotations, annotation)
 }
 
+// DeriveTransformer is a concrete implementation of the Transformer interface for deriving new types based on existing struct types.
 type DeriveTransformer struct {
-	BasicTransformer
-}
-
-type ShapeTransformer struct {
 	BasicTransformer
 }
 
@@ -141,6 +202,11 @@ func (t *DeriveTransformer) Render(context render.Context, tp *model.Type, scope
 	return render.Derive(context, tp, scope, output, opener)
 }
 
+// ShapeTransformer is a concrete implementation of the Transformer interface for generating new types based on existing struct or interface types.
+type ShapeTransformer struct {
+	BasicTransformer
+}
+
 func NewShapeTransformer(pos model.Position, a model.Annotation) *ShapeTransformer {
 	return &ShapeTransformer{
 		BasicTransformer: BasicTransformer{
@@ -157,51 +223,4 @@ func (t *ShapeTransformer) Render(context render.Context, tp *model.Type, scope 
 		return "", fmt.Errorf("shape transformer can only be applied to interface or struct types, got %s", tp.Spec.Kind)
 	}
 	return render.Shape(context, tp, scope, output, opener)
-}
-
-type Annotable interface {
-	GetAnnotations() model.Annotations
-}
-
-type Node interface {
-	Annotable
-	GetPosition() model.Position
-}
-
-type Transformer interface {
-	Annotable
-	Accepts(annotation string) bool
-	Add(annotation model.Annotation)
-	Validate() error
-	Output() string
-	GetName() string
-	Mode() string
-	Render(context render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error)
-}
-
-type Transformation struct {
-	Node        model.Node
-	Transformer Transformer
-	Path        Pathinfo
-}
-
-type Pathinfo struct {
-	Filename string
-	RelPath  string
-	BaseDir  string
-	Package  string
-}
-
-type ManagerOutput struct {
-	Output  *render.Output
-	File    *dst.File
-	Manager Manager
-	Content []byte
-}
-
-type RenderFunc func(state render.Context, opener gen.MemoryFileOpener, transformations []Transformation, contentFunc func(string)) (err error)
-
-type Manager interface {
-	Render(pkgs []*model.Package, transformations []Transformation) ([]*render.Output, error)
-	// Postprocess(output *ManagerOutput, content *dst.File, pkg *decorator.Package) error
 }

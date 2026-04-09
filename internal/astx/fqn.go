@@ -83,6 +83,7 @@ func typeToAST(t types.Type) ast.Expr {
 	}
 }
 
+// FQN represents a fully qualified name of a Go type, including its package path if applicable.
 type FQN struct {
 	Expression ast.Expr
 }

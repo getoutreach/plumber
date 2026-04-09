@@ -17,11 +17,13 @@ arguments:
   reportingTeam: ce-ecs
   slack: ecs-team
   tracing: opentelemetry
+  service: false
 modules:
   - name: github.com/getoutreach/stencil-base
   - name: github.com/getoutreach/stencil-golang
   - name: github.com/getoutreach/devbase
   - name: github.com/getoutreach/stencil-outreach
+    version: v0.29.0-rc.1
   - name: github.com/getoutreach/stencil-circleci
   - name: github.com/getoutreach/stencil-actions
   - name: github.com/getoutreach/stencil-discovery

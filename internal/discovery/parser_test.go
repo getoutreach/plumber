@@ -125,4 +125,3 @@ applications:
 	assert.Equal(t, matcher.Constructors[0], "New(?P<name>.*)")
 	assert.Equal(t, matcher.Constructors[1], "Factory(?P<name>.*)")
 }
-

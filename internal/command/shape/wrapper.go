@@ -17,6 +17,7 @@ func NewTypeWrapper(cfg *ShapeConfig) *TypeWrapper {
 	return &TypeWrapper{cfg: cfg}
 }
 
+// TypeWrapper provides functionality to wrap Go type specifications based on configured wrapper rules and FQN matching.
 type TypeWrapper struct {
 	cfg *ShapeConfig
 }
