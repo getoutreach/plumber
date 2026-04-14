@@ -31,7 +31,6 @@ plumber.shape:
           - name: plumber:template
             args:
               - plumber:object/accessor
-              - plumber:object/getter
           - name: plumber:output
             args:
               - generated.go

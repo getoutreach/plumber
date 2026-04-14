@@ -23,6 +23,7 @@ func (c *Async) Define(ctx context.Context, cf *Config, a *Container) {
 			r.Resolve(async.NewPublisher(discovery.Undefined[string]()))
 		})
 	})
+
 	c.DelayedPublisher.Resolver(func(r *plumber.Resolution[*async.Publisher]) {
 		r.Require().Then(func() {
 			r.Resolve(async.NewDelayedPublisher(discovery.Undefined[string]()))

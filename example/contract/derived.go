@@ -19,7 +19,7 @@ type WorkerFilterBlended struct {
 }
 
 type WorkerFilterBlended3 struct {
-	Name         string
+	Name         Name
 	Concurrency  int
 	CreatedAt    time.Time
 	ComplexField OpenCloser
