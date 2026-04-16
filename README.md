@@ -3,9 +3,9 @@
 [![Generated via Bootstrap](https://img.shields.io/badge/Outreach-Bootstrap-%235951ff)](https://github.com/getoutreach/bootstrap)
 [![Coverage Status](https://coveralls.io/repos/github/getoutreach/plumber/badge.svg?branch=)](https://coveralls.io/github//getoutreach/plumber?branch=)
 
-A library to manage application dependency graph and orchestrate service tasks.
+Plumb your Go application together — from dependency wiring to task orchestration to annotation-driven code generation.
 
-<img src="plumber.png" width="300"/>
+<img src="plumber.png" width="300" />
 
 ## Contributing
 
