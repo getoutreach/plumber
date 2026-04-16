@@ -51,6 +51,37 @@ These refine the behaviour of the active transformation.
 | `plumber:receiver` | `<ReceiverType>` | Override the receiver type for generated methods. |
 | `plumber:comment` | `<text>` | Append a comment to the generated declaration. |
 | `plumber:context` | `<pkg/Type>` | Used in **package-level comments** to point the transformation at a specific model type (fully qualified). |
+| `plumber:scope` | `"<Name>" type="<FQN>"` | Inject a resolved type into the template scope under `.Scope.Custom.<Name>`. Can be specified multiple times. |
+
+---
+
+### Custom scope (`plumber:scope`)
+
+`plumber:scope` injects additional resolved types into the template rendering scope,
+making them available as `.Scope.Custom.<Name>`. This is useful when a template needs
+to reference types beyond the subject type being transformed.
+
+```go
+// plumber:shape
+// plumber:template my-adapter
+// plumber:scope "Target" type="github.com/example/pkg".TargetService
+// plumber:scope "Config" type="github.com/example/pkg".AdapterConfig
+type MyAdapter struct { ... }
+```
+
+Inside the template, the resolved types are accessible as full `*model.Type` values:
+
+```
+{{ .Scope.Custom.Target.Struct.Fields }}
+{{ .Scope.Custom.Config.Spec.Name }}
+```
+
+Each `plumber:scope` annotation requires:
+- A **positional argument** — the key name under `.Scope.Custom`
+- A **`type=` named argument** — a fully-qualified Go type name (FQN)
+
+The FQN must reference a type that is present in the inspected packages. Multiple
+`plumber:scope` annotations can appear on the same transformation.
 
 ---
 
@@ -157,32 +188,52 @@ plumber.shape:
   workingDir: ""      # optional working directory override
   cacheDir:   ""      # optional cache directory for checked-out git templates
 
+  # ---------- sources ----------
+  # Template sources (local or git). These are resolved during template loading.
+  sources:
+    # local template directory
+    - local:
+        path: ./templates
+        templates:
+          - name: plumber.template
+
+    # git-hosted template (sparse-cloned into cacheDir)
+    - git:
+        repository: https://github.com/example/templates
+        ref: main
+        # includes: load additional config files from within the git repo
+        includes:
+          - path: plumber.d/*.yaml
+        templates:
+          - name: remote.template
+            path: scripts/remote.gtpl
+
   # ---------- templates ----------
+  # Inline template content (useful for simple cases).
   templates:
-    sources:
-      # local template directory
-      - local:
-          path: ./templates
-          templates:
-            - name: plumber.template
-
-      # git-hosted template
-      - git:
-          repository: https://github.com/example/templates
-          ref: main
-          templates:
-            - name: remote.template
-              path: scripts/remote.gtpl
-
-    # inline template content (useful for simple cases)
     content:
       - name: plumber.template
         content: |
           // my inline template
 
+  # ---------- macros ----------
+  # Macros are named bundles of annotations expanded early (before transformer
+  # building), allowing injection of any annotation including entry-point
+  # annotations like plumber:derive and plumber:shape.
+  # Referenced in Go source with the @<name> syntax.
+  macros:
+    - plumber.macro:
+        name: "@derive"
+        annotations:
+          - name: plumber:derive
+            args: ["MacroDerived"]
+          - name: plumber:output
+            args: ["{suffix:generated}"]
+
   # ---------- mixins ----------
-  # Mixins are named bundles of annotations that can be referenced with
-  # plumber:mixin <name> in source code.
+  # Mixins are named bundles of modifier annotations that can be referenced
+  # with plumber:mixin <name> in source code. They are expanded inside
+  # transformer building and can only inject modifier annotations.
   mixins:
     - plumber.mixin:
         name: mixing.model.filtrable
@@ -228,21 +279,45 @@ When `shape` loads a config file it:
 2. Expands every glob listed under `includes[*].path` using `filepath.Glob`.
 3. Parses each matched file independently.
 4. Merges included configs into the root by **appending**:
-   - `plumber.shape.templates.sources`
+   - `plumber.shape.sources`
    - `plumber.shape.templates.content`
+   - `plumber.shape.macros`
    - `plumber.shape.mixins`
    - `plumber.shape.type.wrappers`
 
-This allows large projects to split mixin and wrapper definitions into per-module files
-under a `plumber.d/` directory.
+This allows large projects to split macro, mixin, and wrapper definitions into per-module
+files under a `plumber.d/` directory.
 
 ```
 project/
 ├── plumber.shape.yaml          ← root, includes plumber.d/*.yaml
 └── plumber.d/
+    ├── macros.yaml             ← defines shared macros
     ├── mixins.yaml             ← defines shared mixins
     └── wrappers.yaml           ← defines shared wrappers
 ```
+
+### Git source `includes`
+
+Git sources can declare their own `includes` — glob patterns pointing to YAML config files
+within the checked-out repository.  After the repo is sparse-cloned, matching files are
+parsed as full shape configs and merged into the running config with the same semantics as
+root-level `includes`.
+
+```yaml
+sources:
+  - git:
+      repository: https://github.com/example/templates
+      ref: main
+      includes:
+        - path: plumber.d/*.yaml    # paths relative to the repo root
+      templates:
+        - name: remote.template
+          path: scripts/remote.gtpl
+```
+
+This allows shared template repositories to ship their own mixin, macro, and wrapper
+definitions alongside the templates.
 
 ---
 
@@ -260,14 +335,93 @@ relative to the source file:
 
 ---
 
-## Acceptance tests
+## Mixins
 
-The acceptance test suite lives under `test/acceptance/` and exercises the two main modes:
+Mixins are reusable bundles of **modifier annotations** defined in config and referenced
+in Go source with `plumber:mixin <name>`.  They are expanded **inside** the
+transformer-building stage — after an entry-point annotation (`plumber:shape` or
+`plumber:derive`) has created a transformer.  This means mixins can only inject modifier
+annotations that a transformer accepts (e.g. `plumber:filter`, `plumber:template`,
+`plumber:output`, `plumber:field_wrapper`).
 
-| Test | Fixture | Mode | Verifies |
-|---|---|---|---|
-| `TestGenerated` | `fixture/generated/` | `generated` | Mixin + filter annotations produce the correct `generated/generated.go` |
-| `TestMerge` | `fixture/merge/` | `inplace` | Inplace derive merges all fields from `Model` into the empty `ModelBlended` struct |
+### Defining a mixin
 
-Golden files are stored under `fixture/assert/` and compared byte-for-byte (after
-normalising the temporary directory name in import paths).
+```yaml
+mixins:
+  - plumber.mixin:
+      name: mixing.model.filtrable
+      annotations:
+        - { name: plumber:filter, args: [annotation.has, "is:filtrable"] }
+        - { name: plumber:field_wrapper, args: [model.filter] }
+```
+
+### Using a mixin
+
+```go
+// plumber:derive
+// plumber:name WorkerFilter
+// plumber:mixin mixing.model.filtrable
+// plumber:output {suffix:generated}
+type Worker struct {
+    // Name
+    //
+    // is:filtrable
+    Name string
+
+    Concurrency int  // not filtrable — excluded by the mixin filter
+}
+```
+
+When `buildTransformers()` encounters `plumber:mixin mixing.model.filtrable`, it:
+
+1. Looks up the mixin by name in `config.Mixins`.
+2. Validates each of the mixin's annotations against the current transformer via `Accepts()`.
+3. Adds each annotation to the active transformer.
+
+A single type can reference multiple mixins across different transformer blocks.
+
+---
+
+## Macros
+
+Macros are named bundles of annotations that expand **before** transformer building,
+allowing injection of **any** annotation — including entry-point annotations like
+`plumber:derive` and `plumber:shape` that create new transformers.  This is the key
+difference from mixins, which can only inject modifier annotations.
+
+Macros are referenced in Go source using the `@<name>` syntax.
+
+### Defining a macro
+
+```yaml
+macros:
+  - plumber.macro:
+      name: "@derive"
+      annotations:
+        - { name: plumber:derive, args: ["MacroDerived"] }
+        - { name: plumber:output, args: ["{suffix:generated}"] }
+```
+
+### Using a macro
+
+```go
+// @derive
+type Worker struct {
+    Name        string
+    Concurrency int
+}
+```
+
+At runtime, `expandMacros()` replaces the `@derive` annotation with `plumber:derive
+MacroDerived` + `plumber:output {suffix:generated}` on the node before any transformer
+building occurs.  The result is a `generated` mode derive that produces
+`worker_generated.go` containing a `MacroDerived` struct.
+
+### Macros vs mixins
+
+| | Macros | Mixins |
+|---|---|---|
+| Source syntax | `@<name>` | `plumber:mixin <name>` |
+| Expansion stage | Before `Walk` (early) | Inside `buildTransformers` (late) |
+| Can inject entry-point annotations | Yes | No |
+| Config key | `macros` | `mixins` |

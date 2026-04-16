@@ -9,6 +9,7 @@ import (
 	"path"
 
 	"github.com/dave/dst/decorator"
+	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/templates"
 	"github.com/getoutreach/plumber/internal/genius/gen"
@@ -54,12 +55,21 @@ func NewGeneratorManager(cfg *ShapeConfig, pkgPath, output string) *GeneratorMan
 	}
 }
 
-func managerRender(cfg *ShapeConfig, pkg *model.Package, opener gen.MemoryFileOpener, transformations []Transformation, scope map[string]any, output string) ([]*render.Output, error) {
+func managerRender(cfg *ShapeConfig, pkgs []*model.Package, pkgPath string, opener gen.MemoryFileOpener, transformations []Transformation, scope map[string]any, output string) ([]*render.Output, error) {
+	pkg, ok := lo.Find(pkgs, func(p *model.Package) bool {
+		return p.Path == pkgPath
+	})
+	if !ok {
+		pkg = &model.Package{
+			Path: pkgPath,
+		}
+	}
+
 	context := buildContext(cfg, render.NewModuleRegister(), pkg, output)
 
 	var contents []string
 
-	err := runTransformations(cfg, context, gen.NewBufferFileOpener(), scope, transformations, func(content string) {
+	err := runTransformations(cfg, pkgs, context, gen.NewBufferFileOpener(), scope, transformations, func(content string) {
 		contents = append(contents, content)
 	})
 	if err != nil {
@@ -81,16 +91,7 @@ func (m *GeneratorManager) Render(pkgs []*model.Package, transformations []Trans
 		opener = gen.NewSystemFileOpener()
 	)
 
-	pkg, ok := lo.Find(pkgs, func(p *model.Package) bool {
-		return p.Path == m.pkgPath
-	})
-	if !ok {
-		pkg = &model.Package{
-			Path: m.pkgPath,
-		}
-	}
-
-	return managerRender(m.cfg, pkg, opener, transformations, scope, m.output)
+	return managerRender(m.cfg, pkgs, m.pkgPath, opener, transformations, scope, m.output)
 }
 
 type InplaceManager struct {
@@ -134,7 +135,7 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 
 		var content string
 
-		err := runTransformations(m.cfg, context, opener, scope, []Transformation{t}, func(c string) {
+		err := runTransformations(m.cfg, pkgs, context, opener, scope, []Transformation{t}, func(c string) {
 			content = c
 		})
 		if err != nil {
@@ -175,6 +176,7 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 
 func runTransformations(
 	cfg *ShapeConfig,
+	pkgs []*model.Package,
 	state render.Context,
 	opener gen.MemoryFileOpener,
 	scope map[string]any,
@@ -201,11 +203,46 @@ func runTransformations(
 			Annotations: t.Transformer.GetAnnotations(),
 		}
 
+		if err := inflateCustomScope(t.Transformer, pkgs, scope); err != nil {
+			return err
+		}
+
 		content, err := t.Transformer.Render(ctx, t.Node.(*model.Type), scope, t.Transformer.Output(), opener)
 		if err != nil {
 			fmt.Println("Error during rendering:", err)
 		}
 		contentFunc(string(content))
 	}
+	return nil
+}
+
+// inflateCustomScope resolves all plumber:scope annotations on the transformer
+// and populates scope["Custom"] with the resolved *model.Type values keyed by name.
+func inflateCustomScope(transformer Transformer, pkgs []*model.Package, scope map[string]any) error {
+	scopeAnnotations := transformer.GetAnnotations().FindAll(contract.OptionScope)
+	if len(scopeAnnotations) == 0 {
+		return nil
+	}
+	custom := make(map[string]any)
+	for _, sa := range scopeAnnotations {
+		if len(sa.Args) == 0 {
+			return fmt.Errorf("plumber:scope annotation requires a name argument")
+		}
+		name := sa.Args[0]
+		fqnStr, ok := sa.NamedArgs["type"]
+		if !ok {
+			return fmt.Errorf("plumber:scope annotation %q requires a type= named argument", name)
+		}
+		fqn, err := astx.ParseFQN(fqnStr)
+		if err != nil {
+			return fmt.Errorf("failed to parse FQN %q for plumber:scope %q: %w", fqnStr, name, err)
+		}
+		resolved := model.Packages(pkgs).TypeByFQN(fqn)
+		if resolved == nil {
+			return fmt.Errorf("type %q not found in packages for plumber:scope %q", fqnStr, name)
+		}
+		custom[name] = resolved
+	}
+	scope["Custom"] = custom
 	return nil
 }

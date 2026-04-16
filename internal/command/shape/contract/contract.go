@@ -32,6 +32,10 @@ const (
 	// OptionQuery specifies a query entry point that searches for entities matching a regex pattern
 	// within a defined scope and populates an annotated slice variable with compatible results.
 	OptionQuery = "plumber:query"
+	// OptionScope injects a resolved type into the template scope under .Scope.Custom.<name>,
+	// allowing templates to access additional type information beyond the subject type.
+	// Usage: plumber:scope "MyType" type="pkg/path".TypeName
+	OptionScope = "plumber:scope"
 )
 
 // Types

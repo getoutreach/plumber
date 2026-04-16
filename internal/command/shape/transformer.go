@@ -31,6 +31,7 @@ var defaultOptions = []string{
 	contract.OptionMode,
 	contract.OptionFieldWrapper,
 	contract.OptionReceiver,
+	contract.OptionScope,
 }
 
 // defaultValues defines the default values for certain annotation options when they are not explicitly provided.
