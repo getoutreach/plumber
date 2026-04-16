@@ -65,12 +65,15 @@ func ParseAnnotations(doc string) []model.Annotation {
 	return annotations
 }
 
-// isAnnotationToken reports whether a token looks like a namespaced annotation,
-// i.e. matches [@]<namespace>[.:]<name> where namespace and name are non-empty.
+// isAnnotationToken reports whether a token looks like a namespaced annotation
+// ([@]<namespace>[.:]<name> where namespace and name are non-empty)
+// or a macro reference (@<name> where name is non-empty).
 func isAnnotationToken(token string) bool {
-	stripped := strings.TrimPrefix(token, "@")
-	idx := strings.IndexAny(stripped, ".:")
-	return idx > 0 && idx < len(stripped)-1
+	if strings.HasPrefix(token, "@") {
+		return len(token) > 1
+	}
+	idx := strings.IndexAny(token, ".:")
+	return idx > 0 && idx < len(token)-1
 }
 
 // ParseTags parses a raw struct tag string (e.g. `json:"name,omitempty" yaml:"name"`) into

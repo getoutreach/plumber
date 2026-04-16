@@ -49,6 +49,10 @@ func extend(v any, kv ...any) (any, error) {
 	}
 }
 
+func expand_name(v string, t *model.Type) any {
+	return strings.ReplaceAll(v, "{name}", t.Name)
+}
+
 type ModuleRegistration struct {
 	Name    string
 	ID      string
@@ -310,9 +314,10 @@ func withRenderFuncMap(context Context, output string) (opt gen.RenderOptionsFun
 		}
 	}
 	functions := template.FuncMap{
-		"extend":    extend,
-		"type":      typesRenderer(context.PkgPath, context.Modules),
-		"type_wrap": typesRendererWithWrapper(context.PkgPath, context.Modules, context.Wrapper),
+		"extend":      extend,
+		"expand_name": expand_name,
+		"type":        typesRenderer(context.PkgPath, context.Modules),
+		"type_wrap":   typesRendererWithWrapper(context.PkgPath, context.Modules, context.Wrapper),
 		"type_set": func(name string) (string, error) {
 			fqn, err := astx.CraftFQN(context.PkgPath, name)
 			if err != nil {

@@ -55,7 +55,7 @@ type (
 		GetPackage() *Package
 	}
 
-	// Package represents a Go package, containing its name, path, types, functions, and comments.
+	// Package represents a Go package, containing its name, path, types, functions, variables, and comments.
 	Package struct {
 		Package *decorator.Package `json:"-" yaml:"-"`
 		Name    string             `json:"name" yaml:"name"`
@@ -63,7 +63,16 @@ type (
 
 		Types     []*Type         `json:"types" yaml:"types"`
 		Functions []*Function     `json:"functions" yaml:"functions"`
+		Vars      []*PackageVar   `json:"vars,omitempty" yaml:"vars,omitempty"`
 		Comments  []*CommentGroup `json:"comments" yaml:"comments"`
+	}
+
+	// PackageVar represents a package-level variable declaration, including its name, type, documentation, annotations, and position.
+	PackageVar struct {
+		TypeNode `json:",inline" yaml:",inline"`
+		Name     string          `json:"name" yaml:"name"`
+		Type     *TypeDefinition `json:"type" yaml:"type"`
+		VarType  types.Type      `json:"-" yaml:"-"`
 	}
 
 	// Packages is a collection of Package, providing utility methods for looking up types by their fully qualified name (FQN).

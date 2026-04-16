@@ -129,6 +129,18 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 		switch t := obj.(type) {
 		case *types.Func:
 			pkgModel.Functions = append(pkgModel.Functions, buildFunction(pkg, t, node))
+		case *types.Var:
+			if !t.Exported() {
+				continue
+			}
+			pkgModel.Vars = append(pkgModel.Vars, &model.PackageVar{
+				TypeNode: node,
+				Name:     t.Name(),
+				Type: &model.TypeDefinition{
+					Spec: model.NewTypeSpec(astx.FQNFromGoType(t.Type()), t.Type()),
+				},
+				VarType: t.Type(),
+			})
 		case *types.TypeName:
 			if !t.Exported() {
 				continue

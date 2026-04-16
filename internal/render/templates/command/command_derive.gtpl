@@ -21,7 +21,7 @@
 {{end}}
 {{define "plumber/command/derive"}}
 {{ template "plumber/command/derive/struct/comment" . -}}
-{{ $name := or (annotation_value $.Scope.Subject "plumber:name") .Type.Name }}
+{{ $name := or (expand_name (annotation_value $.Scope.Subject "plumber:name") .Type) .Type.Name }}
 // {{ $name }} is derived from {{ $.Type.Spec.FQN }}.
 {{ comment $.Scope.Subject -}}
 type {{ $name }} struct {

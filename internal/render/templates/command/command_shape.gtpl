@@ -11,7 +11,7 @@
     {{ placeholder "footer" }}
 {{end}}
 {{define "plumber/command/shape"}}
-{{ $name := or (annotation_value $.Scope.Subject "plumber:name") .Type.Name }}
+{{ $name := or (expand_name (annotation_value $.Scope.Subject "plumber:name") .Type) .Type.Name }}
 {{ with $scope := extend $ "Name" $name -}}
     {{ if $.Type.Interface -}}
         {{ template "plumber/command/shape/interface" $scope -}}

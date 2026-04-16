@@ -31,7 +31,7 @@ func buildContext(cfg *ShapeConfig, modules *render.ModuleRegister, pkg *model.P
 
 func transformationContext(context render.Context, cfg *ShapeConfig, t Transformation) (render.Context, error) {
 	names := t.Transformer.GetAnnotations().FindAll(contract.OptionTemplate).FlatArgs()
-	opts, err := templates.Load(&cfg.Templates, cfg.CacheDir, names, render.EmbededTemplates)
+	opts, err := templates.Load(cfg.Sources, &cfg.Templates, cfg.CacheDir, names, render.EmbededTemplates)
 	if err != nil {
 		return context, err
 	}

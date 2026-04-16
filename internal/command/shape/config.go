@@ -20,11 +20,13 @@ type Config struct {
 // ShapeConfig holds specific configuration options for the shape command, such as working directory,
 // cache directory, template sources, mixins, and type wrappers.
 type ShapeConfig struct {
-	WorkingDir string                          `yaml:"workingDir,omitempty"`
-	CacheDir   string                          `yaml:"cacheDir,omitempty"`
-	Templates  contract.PlumberTemplatesConfig `yaml:"templates,omitempty"`
-	Mixins     []MixinConfig                   `yaml:"mixins,omitempty"`
-	Type       TypeConfig                      `yaml:"type,omitempty"`
+	WorkingDir string                                 `yaml:"workingDir,omitempty"`
+	CacheDir   string                                 `yaml:"cacheDir,omitempty"`
+	Sources    []contract.PlumberTemplateSourceConfig `yaml:"sources,omitempty"`
+	Templates  contract.PlumberTemplatesConfig        `yaml:"templates,omitempty"`
+	Macros     []MacroConfig                          `yaml:"macros,omitempty"`
+	Mixins     []MixinConfig                          `yaml:"mixins,omitempty"`
+	Type       TypeConfig                             `yaml:"type,omitempty"`
 }
 
 // TypeConfig represents the configuration for type transformations in the shape command,
@@ -80,6 +82,19 @@ type PlumberMixinConfig struct {
 	Annotations []AnnotationConfig `yaml:"annotations,omitempty"`
 }
 
+// MacroConfig represents the configuration for a macro that expands into a set of annotations
+// before transformer building, allowing injection of any annotation including entry-point annotations like plumber:derive.
+type MacroConfig struct {
+	PlumberMacro *PlumberMacroConfig `yaml:"plumber.macro,omitempty"`
+}
+
+// PlumberMacroConfig represents the configuration for a macro, specifying its name and the annotations
+// it expands into when referenced in Go source comments.
+type PlumberMacroConfig struct {
+	Name        string             `yaml:"name"`
+	Annotations []AnnotationConfig `yaml:"annotations,omitempty"`
+}
+
 // AnnotationConfig represents a configuration for filtering nodes based on specific annotation names.
 type AnnotationConfig struct {
 	Name      string            `yaml:"name"`
@@ -89,9 +104,15 @@ type AnnotationConfig struct {
 
 func (c *Config) Merge(includes ...*Config) {
 	for _, include := range includes {
-		c.Shape.Templates.Sources = append(c.Shape.Templates.Sources, include.Shape.Templates.Sources...)
-		c.Shape.Templates.Content = append(c.Shape.Templates.Content, include.Shape.Templates.Content...)
-		c.Shape.Mixins = append(c.Shape.Mixins, include.Shape.Mixins...)
-		c.Shape.Type.Wrappers = append(c.Shape.Type.Wrappers, include.Shape.Type.Wrappers...)
+		c.Shape.MergeShape(&include.Shape)
 	}
+}
+
+// MergeShape merges another ShapeConfig into this one, appending sources, templates, mixins, and wrappers.
+func (c *ShapeConfig) MergeShape(other *ShapeConfig) {
+	c.Sources = append(c.Sources, other.Sources...)
+	c.Templates.Content = append(c.Templates.Content, other.Templates.Content...)
+	c.Macros = append(c.Macros, other.Macros...)
+	c.Mixins = append(c.Mixins, other.Mixins...)
+	c.Type.Wrappers = append(c.Type.Wrappers, other.Type.Wrappers...)
 }

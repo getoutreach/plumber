@@ -89,7 +89,9 @@ func (ctx FixtureContext) AssertContent(t *testing.T, filename, expected string)
 	content, err := os.ReadFile(filename)
 	assert.NilError(t, err)
 
-	expectedContent, err := fixtures.ReadFile(path.Join("fixture", "assert", expected))
+	fmt.Println(os.Getwd())
+
+	expectedContent, err := fixtures.ReadFile(path.Join("fixture", "@golden", expected))
 	assert.NilError(t, err)
 
 	regexp := regexp.MustCompile(`testrun-acceptance[a-z0-9]+/`)

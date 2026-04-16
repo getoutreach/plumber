@@ -1,0 +1,10 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file declares a plumber:query annotated variable that queries function-typed fields from a same-package type for type-scoped acceptance testing.
+
+package querytypescope
+
+var r Registry
+
+// plumber:query "^Get.*" scope=".Registry" receiver="r"
+var Getters = []func() string{}

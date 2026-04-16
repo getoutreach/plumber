@@ -29,13 +29,15 @@ const (
 	OptionMode = "plumber:mode"
 	// OptionFieldWrapper specifies a template to wrap struct fields, enabling custom field-level code generation such as adding tags, validation, or other field-specific logic.
 	OptionFieldWrapper = "plumber:field_wrapper"
+	// OptionQuery specifies a query entry point that searches for entities matching a regex pattern
+	// within a defined scope and populates an annotated slice variable with compatible results.
+	OptionQuery = "plumber:query"
 )
 
 // Types
 type (
-	// PlumberTemplatesConfig represents the overall configuration for plumber templates, including sources and content.
+	// PlumberTemplatesConfig represents the overall configuration for plumber templates content.
 	PlumberTemplatesConfig struct {
-		Sources []PlumberTemplateSourceConfig  `yaml:"sources,omitempty"`
 		Content []PlumberTemplateContentConfig `yaml:"content,omitempty"`
 	}
 
@@ -52,10 +54,18 @@ type (
 	}
 
 	// PlumberTemplateGitSourceConfig represents a Git source of templates, specifying the repository, reference, and templates to use.
+	// It also supports includes for loading additional configuration files from the Git repository.
 	PlumberTemplateGitSourceConfig struct {
-		Repository string                  `yaml:"repository"`
-		Ref        string                  `yaml:"ref,omitempty"`
-		Templates  []PlumberTemplateConfig `yaml:"templates,omitempty"`
+		Repository string                    `yaml:"repository"`
+		Ref        string                    `yaml:"ref,omitempty"`
+		Includes   []PlumberGitIncludeConfig `yaml:"includes,omitempty"`
+		Templates  []PlumberTemplateConfig   `yaml:"templates,omitempty"`
+	}
+
+	// PlumberGitIncludeConfig represents an include path for loading additional configuration files
+	// from within a Git repository source, supporting glob patterns relative to the repository root.
+	PlumberGitIncludeConfig struct {
+		Path string `yaml:"path"`
 	}
 
 	// PlumberTemplateConfig represents a single template configuration,

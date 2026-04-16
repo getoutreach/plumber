@@ -9,13 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/samber/lo"
 )
 
-func checkoutGit(cfg *contract.PlumberTemplateGitSourceConfig, cacheDir string) error {
+func checkoutGit(cfg *contract.PlumberTemplateGitSourceConfig, cacheDir string) ([]string, error) {
 	if cfg.Ref == "" {
 		cfg.Ref = "main"
 	}
@@ -23,12 +24,12 @@ func checkoutGit(cfg *contract.PlumberTemplateGitSourceConfig, cacheDir string) 
 
 	err := os.MkdirAll(repoPath, os.ModePerm)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	isGitRepo, err := exists(path.Join(repoPath, ".git"))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// init repo if it doesn't exist
@@ -36,14 +37,14 @@ func checkoutGit(cfg *contract.PlumberTemplateGitSourceConfig, cacheDir string) 
 		cmd := execCommand("git", "clone", "--no-checkout", "--depth=1", "--filter=tree:0", "--branch="+cfg.Ref, cfg.Repository, repoPath)
 		stdout, err := cmd.Output()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		fmt.Println(string(stdout))
 	}
 
 	err = os.Chdir(repoPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	dirs := lo.Map(cfg.Templates, func(t contract.PlumberTemplateConfig, _ int) string {
@@ -53,21 +54,39 @@ func checkoutGit(cfg *contract.PlumberTemplateGitSourceConfig, cacheDir string) 
 		return "/" + p
 	})
 
+	// Also include directories for include paths so they get checked out.
+	for _, inc := range cfg.Includes {
+		p := path.Dir(inc.Path)
+		p = strings.TrimPrefix(p, "./")
+		p = strings.TrimPrefix(p, "/")
+		dirs = append(dirs, "/"+p)
+	}
+
 	cmd := execCommand("git", append([]string{"sparse-checkout", "set", "--no-cone"}, dirs...)...)
 	stdout, err := cmd.Output()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Println(string(stdout))
 
 	cmd = execCommand("git", "checkout", "origin/"+cfg.Ref)
 	stdout, err = cmd.Output()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Println(string(stdout))
 
-	return nil
+	// Resolve include globs within the checked-out repo.
+	var includePaths []string
+	for _, inc := range cfg.Includes {
+		matches, err := filepath.Glob(filepath.Join(repoPath, inc.Path))
+		if err != nil {
+			return nil, fmt.Errorf("failed to glob include path %q in repo %s: %w", inc.Path, cfg.Repository, err)
+		}
+		includePaths = append(includePaths, matches...)
+	}
+
+	return includePaths, nil
 }
 
 func gitRepoPath(cacheDir, repository, ref string) string {

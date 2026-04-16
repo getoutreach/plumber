@@ -16,16 +16,27 @@ import (
 	"github.com/dave/dst/decorator/resolver/gopackages"
 	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/astx/inspect"
+	"github.com/getoutreach/plumber/internal/command"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/templates"
+	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
 
 func Run(config *ShapeConfig, args []string) error {
-	err := templates.Checkout(&config.Templates, config.CacheDir)
+	includePaths, err := templates.Checkout(config.Sources, config.CacheDir)
 	if err != nil {
 		return fmt.Errorf("failed to checkout templates: %w", err)
+	}
+
+	// Parse and merge any config files included from git sources.
+	for _, p := range includePaths {
+		inc, err := command.ParseConfig[Config](p)
+		if err != nil {
+			return fmt.Errorf("failed to parse git include config %q: %w", p, err)
+		}
+		config.MergeShape(&inc.Shape)
 	}
 
 	filenames, err := inspect.ScanFiles("./", args)
@@ -37,6 +48,11 @@ func Run(config *ShapeConfig, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to inspect files: %w", err)
 	}
+
+	// Expand macros in all annotations before walking and building transformers.
+	// This allows macros to inject entry-point annotations like plumber:derive
+	// that create new transformers, which mixins cannot do.
+	expandMacros(pkgs, config.Macros)
 
 	var (
 		transformingNodes = []model.Node{}
@@ -127,6 +143,23 @@ func Run(config *ShapeConfig, args []string) error {
 			}
 		}
 	}
+	// Process plumber:query annotations on package-level variables.
+	queryOutputs, err := processQueries(pkgs)
+	if err != nil {
+		return fmt.Errorf("failed to process queries: %w", err)
+	}
+	for _, qo := range queryOutputs {
+		outputs = append(outputs, &ManagerOutput{
+			Output: &render.Output{
+				Filename: qo.Filename,
+				Dst: &render.DstOutput{
+					File:    qo.File,
+					Package: qo.Package.Package,
+				},
+			},
+		})
+	}
+
 	if len(outputs) > 0 {
 		return restoreOutputs(outputs)
 	}
@@ -289,4 +322,53 @@ func buildTransformers(config *ShapeConfig, node Node) (transformers []Transform
 		return nil, err
 	}
 	return transformers, nil
+}
+
+// expandMacros replaces macro annotations with their defined annotation lists on all nodes
+// across all packages. This runs before Walk and buildTransformers so that macros can inject
+// entry-point annotations like plumber:derive or plumber:shape.
+func expandMacros(pkgs []*model.Package, macros []MacroConfig) {
+	macroMap := make(map[string]*PlumberMacroConfig, len(macros))
+	for i := range macros {
+		if macros[i].PlumberMacro != nil {
+			macroMap[macros[i].PlumberMacro.Name] = macros[i].PlumberMacro
+		}
+	}
+	if len(macroMap) == 0 {
+		return
+	}
+
+	for _, pkg := range pkgs {
+		for _, typ := range pkg.Types {
+			typ.TypeNode.Annotations = expandAnnotations(typ.TypeNode.Annotations, macroMap)
+		}
+		for _, fun := range pkg.Functions {
+			fun.TypeNode.Annotations = expandAnnotations(fun.TypeNode.Annotations, macroMap)
+		}
+		for _, v := range pkg.Vars {
+			v.TypeNode.Annotations = expandAnnotations(v.TypeNode.Annotations, macroMap)
+		}
+		for _, comment := range pkg.Comments {
+			comment.Annotations = expandAnnotations(comment.Annotations, macroMap)
+		}
+	}
+}
+
+// expandAnnotations replaces any annotation whose name matches a macro with the macro's
+// defined annotations, preserving the order of non-macro annotations.
+func expandAnnotations(annotations model.Annotations, macroMap map[string]*PlumberMacroConfig) model.Annotations {
+	var expanded model.Annotations
+	for _, ann := range annotations {
+		macro, ok := macroMap[ann.Name]
+		if ok {
+			for _, macroAnn := range macro.Annotations {
+				a := model.NewAnnotation(macroAnn.Name, macroAnn.Args...)
+				a.NamedArgs = macroAnn.NamedArgs
+				expanded = append(expanded, a)
+			}
+		} else {
+			expanded = append(expanded, ann)
+		}
+	}
+	return expanded
 }

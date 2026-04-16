@@ -1,0 +1,17 @@
+// Generated file by plumber shape function. DON'T edit manually.
+package macro
+
+// <<plumber::Block(header)>>
+// <</plumber::Block>>
+
+// ModelMacro is derived from "github.com/getoutreach/plumber/test/acceptance/testrun-acceptance/fixture/macro".Model.
+type ModelMacro struct {
+	Name        string
+	Concurrency int
+	// <<plumber::Block(extra-MacroDerived)>>
+	// <</plumber::Block>>
+
+}
+
+// <<plumber::Block(footer)>>
+// <</plumber::Block>>

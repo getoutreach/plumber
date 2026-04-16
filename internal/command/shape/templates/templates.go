@@ -20,10 +20,10 @@ import (
 // DefaultCacheDir is the default directory used for caching Git repositories when checking out templates for the shape command.
 const DefaultCacheDir = "~/.outreach/.plumber"
 
-func Checkout(cfg *contract.PlumberTemplatesConfig, cacheDir string) error {
+func Checkout(sources []contract.PlumberTemplateSourceConfig, cacheDir string) ([]string, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() {
 		err := os.Chdir(currentDir)
@@ -39,20 +39,25 @@ func Checkout(cfg *contract.PlumberTemplatesConfig, cacheDir string) error {
 	if strings.HasPrefix(cacheDir, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return fmt.Errorf("cant' get users home: %w", err)
+			return nil, fmt.Errorf("cant' get users home: %w", err)
 		}
 		cacheDir = path.Join(home, cacheDir[2:])
 	}
 	fmt.Println("Using cacheDir:", cacheDir)
-	for _, s := range cfg.Sources {
+	var includePaths []string
+	for _, s := range sources {
 		if s.Git != nil {
-			checkoutGit(s.Git, cacheDir)
+			paths, err := checkoutGit(s.Git, cacheDir)
+			if err != nil {
+				return nil, fmt.Errorf("failed to checkout git source %s: %w", s.Git.Repository, err)
+			}
+			includePaths = append(includePaths, paths...)
 		}
 	}
-	return nil
+	return includePaths, nil
 }
 
-func Load(cfg *contract.PlumberTemplatesConfig, cacheDir string, names []string, fs embed.FS) ([]gen.RenderOptionsFunc, error) {
+func Load(sources []contract.PlumberTemplateSourceConfig, cfg *contract.PlumberTemplatesConfig, cacheDir string, names []string, fs embed.FS) ([]gen.RenderOptionsFunc, error) {
 	opts := []gen.RenderOptionsFunc{}
 	for _, name := range names {
 		if strings.HasPrefix(name, "plumber:") {
@@ -66,7 +71,7 @@ func Load(cfg *contract.PlumberTemplatesConfig, cacheDir string, names []string,
 			opts = append(opts, gen.WithFS(fs, name))
 			continue
 		}
-		for _, s := range cfg.Sources {
+		for _, s := range sources {
 			switch {
 			case s.Git != nil:
 				repoPath := gitRepoPath(cacheDir, s.Git.Repository, s.Git.Ref)

@@ -63,6 +63,8 @@ type Name string
 
 // Worker a named worker
 //
+// @macro
+//
 // plumber:derive
 // plumber:name DerivedWorker
 // plumber:template tmp1

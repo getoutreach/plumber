@@ -21,6 +21,11 @@ func Walk(pkgs []*model.Package, visitor func(node model.Node) error) error {
 				return err
 			}
 		}
+		for _, v := range pkg.Vars {
+			if err := visitor(v); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
