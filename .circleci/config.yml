@@ -115,7 +115,7 @@ workflows:
           executor_name: oss-docker
           docker_image: ghcr.io/getoutreach/bootstrap/ci-oss
           ## <<Stencil::Block(circlePreReleaseDryRunExtra)>>
-
+          docker_tag: latest
           ## <</Stencil::Block>>
           requires:
             ## <<Stencil::Block(circlePreReleaseDryRunRequires)>>
@@ -130,7 +130,7 @@ workflows:
           executor_name: oss-docker
           docker_image: ghcr.io/getoutreach/bootstrap/ci-oss
           ## <<Stencil::Block(circleSharedTestExtra)>>
-
+          docker_tag: latest
           ## <</Stencil::Block>>
       - shared/publish_docs:
           context: *contexts
