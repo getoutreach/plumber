@@ -1,6 +1,7 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file defines the Context type that tracks generation state including output directory, filename rewrites, template stack, and error/warning accumulation.
+// Description: This file defines the Context type that tracks generation state including output
+// directory, filename rewrites, template stack, and error/warning accumulation.
 
 package gen
 
@@ -15,16 +16,28 @@ import (
 	"github.com/getoutreach/plumber/internal/genius/pathutil"
 )
 
+// FilenameRewriter is a function type that takes a filename and returns a boolean indicating whether the
+// rewrite was applied and the new filename. It is used to define custom logic for rewriting output
+// filenames during the code generation process, allowing for dynamic adjustment of output paths based
+// on the context of the generation.
 type FilenameRewriter func(string) (bool, string)
 
+// contextSettings represents the settings for a specific context during code generation, such as the
+// current filename being generated. It is used to track the state of the generation process and provide
+// relevant information for logging and error reporting.
 type contextSettings struct {
 	Filename string
 }
 
+// contextError represents an error that occurs during the code generation process, containing a message describing the error.
+// It is used to accumulate errors in the Context for later reporting.
 type contextError struct {
 	message string
 }
 
+// Context represents the state and configuration for a code generation process, including application information,
+// output settings, metadata for logging, filename rewrites, and accumulated warnings and errors. It provides methods
+// for managing this state and coordinating the writing of generated files while tracking the context of the generation process.
 type Context struct {
 	ApplicationName    string
 	OutputDir          string

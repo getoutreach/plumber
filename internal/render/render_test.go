@@ -10,7 +10,6 @@ import (
 )
 
 func TestTesting(t *testing.T) {
-
 	context := Context{
 		Modules: NewModuleRegister(),
 		Ignores: NewIgnores([]string{"ID"}),
@@ -69,7 +68,7 @@ func TestTesting(t *testing.T) {
 		},
 	}
 
-	content, err := Derive(context, tp, map[string]any{
+	content, err := Derive(&context, tp, map[string]any{
 		"Derive": view.Annotable{
 			Annotations: []model.Annotation{
 				model.NewAnnotation("plumber:name", "MyDerivedStruct"),
@@ -81,5 +80,5 @@ func TestTesting(t *testing.T) {
 		fmt.Println("Error during rendering:", err)
 	}
 
-	fmt.Printf("Done: %v\n", string(content))
+	fmt.Printf("Done: %v\n", content)
 }

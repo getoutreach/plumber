@@ -1,7 +1,3 @@
-// Copyright 2026 Outreach Corporation. All Rights Reserved.
-
-// Description: This file declares a plumber:query annotated variable for acceptance testing of query-based variable inflation.
-
 package query
 
 // plumber:query "^Init.*" scope="."

@@ -1,6 +1,7 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file provides DST expression helpers for constructing provider path expressions and converting DST expressions to strings.
+// Description: This file provides DST expression helpers for constructing provider path expressions
+// and converting DST expressions to strings.
 
 // Package discovery implements automatic dependency graph discovery from Go source code using AST analysis.
 package discovery
@@ -19,18 +20,18 @@ func providerPathExpr(p *contract.ContainerProvider, currentContainerName string
 			},
 			Sel: dst.NewIdent(p.Provider.Name),
 		}
-	} else {
-		return &dst.SelectorExpr{
-			X: &dst.SelectorExpr{
-				X: &dst.Ident{
-					Name: "a",
-				},
-				Sel: dst.NewIdent(p.ContainerName),
+	}
+
+	return &dst.SelectorExpr{
+		X: &dst.SelectorExpr{
+			X: &dst.Ident{
+				Name: "a",
 			},
-			Sel: &dst.Ident{
-				Name: p.Provider.Name,
-			},
-		}
+			Sel: dst.NewIdent(p.ContainerName),
+		},
+		Sel: &dst.Ident{
+			Name: p.Provider.Name,
+		},
 	}
 }
 

@@ -32,6 +32,8 @@ type AugmentResult struct {
 // Augmenter handles AST modifications to add missing fields to container structs
 type Augmenter struct{}
 
+// instanceMethods defines the method names that indicate a provider field is being used in the Define method,
+// which helps determine if the dependency should be marked as required.
 var instanceMethods = []string{"Instance", "InstanceError"}
 
 // NewAugmenter creates a new augmenter instance
@@ -58,13 +60,12 @@ func (a *Augmenter) AugmentContainerStruct(
 
 	var (
 		result         = &AugmentResult{}
-		neededPackages = make(map[string]bool)
+		neededPackages map[string]bool
 	)
 
 	// Identify missing providers by checking existing struct fields
 	missingProviders := a.findMissingProvidersFromStruct(structDecl, providers)
 	if len(missingProviders) > 0 {
-
 		// Build import alias map from the file
 		importAliases := a.buildImportAliasMap(file)
 
@@ -86,7 +87,6 @@ func (a *Augmenter) AugmentContainerStruct(
 	changed := a.ensureDependencyRequired(dec, file, containerName)
 
 	if changed || len(missingProviders) > 0 {
-
 		// Write the modified AST back to the file
 		if err := a.writeFile(containerPath, file, dec); err != nil {
 			return nil, fmt.Errorf("failed to write file: %w", err)
@@ -217,14 +217,14 @@ func (a *Augmenter) addFieldsToStruct(
 	missingProviders []*contract.Provider,
 	importAliases map[string]string,
 	providerMap map[string]*contract.ProviderMapping,
-) (*AugmentResult, map[string]bool) {
-	result := &AugmentResult{
+) (result *AugmentResult, neededPackages map[string]bool) {
+	result = &AugmentResult{
 		Added:   []string{},
 		Skipped: []string{},
 	}
 
 	// Track packages that need to be imported
-	neededPackages := make(map[string]bool)
+	neededPackages = make(map[string]bool)
 
 	defineFuncDeclaration := templates.FuncDeclaration(file, "Define")
 
@@ -283,16 +283,16 @@ func (a *Augmenter) addFieldsToStruct(
 				c.Decs.Before = dst.NewLine
 				c.Decs.After = dst.NewLine
 				return c
-			} else {
-				return &dst.CallExpr{
-					Fun: &dst.IndexListExpr{
-						Indices: []dst.Expr{templates.ToTypeDefinition(param.TypeInfo.Type)},
-						X: &dst.Ident{
-							Name: "Undefined",
-							Path: "github.com/getoutreach/plumber/discovery",
-						},
+			}
+
+			return &dst.CallExpr{
+				Fun: &dst.IndexListExpr{
+					Indices: []dst.Expr{templates.ToTypeDefinition(param.TypeInfo.Type)},
+					X: &dst.Ident{
+						Name: "Undefined",
+						Path: "github.com/getoutreach/plumber/discovery",
 					},
-				}
+				},
 			}
 		})
 
@@ -317,8 +317,8 @@ func (a *Augmenter) addFieldsToStruct(
 
 		// Create a restorer with the import manager enabled, and print the result. As you can see, the
 		// import block is automatically managed, and the Println ident is converted to a SelectorExpr:
-		//r := decorator.NewRestorerWithImports("root", gopackages.New("."))
-		//restoredFile, err := r.RestoreFile(file)
+		// r := decorator.NewRestorerWithImports("root", gopackages.New("."))
+		// restoredFile, err := r.RestoreFile(file)
 
 		f := templates.FuncDeclaration(resolver, "DependencyResolverResolve")
 
@@ -446,25 +446,6 @@ func (a *Augmenter) ensureDependencyRequired(dec *decorator.Decorator, file *dst
 			return ok, true
 		})
 
-		// functionCalls := templates.FindNodes(thenCallback, func(node dst.Node) (match bool, recurse bool) {
-		//             return templates.MatchType[*dst.CallExpr](node)
-		//             return templates.MatchAny(
-		//                 // templates.StopRecurseOnMatch(
-		//                 // 	templates.Matcher(
-		//                 // 		templates.MatchType(node, func(n *dst.CallExpr) (match bool) {
-		//                 // 			if sel, ok := n.Fun.(*dst.Ident); ok {
-		//                 // 				if sel.Name == "OneOf" && sel.Path == "github.com/getoutreach/plumber/discovery" {
-		//                 // 					return true
-		//                 // 				}
-		//                 // 			}
-		//                 // 			return false
-		//                 // 		}),
-		//                 // 	),
-		//                 // ),
-		//                 templates.Matcher(templates.MatchType[*dst.CallExpr](node)),
-		//             )
-		//         })
-
 		usedInstanceSelectorExpr := lo.Compact(
 			lo.Map(functionCalls, func(thenCallNode dst.Node, _ int) dst.Node {
 				thenCall := thenCallNode.(*dst.CallExpr)
@@ -498,7 +479,7 @@ func (a *Augmenter) ensureDependencyRequired(dec *decorator.Decorator, file *dst
 	return false
 }
 
-func filterExistingDependecySelectors(selectors []dst.Expr, args []dst.Expr) []dst.Expr {
+func filterExistingDependecySelectors(selectors, args []dst.Expr) []dst.Expr {
 	if len(args) == 0 || len(selectors) == 0 {
 		return selectors
 	}
@@ -521,7 +502,7 @@ func (a *Augmenter) writeFile(filepath string, file *dst.File, dec *decorator.De
 	}
 
 	// Write to file
-	if err := os.WriteFile(filepath, buf.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(filepath, buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 

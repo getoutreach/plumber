@@ -87,7 +87,7 @@ func ParseTags(raw string) []model.Tag {
 	// Walk the raw string key-by-key; reflect.StructTag.Lookup gives the value.
 	for raw != "" {
 		// Skip leading spaces.
-		for len(raw) > 0 && raw[0] == ' ' {
+		for raw != "" && raw[0] == ' ' {
 			raw = raw[1:]
 		}
 		if raw == "" {
@@ -104,7 +104,7 @@ func ParseTags(raw string) []model.Tag {
 		key := raw[:i]
 		raw = raw[i+1:]
 		// Consume the quoted value.
-		if len(raw) == 0 || raw[0] != '"' {
+		if raw == "" || raw[0] != '"' {
 			break
 		}
 		j := 1

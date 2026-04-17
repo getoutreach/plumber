@@ -140,22 +140,22 @@ func (p *Parser) Packages() []*decorator.Package {
 }
 
 // GetParsedFile returns the already-parsed AST file for a given path, converted to dst
-func (p *Parser) GetParsedFile(filepath string) (f *dst.File, pkg *decorator.Package, err error) {
+func (p *Parser) GetParsedFile(filePath string) (f *dst.File, pkg *decorator.Package, err error) {
 	// Find the package that contains this file
 	for _, pkg := range p.pkgs {
 		for _, file := range pkg.Syntax {
-			if pkg.Decorator.Filenames[file] == filepath {
+			if pkg.Decorator.Filenames[file] == filePath {
 				return file, pkg, nil
 			}
 		}
 	}
-	return nil, nil, fmt.Errorf("file %q not found in parsed packages", filepath)
+	return nil, nil, fmt.Errorf("file %q not found in parsed packages", filePath)
 }
 
 // GetFileAndDecorator returns the dst.File and decorator for augmentation purposes
 // astx.AddImport(pkg.Package, existingFile, imp.Name)
-func (p *Parser) GetFileAndDecorator(filepath string) (*dst.File, *decorator.Package, *decorator.Decorator) {
-	file, pkg, err := p.GetParsedFile(filepath)
+func (p *Parser) GetFileAndDecorator(filePath string) (*dst.File, *decorator.Package, *decorator.Decorator) {
+	file, pkg, err := p.GetParsedFile(filePath)
 	if err != nil {
 		return nil, nil, nil
 	}

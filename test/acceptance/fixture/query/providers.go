@@ -1,8 +1,3 @@
-// Copyright 2026 Outreach Corporation. All Rights Reserved.
-
-// Description: This file defines provider functions used as query targets in the plumber:query acceptance test fixture.
-
-// Package query provides fixture types and functions for acceptance testing of plumber:query annotation processing.
 package query
 
 // InitDB initializes the database connection.

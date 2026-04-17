@@ -2,7 +2,8 @@
 
 // Description: This file implements the inspect command runner, orchestrating file scanning, AST inspection, and output formatting.
 
-// Package inspect implements the internal logic for the plumber inspect command, scanning Go packages and printing discovered type information.
+// Package inspect implements the internal logic for the plumber inspect command, scanning Go packages
+// and printing discovered type information.
 package inspect
 
 import (
@@ -14,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func Run(config *InspectConfig, args []string) error {
+func Run(config *Config, args []string) error {
 	filenames, err := inspect.ScanFiles("./", args)
 	if err != nil {
 		return fmt.Errorf("failed to scan files: %w", err)
@@ -27,7 +28,7 @@ func Run(config *InspectConfig, args []string) error {
 	return format(config, pkgs)
 }
 
-func format(config *InspectConfig, pkgs []*model.Package) error {
+func format(config *Config, pkgs []*model.Package) error {
 	switch config.Format {
 	case "json":
 		return formatJSON(pkgs)

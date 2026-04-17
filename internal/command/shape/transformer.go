@@ -1,6 +1,7 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file defines the Transformer interface and concrete ShapeTransformer and DeriveTransformer implementations for rendering annotated types.
+// Description: This file defines the Transformer interface and concrete Shaper and
+// DeriveTransformer implementations for rendering annotated types.
 
 package shape
 
@@ -16,6 +17,17 @@ import (
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
+)
+
+// Mode constants for transformers
+const (
+	// ModeInPlace is the mode for transformers that indicates the generated code should be merged
+	// in place with the existing source file.
+	ModeInPlace = "inplace"
+
+	// ModeGenerated is the mode for transformers that indicates the generated code should be written
+	// to a separate file.
+	ModeGenerated = "generated"
 )
 
 // defaultOptions defines the set of annotation options that are allowed for shape and derive transformers.
@@ -62,7 +74,7 @@ type Transformer interface {
 	Output() string
 	GetName() string
 	Mode() string
-	Render(context render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error)
+	Render(context *render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error)
 }
 
 // Transformation represents a single transformation to be applied to a node,
@@ -94,11 +106,16 @@ type ManagerOutput struct {
 // RenderFunc defines the function signature for rendering transformations,
 // which takes a render context, a memory file opener, a list of transformations,
 // and a content function for handling generated content. It returns an error if the rendering process fails.
-type RenderFunc func(state render.Context, opener gen.MemoryFileOpener, transformations []Transformation, contentFunc func(string)) (err error)
+type RenderFunc func(
+	state *render.Context,
+	opener gen.MemoryFileOpener,
+	transformations []Transformation,
+	contentFunc func(string),
+) (err error)
 
+// Manager defines the interface for managing the rendering of transformations,
 type Manager interface {
 	Render(pkgs []*model.Package, transformations []Transformation) ([]*render.Output, error)
-	// Postprocess(output *ManagerOutput, content *dst.File, pkg *decorator.Package) error
 }
 
 // BasicTransformer provides a base implementation of the Transformer interface,
@@ -115,6 +132,8 @@ func (t *BasicTransformer) GetName() string {
 	return t.Name
 }
 
+// Validate checks if the transformer has the required annotations and options,
+// and adds default annotations if necessary.
 func (t *BasicTransformer) Validate() error {
 	if t.Annotations.Find(contract.OptionName) == nil {
 		if len(t.Options.Args) > 0 {
@@ -139,8 +158,10 @@ func (t *BasicTransformer) Mode() string {
 	return defaultValues[contract.OptionMode]
 }
 
+// Output generates the output filename for the transformed code based on the transformer configuration and the
+// position of the annotated node.
 func (t *BasicTransformer) Output() string {
-	if t.Mode() == "inplace" {
+	if t.Mode() == ModeInPlace {
 		return "inplace.go"
 	}
 	output := "generated.go"
@@ -172,7 +193,7 @@ func (t *BasicTransformer) Output() string {
 	return output
 }
 
-func (t BasicTransformer) Accepts(annotation string) bool {
+func (t *BasicTransformer) Accepts(annotation string) bool {
 	return lo.Contains(t.AllowedOptions, annotation)
 }
 
@@ -185,6 +206,7 @@ type DeriveTransformer struct {
 	BasicTransformer
 }
 
+// NewDeriveTransformer creates a new DeriveTransformer with the given position and annotation.
 func NewDeriveTransformer(pos model.Position, a model.Annotation) *DeriveTransformer {
 	return &DeriveTransformer{
 		BasicTransformer: BasicTransformer{
@@ -196,20 +218,24 @@ func NewDeriveTransformer(pos model.Position, a model.Annotation) *DeriveTransfo
 	}
 }
 
-func (t *DeriveTransformer) Render(context render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error) {
+func (t *DeriveTransformer) Render(
+	context *render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener,
+) (string, error) {
 	if tp.Struct == nil {
 		return "", fmt.Errorf("derive transformer can only be applied to struct types, got %s", tp.Spec.Kind)
 	}
 	return render.Derive(context, tp, scope, output, opener)
 }
 
-// ShapeTransformer is a concrete implementation of the Transformer interface for generating new types based on existing struct or interface types.
-type ShapeTransformer struct {
+// Shaper is a concrete implementation of the Transformer interface
+// for generating new types based on existing struct or interface types.
+type Shaper struct {
 	BasicTransformer
 }
 
-func NewShapeTransformer(pos model.Position, a model.Annotation) *ShapeTransformer {
-	return &ShapeTransformer{
+// NewShaper creates a new Shaper transformer with the given position and annotation.
+func NewShaper(pos model.Position, a model.Annotation) *Shaper {
+	return &Shaper{
 		BasicTransformer: BasicTransformer{
 			Position:       pos,
 			Name:           "shape",
@@ -219,7 +245,9 @@ func NewShapeTransformer(pos model.Position, a model.Annotation) *ShapeTransform
 	}
 }
 
-func (t *ShapeTransformer) Render(context render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error) {
+func (t *Shaper) Render(
+	context *render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener,
+) (string, error) {
 	if tp.Interface == nil && tp.Struct == nil {
 		return "", fmt.Errorf("shape transformer can only be applied to interface or struct types, got %s", tp.Spec.Kind)
 	}

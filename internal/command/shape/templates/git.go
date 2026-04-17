@@ -99,8 +99,8 @@ func gitRepoPath(cacheDir, repository, ref string) string {
 	return path.Join(cacheDir, repository, ref)
 }
 
-func exists(path string) (bool, error) {
-	_, err := os.Stat(path)
+func exists(filePath string) (bool, error) {
+	_, err := os.Stat(filePath)
 	if err == nil {
 		return true, nil
 	}

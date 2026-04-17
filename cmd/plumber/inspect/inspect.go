@@ -21,10 +21,9 @@ func Run(c *cli.Context) error {
 	configPath := c.String("config")
 	format := c.String("format")
 
-	cfg := &inspect.InspectConfig{}
+	cfg := &inspect.Config{}
 
 	if configPath != "" {
-
 		// Resolve absolute path for config file
 		absConfigPath, err := filepath.Abs(configPath)
 		if err != nil {
@@ -35,7 +34,7 @@ func Run(c *cli.Context) error {
 		// baseDir := filepath.Dir(absConfigPath)
 
 		// Parse the configuration
-		c, err := command.ParseConfig[inspect.Config](absConfigPath)
+		c, err := command.ParseConfig[inspect.FileConfig](absConfigPath)
 		if err != nil {
 			return fmt.Errorf("failed to parse config: %w", err)
 		}

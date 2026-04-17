@@ -9,17 +9,17 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 )
 
-// Config represents the overall configuration for the shape command,
+// FileConfig represents the overall configuration for the shape command,
 // including settings for templates, mixins, wrappers, and includes.
-type Config struct {
-	Shape    ShapeConfig     `yaml:"plumber.shape"`
-	Inspect  inspect.Config  `yaml:"plumber.inspect"`
-	Includes []IncludeConfig `yaml:"includes,omitempty"`
+type FileConfig struct {
+	Shape    Config             `yaml:"plumber.shape"`
+	Inspect  inspect.FileConfig `yaml:"plumber.inspect"`
+	Includes []IncludeConfig    `yaml:"includes,omitempty"`
 }
 
-// ShapeConfig holds specific configuration options for the shape command, such as working directory,
+// Config holds specific configuration options for the shape command, such as working directory,
 // cache directory, template sources, mixins, and type wrappers.
-type ShapeConfig struct {
+type Config struct {
 	WorkingDir string                                 `yaml:"workingDir,omitempty"`
 	CacheDir   string                                 `yaml:"cacheDir,omitempty"`
 	Sources    []contract.PlumberTemplateSourceConfig `yaml:"sources,omitempty"`
@@ -102,14 +102,14 @@ type AnnotationConfig struct {
 	NamedArgs map[string]string `yaml:"namedArgs,omitempty"`
 }
 
-func (c *Config) Merge(includes ...*Config) {
+func (c *FileConfig) Merge(includes ...*FileConfig) {
 	for _, include := range includes {
 		c.Shape.MergeShape(&include.Shape)
 	}
 }
 
-// MergeShape merges another ShapeConfig into this one, appending sources, templates, mixins, and wrappers.
-func (c *ShapeConfig) MergeShape(other *ShapeConfig) {
+// MergeShape merges another Config into this one, appending sources, templates, mixins, and wrappers.
+func (c *Config) MergeShape(other *Config) {
 	c.Sources = append(c.Sources, other.Sources...)
 	c.Templates.Content = append(c.Templates.Content, other.Templates.Content...)
 	c.Macros = append(c.Macros, other.Macros...)

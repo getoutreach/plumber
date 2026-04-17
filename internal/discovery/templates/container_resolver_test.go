@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"go/format"
-	"go/token"
-	"strings"
 	"testing"
 
 	"github.com/dave/dst"
@@ -33,8 +31,6 @@ func TestContainerResolverResolveAst(t *testing.T) {
 	// import block is automatically managed, and the Println ident is converted to a SelectorExpr:
 	r := decorator.NewRestorerWithImports("root", gopackages.New("."))
 	restoredFile, err := r.RestoreFile(n)
-
-	//restoredFset, restoredFile, err := decorator.RestoreFile(n)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,12 +40,4 @@ func TestContainerResolverResolveAst(t *testing.T) {
 	}
 
 	fmt.Println(buf.String())
-
-	return
-
-	b := strings.Builder{}
-
-	format.Node(&b, token.NewFileSet(), n)
-
-	fmt.Println(b.String())
 }

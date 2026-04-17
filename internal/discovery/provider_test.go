@@ -14,18 +14,22 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestConstructorProviderExtraction(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create a test package
-	goModContent := `module github.com/getoutreach/testpkg
-
-go 1.23
-`
-	err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644)
+// testFixtureDir creates a temporary fixture directory inside the current
+// module tree so that go/packages can load it. Returns the directory path.
+func testFixtureDir(t *testing.T, name string) string {
+	t.Helper()
+	dir, err := filepath.Abs(filepath.Join("testdata", name))
 	assert.NilError(t, err)
+	err = os.MkdirAll(dir, 0o755)
+	assert.NilError(t, err)
+	t.Cleanup(func() { os.RemoveAll("testdata") })
+	return dir
+}
 
-	serviceGoContent := `package testpkg
+func TestConstructorProviderExtraction(t *testing.T) {
+	dir := testFixtureDir(t, "provider_extraction")
+
+	serviceGoContent := `package provider_extraction
 
 // Service is a test service
 type Service struct {
@@ -52,10 +56,10 @@ func Helper() string {
 	return "help"
 }
 `
-	err = os.WriteFile(filepath.Join(tmpDir, "service.go"), []byte(serviceGoContent), 0644)
+	err := os.WriteFile(filepath.Join(dir, "service.go"), []byte(serviceGoContent), 0o644)
 	assert.NilError(t, err)
 
-	parser, err := discovery.NewASTParser(filepath.Join(tmpDir, "service.go"))
+	parser, err := discovery.NewASTParser(filepath.Join(dir, "service.go"))
 	assert.NilError(t, err)
 
 	// Test with constructor matcher using named capture groups
@@ -88,17 +92,9 @@ func Helper() string {
 }
 
 func TestConstructorWithoutNamedGroup(t *testing.T) {
-	tmpDir := t.TempDir()
+	dir := testFixtureDir(t, "no_named_group")
 
-	// Create a test package
-	goModContent := `module github.com/getoutreach/testpkg
-
-go 1.23
-`
-	err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644)
-	assert.NilError(t, err)
-
-	serviceGoContent := `package testpkg
+	serviceGoContent := `package no_named_group
 
 // Service is a test service
 type Service struct {
@@ -110,10 +106,10 @@ func NewService(name string) *Service {
 	return &Service{Name: name}
 }
 `
-	err = os.WriteFile(filepath.Join(tmpDir, "service.go"), []byte(serviceGoContent), 0644)
+	err := os.WriteFile(filepath.Join(dir, "service.go"), []byte(serviceGoContent), 0o644)
 	assert.NilError(t, err)
 
-	parser, err := discovery.NewASTParser(filepath.Join(tmpDir, "service.go"))
+	parser, err := discovery.NewASTParser(filepath.Join(dir, "service.go"))
 	assert.NilError(t, err)
 
 	// Test with pattern without named capture group

@@ -10,7 +10,7 @@ import (
 func TestMerge(t *testing.T) {
 	err := withFixture(
 		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.ShapeConfig{}, []string{"./..."})
+			err := shape.Run(&shape.Config{}, []string{"./..."})
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "merge/blended.go", "merge/blended.go.golden")
 			return nil

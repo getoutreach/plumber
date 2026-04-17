@@ -19,8 +19,10 @@ import (
 	"github.com/samber/lo"
 )
 
-func buildContext(cfg *ShapeConfig, modules *render.ModuleRegister, pkg *model.Package, output string) render.Context {
-	context := render.Context{
+// buildContext constructs the rendering context for a given transformation, populating it with the package path, module register,
+// type wrapper, and output path based on the provided configuration and package information.
+func buildContext(cfg *Config, modules *render.ModuleRegister, pkg *model.Package, output string) *render.Context {
+	context := &render.Context{
 		PkgPath: pkg.Path,
 		Modules: modules,
 		Wrapper: NewTypeWrapper(cfg),
@@ -30,7 +32,9 @@ func buildContext(cfg *ShapeConfig, modules *render.ModuleRegister, pkg *model.P
 	return context
 }
 
-func transformationContext(context render.Context, cfg *ShapeConfig, t Transformation) (render.Context, error) {
+// transformationContext is a helper function that builds the rendering context for a given transformation,
+// loading any necessary templates based on the transformer's annotations and the provided configuration.
+func transformationContext(context *render.Context, cfg *Config, t *Transformation) (*render.Context, error) {
 	names := t.Transformer.GetAnnotations().FindAll(contract.OptionTemplate).FlatArgs()
 	opts, err := templates.Load(cfg.Sources, &cfg.Templates, cfg.CacheDir, names, render.EmbededTemplates)
 	if err != nil {
@@ -41,13 +45,15 @@ func transformationContext(context render.Context, cfg *ShapeConfig, t Transform
 	return context, nil
 }
 
+// GeneratorManager is responsible for rendering transformations and generating new output files based on the specified output package path.
 type GeneratorManager struct {
 	output  string
 	pkgPath string
-	cfg     *ShapeConfig
+	cfg     *Config
 }
 
-func NewGeneratorManager(cfg *ShapeConfig, pkgPath, output string) *GeneratorManager {
+// NewGeneratorManager creates a new instance of GeneratorManager with the specified configuration, package path, and output path.
+func NewGeneratorManager(cfg *Config, pkgPath, output string) *GeneratorManager {
 	return &GeneratorManager{
 		output:  output,
 		pkgPath: pkgPath,
@@ -55,7 +61,18 @@ func NewGeneratorManager(cfg *ShapeConfig, pkgPath, output string) *GeneratorMan
 	}
 }
 
-func managerRender(cfg *ShapeConfig, pkgs []*model.Package, pkgPath string, opener gen.MemoryFileOpener, transformations []Transformation, scope map[string]any, output string) ([]*render.Output, error) {
+// managerRender is a helper function that performs the rendering of transformations for both
+// GeneratorManager and InplaceManager, handling the common logic of building the context, running transformations,
+// and finalizing the output.
+func managerRender(
+	cfg *Config,
+	pkgs []*model.Package,
+	pkgPath string,
+	opener gen.MemoryFileOpener,
+	transformations []Transformation,
+	scope map[string]any,
+	output string,
+) ([]*render.Output, error) {
 	pkg, ok := lo.Find(pkgs, func(p *model.Package) bool {
 		return p.Path == pkgPath
 	})
@@ -83,6 +100,8 @@ func managerRender(cfg *ShapeConfig, pkgs []*model.Package, pkgPath string, open
 	return []*render.Output{o}, nil
 }
 
+// Render implements the Manager interface for GeneratorManager, orchestrating the rendering of transformations and generating
+// new output files based on the specified output package path.
 func (m *GeneratorManager) Render(pkgs []*model.Package, transformations []Transformation) ([]*render.Output, error) {
 	var (
 		scope = map[string]any{
@@ -94,13 +113,16 @@ func (m *GeneratorManager) Render(pkgs []*model.Package, transformations []Trans
 	return managerRender(m.cfg, pkgs, m.pkgPath, opener, transformations, scope, m.output)
 }
 
+// InplaceManager is responsible for rendering transformations and merging the generated content into
+// existing source files based on the specified output package path.
 type InplaceManager struct {
 	output  string
 	pkgPath string
-	cfg     *ShapeConfig
+	cfg     *Config
 }
 
-func NewInplaceManager(cfg *ShapeConfig, pkgPath, output string) *InplaceManager {
+// NewInplaceManager creates a new instance of InplaceManager with the specified configuration, package path, and output path.
+func NewInplaceManager(cfg *Config, pkgPath, output string) *InplaceManager {
 	return &InplaceManager{
 		output:  output,
 		pkgPath: pkgPath,
@@ -108,13 +130,15 @@ func NewInplaceManager(cfg *ShapeConfig, pkgPath, output string) *InplaceManager
 	}
 }
 
+// Render implements the Manager interface for InplaceManager, orchestrating the rendering of transformations and merging
+// the generated content into existing source files based on the specified output package path.
 func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transformation) ([]*render.Output, error) {
 	pkg, found := lo.Find(pkgs, func(p *model.Package) bool {
 		return p.Path == m.output
 	})
 	var (
 		scope = map[string]any{
-			"Mode": "inplace",
+			"Mode": ModeInPlace,
 		}
 	)
 	if !found {
@@ -174,10 +198,12 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 	return outputs, nil
 }
 
+// Postprocess is not needed for InplaceManager since the merging is done during the Render phase,
+// so we can omit it or leave it as a no-op.
 func runTransformations(
-	cfg *ShapeConfig,
+	cfg *Config,
 	pkgs []*model.Package,
-	state render.Context,
+	state *render.Context,
 	opener gen.MemoryFileOpener,
 	scope map[string]any,
 	transformations []Transformation, contentFunc func(string),
@@ -189,7 +215,7 @@ func runTransformations(
 		}
 		ctx := state.WithIgnores(ignores)
 
-		ctx, err = transformationContext(ctx, cfg, t)
+		ctxPtr, err := transformationContext(ctx, cfg, &t)
 		if err != nil {
 			return fmt.Errorf("error building transformation context for transformer %q: %w", t.Transformer.GetName(), err)
 		}
@@ -207,11 +233,11 @@ func runTransformations(
 			return err
 		}
 
-		content, err := t.Transformer.Render(ctx, t.Node.(*model.Type), scope, t.Transformer.Output(), opener)
+		content, err := t.Transformer.Render(ctxPtr, t.Node.(*model.Type), scope, t.Transformer.Output(), opener)
 		if err != nil {
 			fmt.Println("Error during rendering:", err)
 		}
-		contentFunc(string(content))
+		contentFunc(content)
 	}
 	return nil
 }

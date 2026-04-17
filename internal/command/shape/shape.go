@@ -1,8 +1,10 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements the shape command runner, orchestrating annotation discovery, transformer building, and output restoration.
+// Description: This file implements the shape command runner, orchestrating annotation discovery,
+// transformer building, and output restoration.
 
-// Package shape implements the internal logic for the plumber shape command, transforming annotated Go types into generated or inplace output files.
+// Package shape implements the internal logic for the plumber shape command, transforming annotated
+// Go types into generated or inplace output files.
 package shape
 
 import (
@@ -24,19 +26,10 @@ import (
 	"github.com/samber/lo"
 )
 
-func Run(config *ShapeConfig, args []string) error {
-	includePaths, err := templates.Checkout(config.Sources, config.CacheDir)
-	if err != nil {
-		return fmt.Errorf("failed to checkout templates: %w", err)
-	}
-
-	// Parse and merge any config files included from git sources.
-	for _, p := range includePaths {
-		inc, err := command.ParseConfig[Config](p)
-		if err != nil {
-			return fmt.Errorf("failed to parse git include config %q: %w", p, err)
-		}
-		config.MergeShape(&inc.Shape)
+// Run is the main entry point for the shape command, orchestrating the entire transformation process.
+func Run(config *Config, args []string) error {
+	if err := checkoutAndMergeIncludes(config); err != nil {
+		return err
 	}
 
 	filenames, err := inspect.ScanFiles("./", args)
@@ -54,16 +47,55 @@ func Run(config *ShapeConfig, args []string) error {
 	// that create new transformers, which mixins cannot do.
 	expandMacros(pkgs, config.Macros)
 
-	var (
-		transformingNodes = []model.Node{}
-	)
+	transformations, err := collectTransformations(config, pkgs)
+	if err != nil {
+		return err
+	}
 
-	inspect.Walk(pkgs, inspect.WithAnnotations(
+	outputs, err := renderTransformations(config, pkgs, transformations)
+	if err != nil {
+		return err
+	}
+
+	if len(outputs) > 0 {
+		return restoreOutputs(outputs)
+	}
+
+	return nil
+}
+
+// checkoutAndMergeIncludes checks out template sources from git and merges
+// any config files found via git source includes into the shape config.
+func checkoutAndMergeIncludes(config *Config) error {
+	includePaths, err := templates.Checkout(config.Sources, config.CacheDir)
+	if err != nil {
+		return fmt.Errorf("failed to checkout templates: %w", err)
+	}
+
+	for _, p := range includePaths {
+		inc, err := command.ParseConfig[FileConfig](p)
+		if err != nil {
+			return fmt.Errorf("failed to parse git include config %q: %w", p, err)
+		}
+		config.MergeShape(&inc.Shape)
+	}
+	return nil
+}
+
+// collectTransformations walks all annotated nodes and package-level comments
+// to build the full list of transformations to execute.
+func collectTransformations(config *Config, pkgs model.Packages) ([]Transformation, error) {
+	var transformingNodes []model.Node
+
+	err := inspect.Walk(pkgs, inspect.WithAnnotations(
 		inspect.WithAnnotationName("plumber:shape", "plumber:derive"),
 		func(node model.Node) error {
 			transformingNodes = append(transformingNodes, node)
 			return nil
 		}))
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk packages: %w", err)
+	}
 
 	var transformations []Transformation
 
@@ -80,12 +112,12 @@ func Run(config *ShapeConfig, args []string) error {
 	for _, node := range transformingNodes {
 		ts, err := buildTransformers(config, node.GetNode())
 		if err != nil {
-			return fmt.Errorf("failed to build transformers for node %q: %w", node.GetNode().GetPosition(), err)
+			return nil, fmt.Errorf("failed to build transformers for node %q: %w", node.GetNode().GetPosition(), err)
 		}
 		appendTransformer(node, ts)
 	}
 
-	// process package-level comments for transformations
+	// Process package-level comments for transformations.
 	for _, pkg := range pkgs {
 		for _, comment := range pkg.Comments {
 			m := comment.Annotations.Find(contract.OptionContext)
@@ -94,27 +126,33 @@ func Run(config *ShapeConfig, args []string) error {
 			}
 			fqn, err := astx.ParseFQN(m.Value())
 			if err != nil {
-				return fmt.Errorf("failed to parse model FQN %q: %w", m.Value(), err)
+				return nil, fmt.Errorf("failed to parse model FQN %q: %w", m.Value(), err)
 			}
 			t := pkgs.TypeByFQN(fqn)
 			if t == nil {
-				return fmt.Errorf("model type %q not found in packages", fqn)
+				return nil, fmt.Errorf("model type %q not found in packages", fqn)
 			}
 			ts, err := buildTransformers(config, comment.FilterAnnotations(func(a model.Annotation) bool {
 				return a.Name != contract.OptionContext
 			}))
 			if err != nil {
-				return fmt.Errorf("failed to build transformers for node %q: %w", t.GetNode().GetPosition(), err)
+				return nil, fmt.Errorf("failed to build transformers for node %q: %w", t.GetNode().GetPosition(), err)
 			}
 			appendTransformer(t, ts)
 		}
 	}
 
+	return transformations, nil
+}
+
+// renderTransformations groups transformations by mode and output filename,
+// renders each group via the appropriate manager, and appends query outputs.
+func renderTransformations(config *Config, pkgs []*model.Package, transformations []Transformation) ([]*ManagerOutput, error) {
 	byMode := lo.GroupBy(transformations, func(t Transformation) string {
 		return t.Transformer.Mode()
 	})
 
-	outputs := []*ManagerOutput{}
+	var outputs []*ManagerOutput
 
 	for mode, transformations := range byMode {
 		fmt.Printf("Processing mode %q with %d transformations\n", mode, len(transformations))
@@ -130,7 +168,7 @@ func Run(config *ShapeConfig, args []string) error {
 
 			output, err := manager.Render(pkgs, transformations)
 			if err != nil {
-				return fmt.Errorf("failed to render transformations for output %q: %w", filename, err)
+				return nil, fmt.Errorf("failed to render transformations for output %q: %w", filename, err)
 			}
 			if output == nil {
 				continue
@@ -143,10 +181,11 @@ func Run(config *ShapeConfig, args []string) error {
 			}
 		}
 	}
+
 	// Process plumber:query annotations on package-level variables.
 	queryOutputs, err := processQueries(pkgs)
 	if err != nil {
-		return fmt.Errorf("failed to process queries: %w", err)
+		return nil, fmt.Errorf("failed to process queries: %w", err)
 	}
 	for _, qo := range queryOutputs {
 		outputs = append(outputs, &ManagerOutput{
@@ -160,11 +199,7 @@ func Run(config *ShapeConfig, args []string) error {
 		})
 	}
 
-	if len(outputs) > 0 {
-		return restoreOutputs(outputs)
-	}
-
-	return nil
+	return outputs, nil
 }
 
 func restoreOutputs(output []*ManagerOutput) error {
@@ -215,6 +250,7 @@ func restoreOutputs(output []*ManagerOutput) error {
 	return nil
 }
 
+// restoreOutput takes a ManagerOutput, the corresponding dst.File content, and the decorator.Package,
 func restoreOutput(output *ManagerOutput, content *dst.File, pkg *decorator.Package) error {
 	fmt.Println("Restoring", output.Output.Filename)
 	var buf bytes.Buffer
@@ -225,12 +261,14 @@ func restoreOutput(output *ManagerOutput, content *dst.File, pkg *decorator.Pack
 	}
 
 	// Write to file
-	if err := os.WriteFile(output.Output.Filename, buf.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(output.Output.Filename, buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 	return nil
 }
 
+// buildPath constructs the output path information for a transformation based on its mode, package path, original filename,
+// and desired output path.
 func buildPath(mode, pkgPath, filename, output string) Pathinfo {
 	baseDir := path.Dir(filename)
 
@@ -238,7 +276,7 @@ func buildPath(mode, pkgPath, filename, output string) Pathinfo {
 
 	pkg := path.Join(pkgPath, path.Dir(output))
 
-	if mode == "inplace" {
+	if mode == ModeInPlace {
 		actualFilename = pkg
 	}
 
@@ -250,18 +288,18 @@ func buildPath(mode, pkgPath, filename, output string) Pathinfo {
 	}
 }
 
-func buildModeManager(cfg *ShapeConfig, mode string, pkgPath string, output string) Manager {
+func buildModeManager(cfg *Config, mode, pkgPath, output string) Manager {
 	switch mode {
-	case "inplace":
+	case ModeInPlace:
 		return NewInplaceManager(cfg, pkgPath, output)
-	case "generated":
+	case ModeGenerated:
 		return NewGeneratorManager(cfg, pkgPath, output)
 	}
 	return nil
-
 }
 
-func buildTransformers(config *ShapeConfig, node Node) (transformers []Transformer, err error) {
+// buildTransformers constructs the list of transformers to apply to a given node based on its annotations and the provided configuration.
+func buildTransformers(config *Config, node Node) (transformers []Transformer, err error) {
 	var (
 		lastTransformer Transformer
 	)
@@ -282,7 +320,7 @@ func buildTransformers(config *ShapeConfig, node Node) (transformers []Transform
 	for _, annotation := range node.GetAnnotations() {
 		switch annotation.Name {
 		case "plumber:shape":
-			if err := changeTransformer(NewShapeTransformer(node.GetPosition(), annotation)); err != nil {
+			if err := changeTransformer(NewShaper(node.GetPosition(), annotation)); err != nil {
 				return nil, err
 			}
 			transformers = append(transformers, lastTransformer)
@@ -309,7 +347,10 @@ func buildTransformers(config *ShapeConfig, node Node) (transformers []Transform
 				}
 				for _, mixinAnnotation := range mixinConfig.PlumberMixin.Annotations {
 					if !lastTransformer.Accepts(mixinAnnotation.Name) {
-						return nil, fmt.Errorf("transformer %s does not accept annotation %q from mixin %q", lastTransformer.GetName(), mixinAnnotation.Name, mixinName)
+						return nil, fmt.Errorf(
+							"transformer %s does not accept annotation %q from mixin %q",
+							lastTransformer.GetName(), mixinAnnotation.Name, mixinName,
+						)
 					}
 					a := model.NewAnnotation(mixinAnnotation.Name, mixinAnnotation.Args...)
 					a.NamedArgs = mixinAnnotation.NamedArgs

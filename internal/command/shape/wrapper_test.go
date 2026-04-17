@@ -8,8 +8,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func wrapper(name string, t string, matches []shape.MatchRuleConfig) *shape.TypeWrapper {
-	return shape.NewTypeWrapper(&shape.ShapeConfig{
+func wrapper(name, t string, matches []shape.MatchRuleConfig) *shape.TypeWrapper {
+	return shape.NewTypeWrapper(&shape.Config{
 		Type: shape.TypeConfig{
 			Wrappers: []shape.WrapperConfig{
 				{

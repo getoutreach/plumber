@@ -17,14 +17,18 @@ import (
 	"github.com/getoutreach/plumber/internal/discovery/contract"
 )
 
+// fixtureFS is an embedded filesystem containing the template for the container resolver code.
+//
 //go:embed fixtures/*.go
 var fixtureFS embed.FS
 
+// Visitor is an interface that defines methods for pre-order and post-order traversal of DST nodes during AST manipulation.
 type Visitor interface {
 	Pre(c *dstutil.Cursor) bool
 	Post(c *dstutil.Cursor) bool
 }
 
+// RecursiveVisitor is a helper struct that implements the Visitor interface with customizable pre-order and post-order functions.
 type RecursiveVisitor struct {
 	PreFunc  func(c *dstutil.Cursor) bool
 	PostFunc func(c *dstutil.Cursor) bool
@@ -44,6 +48,7 @@ func (v *RecursiveVisitor) Post(c *dstutil.Cursor) bool {
 	return true
 }
 
+// functionBodyExtractor is a Visitor that extracts the body of a function declaration during AST traversal.
 type functionBodyExtractor struct {
 	RecursiveVisitor
 	block *dst.BlockStmt
@@ -82,9 +87,6 @@ func walk(node dst.Node, visitors ...Visitor) dst.Node {
 }
 
 func ContainerResolver(visitors ...Visitor) *dst.File {
-	// bodyExtractor := functionBodyExtractor{}
-	// &bodyExtractor
-
 	template, err := fixtureFS.ReadFile("fixtures/container_resolver_resolve.go")
 	if err != nil {
 		panic(err)

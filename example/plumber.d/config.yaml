@@ -18,16 +18,16 @@ plumber.shape:
     - plumber.macro:
         name: "@macro"
         annotations:
-          - { name: plumber:derive, args: ["MacroDerived"] }
-          - { name: plumber:output, args: ["{suffix:generated}"] }
+          - {name: plumber:derive, args: ["MacroDerived"]}
+          - {name: plumber:output, args: ["{suffix:generated}"]}
   mixins:
     - plumber.mixin:
         name: mixing.model.filtrable
         annotations:
-          - { name: plumber:filter, args: [annotation.has, is:filtrable] }
-          - { name: plumber:field_wrapper, args: [model.filter] }
+          - {name: plumber:filter, args: [annotation.has, is:filtrable]}
+          - {name: plumber:field_wrapper, args: [model.filter]}
     - plumber.mixin:
         name: mixing.model.accessor
         annotations:
-          - { name: plumber:template, args: [plumber:object/accessor] }
-          - { name: plumber:output, args: [generated.go] }
+          - {name: plumber:template, args: [plumber:object/accessor]}
+          - {name: plumber:output, args: [generated.go]}

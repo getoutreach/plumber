@@ -6,7 +6,6 @@ import (
 	"context"
 
 	"github.com/getoutreach/plumber"
-	"github.com/getoutreach/plumber/discovery"
 	"github.com/getoutreach/plumber/example/adapter/async"
 )
 
@@ -20,13 +19,13 @@ type Async struct {
 func (c *Async) Define(ctx context.Context, cf *Config, a *Container) {
 	c.Publisher.Resolver(func(r *plumber.ResolutionR[*async.Publisher]) {
 		r.Require().Then(func() {
-			r.Resolve(async.NewPublisher(discovery.Undefined[string]()))
+			r.Resolve(async.NewPublisher(""))
 		})
 	})
 
 	c.DelayedPublisher.Resolver(func(r *plumber.Resolution[*async.Publisher]) {
 		r.Require().Then(func() {
-			r.Resolve(async.NewDelayedPublisher(discovery.Undefined[string]()))
+			r.Resolve(async.NewDelayedPublisher(""))
 		})
 	})
 }

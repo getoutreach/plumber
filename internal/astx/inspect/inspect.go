@@ -1,8 +1,10 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements Go source file scanning and AST inspection to extract types, functions, and annotations into the query model.
+// Description: This file implements Go source file scanning and AST inspection to extract types, functions,
+// and annotations into the query model.
 
-// Package inspect provides utilities for scanning Go source files and extracting type and annotation information into the plumber query model.
+// Package inspect provides utilities for scanning Go source files and extracting type and annotation
+// information into the plumber query model.
 package inspect
 
 import (
@@ -51,7 +53,10 @@ func ScanFiles(baseDir string, args []string) (filenames []string, err error) {
 			}
 			return nil
 		}
-		filepath.WalkDir(arg, walk)
+		err := filepath.WalkDir(arg, walk)
+		if err != nil {
+			return nil, fmt.Errorf("failed to walk directory %q: %w", arg, err)
+		}
 	}
 
 	return filenames, nil
@@ -109,7 +114,6 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 	pkg := pkgModel.Package
 
 	for _, name := range scope.Names() {
-
 		obj := scope.Lookup(name)
 
 		pos := pkg.Fset.Position(obj.Pos())
@@ -128,7 +132,7 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 
 		switch t := obj.(type) {
 		case *types.Func:
-			pkgModel.Functions = append(pkgModel.Functions, buildFunction(pkg, t, node))
+			pkgModel.Functions = append(pkgModel.Functions, buildFunction(pkg, t, &node))
 		case *types.Var:
 			if !t.Exported() {
 				continue
@@ -163,7 +167,7 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 					s := buildStruct(pkg, tp, ut)
 					// Collect methods defined on the named type (pointer and value receivers)
 					for method := range named.Methods() {
-						s.Methods = append(s.Methods, buildFunction(pkg, method, model.TypeNode{
+						s.Methods = append(s.Methods, buildFunction(pkg, method, &model.TypeNode{
 							Position: model.Position{
 								Filename: pkg.Fset.Position(method.Pos()).Filename,
 								Line:     pkg.Fset.Position(method.Pos()).Line,
@@ -179,13 +183,12 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 	for child := range scope.Children() {
 		processScope(child, pkgModel)
 	}
-
 }
 
 func buildMethods(pkg *decorator.Package, methods iter.Seq[*types.Func]) []*model.Function {
 	var result []*model.Function
 	for method := range methods {
-		result = append(result, buildFunction(pkg, method, model.TypeNode{}))
+		result = append(result, buildFunction(pkg, method, &model.TypeNode{}))
 	}
 	return result
 }
@@ -234,13 +237,13 @@ func buildVar(pkg *decorator.Package, v *types.Var) *model.Var {
 	}
 }
 
-func buildFunction(pkg *decorator.Package, obj *types.Func, node model.TypeNode) *model.Function {
+func buildFunction(pkg *decorator.Package, obj *types.Func, node *model.TypeNode) *model.Function {
 	signature := obj.Signature()
 	params := signature.Params().Len()
 	results := signature.Results().Len()
 
 	f := &model.Function{
-		TypeNode: node,
+		TypeNode: *node,
 		Name:     obj.Name(),
 	}
 
@@ -262,5 +265,4 @@ func buildFunction(pkg *decorator.Package, obj *types.Func, node model.TypeNode)
 	}
 
 	return f
-
 }

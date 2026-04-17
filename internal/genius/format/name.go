@@ -1,8 +1,10 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file provides name formatting utilities including PascalCase, CamelCase, SnakeCase, and Go struct name normalization with common initialisms.
+// Description: This file provides name formatting utilities including PascalCase, CamelCase, SnakeCase,
+// and Go struct name normalization with common initialisms.
 
-// Package format provides type and value formatting utilities including case conversion, name normalization, and type serialization helpers.
+// Package format provides type and value formatting utilities including case conversion,
+// name normalization, and type serialization helpers.
 package format
 
 import (
@@ -12,13 +14,16 @@ import (
 	"github.com/gobeam/stringy"
 )
 
+// Vars
 var (
+	// reNumbers is a regular expression that matches underscores followed by digits,
+	// used for identifying numeric suffixes in names for special handling during case conversion.
 	reNumbers = regexp.MustCompile(`(_\d+)`)
 )
 
 // PascalCase convert string to PascalCased form
 func PascalCase(s string) string {
-	return stringy.New(stringy.New(s).CamelCase().Get()).UcFirst()
+	return stringy.New(s).PascalCase().Get()
 }
 
 // PascalCase convert string to PascalCased form
@@ -36,7 +41,7 @@ func ProtoPascalCase(s string) string {
 
 // CamelCase convert string to camelCased form
 func CamelCase(s string) string {
-	return stringy.New(stringy.New(s).CamelCase().Get()).LcFirst()
+	return stringy.New(s).PascalCase().LcFirst()
 }
 
 // SnakeCase convert "SnAke cased" string to SnAke_cased form
@@ -107,6 +112,7 @@ var commonInitialisms = map[string]bool{
 	"XSS":  true,
 }
 
+// initialism struct and buildInitialisms function are used to create a list of regular expressions for common initialisms
 type initialism struct {
 	Re   *regexp.Regexp
 	Name string
@@ -123,6 +129,7 @@ func buildInitialisms(in map[string]bool) []initialism {
 	return res
 }
 
+// commonInitialismStructs is a slice of initialism structs built from the commonInitialisms map,
 var commonInitialismStructs = buildInitialisms(commonInitialisms)
 
 // ToStructName converts string using Go convention for abbreviations

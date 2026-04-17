@@ -16,7 +16,6 @@ type Scenario struct {
 
 // Define dependency resolvers
 func (c *Scenario) Define(ctx context.Context, cf *Config, a *Container) {
-
 	c.Scenario.Resolver(func(r *plumber.Resolution[*scenario.Scenario]) {
 		r.Require(
 			&a.Async.Publisher,

@@ -13,13 +13,13 @@ import (
 	"github.com/samber/lo"
 )
 
-func NewTypeWrapper(cfg *ShapeConfig) *TypeWrapper {
+func NewTypeWrapper(cfg *Config) *TypeWrapper {
 	return &TypeWrapper{cfg: cfg}
 }
 
 // TypeWrapper provides functionality to wrap Go type specifications based on configured wrapper rules and FQN matching.
 type TypeWrapper struct {
-	cfg *ShapeConfig
+	cfg *Config
 }
 
 func (w *TypeWrapper) WrapType(name string, t *model.TypeSpec) (*model.TypeSpec, error) {
@@ -54,6 +54,7 @@ func (w *TypeWrapper) WrapType(name string, t *model.TypeSpec) (*model.TypeSpec,
 	return t, nil
 }
 
+// wrap takes a wrapper type FQN and the current type spec, and returns a new type spec with the wrapper applied to the current type.
 func (w *TypeWrapper) wrap(tp string, ts *model.TypeSpec) (*model.TypeSpec, error) {
 	wrapping, err := astx.ParseFQN(strings.TrimSpace(tp))
 	if err != nil {

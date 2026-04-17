@@ -8,7 +8,7 @@ package macro
 type ModelMacro struct {
 	Name        string
 	Concurrency int
-	// <<plumber::Block(extra-MacroDerived)>>
+	// <<plumber::Block(extra-ModelMacro)>>
 	// <</plumber::Block>>
 
 }

@@ -1,6 +1,7 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements template loading and checkout for the shape command, supporting local, git, and embedded template sources.
+// Description: This file implements template loading and checkout for the shape command,
+// supporting local, git, and embedded template sources.
 
 // Package templates provides template loading and Git checkout utilities for shape command template sources.
 package templates
@@ -57,7 +58,13 @@ func Checkout(sources []contract.PlumberTemplateSourceConfig, cacheDir string) (
 	return includePaths, nil
 }
 
-func Load(sources []contract.PlumberTemplateSourceConfig, cfg *contract.PlumberTemplatesConfig, cacheDir string, names []string, fs embed.FS) ([]gen.RenderOptionsFunc, error) {
+func Load(
+	sources []contract.PlumberTemplateSourceConfig,
+	cfg *contract.PlumberTemplatesConfig,
+	cacheDir string,
+	names []string,
+	fs embed.FS,
+) ([]gen.RenderOptionsFunc, error) {
 	opts := []gen.RenderOptionsFunc{}
 	for _, name := range names {
 		if strings.HasPrefix(name, "plumber:") {
@@ -86,17 +93,18 @@ func Load(sources []contract.PlumberTemplateSourceConfig, cfg *contract.PlumberT
 				}
 			case s.Local != nil:
 				for _, tpl := range s.Local.Templates {
-					if tpl.Name == name {
-						tplPath := tpl.Path
-						if tplPath == "" {
-							tplPath = name + ".gtpl"
-						}
-						t, err := template.New(tpl.Name).ParseFiles(path.Join(s.Local.Path, tplPath))
-						if err != nil {
-							return nil, fmt.Errorf("Can't load local template: %w", err)
-						}
-						opts = append(opts, gen.WithTemplate(t))
+					if tpl.Name != name {
+						continue
 					}
+					tplPath := tpl.Path
+					if tplPath == "" {
+						tplPath = name + ".gtpl"
+					}
+					t, err := template.New(tpl.Name).ParseFiles(path.Join(s.Local.Path, tplPath))
+					if err != nil {
+						return nil, fmt.Errorf("Can't load local template: %w", err)
+					}
+					opts = append(opts, gen.WithTemplate(t))
 				}
 			default:
 				return nil, fmt.Errorf("Unsupported template configuration for %T", s)
@@ -110,7 +118,6 @@ func Load(sources []contract.PlumberTemplateSourceConfig, cfg *contract.PlumberT
 				}
 				opts = append(opts, gen.WithTemplate(t))
 			}
-
 		}
 	}
 

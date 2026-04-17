@@ -12,6 +12,9 @@ import (
 	"strings"
 	"text/template"
 	"unicode"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // PathIterator iterates over paths matching a pattern and extracts variables
@@ -114,7 +117,7 @@ func HydrateTemplate(templateStr string, variables map[string]string) string {
 		},
 		"upper": strings.ToUpper,
 		"lower": strings.ToLower,
-		"title": strings.Title,
+		"title": cases.Title(language.Und).String,
 	}
 
 	tmpl, err := template.New("hydrate").Funcs(funcMap).Parse(templateStr)

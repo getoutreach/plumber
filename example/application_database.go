@@ -34,5 +34,5 @@ func (c *Database) Define(ctx context.Context, cf *Config, a *Container) {
 		r.Require().Then(func() {
 			r.ResolveError(database.NewUserRepository())
 		})
-	}) //1111
+	}) // 1111
 }

@@ -10,10 +10,14 @@ import (
 	"github.com/pterm/pterm"
 )
 
+// Logger provides structured logging capabilities for the code generation process,
+// allowing for consistent and informative log output with support for different log levels and structured data.
 type Logger struct {
 	instance *pterm.Logger
 }
 
+// MessageLogger is a function type that takes a message and optional logger arguments,
+// allowing for flexible logging of messages with structured data.
 type MessageLogger func(msg string, args ...[]pterm.LoggerArgument)
 
 func NewLogger() *Logger {

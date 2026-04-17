@@ -1,6 +1,7 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements the FQN type and helpers for converting between go/types.Type and fully-qualified name string representations.
+// Description: This file implements the FQN type and helpers for converting between
+// go/types.Type and fully-qualified name string representations.
 
 package astx
 
@@ -57,6 +58,7 @@ func typeToAST(t types.Type) ast.Expr {
 
 	case *types.Chan:
 		dir := ast.SEND | ast.RECV
+		// nolint: exhaustive //Why: again useless lint noise for a default value
 		switch t.Dir() {
 		case types.SendOnly:
 			dir = ast.SEND
@@ -204,6 +206,7 @@ func (p *fqnParser) has(prefix string) bool {
 	return strings.HasPrefix(p.s[p.pos:], prefix)
 }
 
+// nolint: gocyclo,funlen //Why: The parse method is a straightforward switch
 func (p *fqnParser) parse() (ast.Expr, error) {
 	switch {
 	case p.peek() == '*':

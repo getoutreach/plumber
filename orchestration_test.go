@@ -258,7 +258,7 @@ func TestPipelineCloseOnError(t *testing.T) {
 	n := 0
 	for tm := range closed {
 		n++
-		//time.Now().
+		// time.Now().
 		diff := tm.Sub(started)
 		fmt.Println(diff)
 		assert.Assert(t, diff < 100*time.Millisecond)

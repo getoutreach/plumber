@@ -72,12 +72,12 @@ func (r *TemplateRenderer) RenderContainer(
 
 	// Ensure directory exists
 	dir := filepath.Dir(containerPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	// Write rendered content
-	if err := os.WriteFile(containerPath, buf.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(containerPath, buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
@@ -146,7 +146,7 @@ func parseConfigType(configStr, appModule string) (typeName, module string, remo
 			suffix := configStr[end+1:]
 
 			// Skip the dot separator after the quoted module
-			if len(suffix) > 0 && suffix[0] == '.' {
+			if suffix != "" && suffix[0] == '.' {
 				suffix = suffix[1:]
 			}
 

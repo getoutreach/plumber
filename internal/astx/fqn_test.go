@@ -172,7 +172,7 @@ func TestCraftFQN(t *testing.T) {
 }
 
 func TestParseFQNRoundTrip(t *testing.T) {
-	types_ := []struct {
+	testTypes := []struct {
 		name string
 		typ  types.Type
 	}{
@@ -187,7 +187,7 @@ func TestParseFQNRoundTrip(t *testing.T) {
 		{"recv chan", types.NewChan(types.RecvOnly, types.Typ[types.Int])},
 	}
 
-	for _, tt := range types_ {
+	for _, tt := range testTypes {
 		t.Run(tt.name, func(t *testing.T) {
 			original := FQNFromGoType(tt.typ).String()
 			parsed, err := ParseFQN(original)

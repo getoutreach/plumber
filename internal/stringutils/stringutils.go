@@ -6,20 +6,18 @@
 package stringutils
 
 import (
-	"math/rand"
-	"time"
+	"crypto/rand"
+	"math/big"
 )
 
-func init() {
-	rand.New(rand.NewSource(time.Now().UnixNano()))
-}
-
+// letterRunes contains the set of characters used for generating random strings.
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyz")
 
 func RandStringRunes(n int) string {
 	b := make([]rune, n)
 	for i := range b {
-		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+		a, _ := rand.Int(rand.Reader, big.NewInt(int64(len(letterRunes)))) //nolint:errcheck //Why: int can't return error
+		b[i] = letterRunes[a.Int64()]
 	}
 	return string(b)
 }

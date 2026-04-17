@@ -1,6 +1,7 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file provides base template loading, sprig and custom function maps, and pluralization support for the code generation engine.
+// Description: This file provides base template loading, sprig and custom function maps,
+// and pluralization support for the code generation engine.
 
 package gen
 
@@ -15,16 +16,24 @@ import (
 	conv "github.com/getoutreach/plumber/internal/genius/format"
 )
 
+// Const
 const (
+	// GenericTemplatesDir is the directory within the embedded filesystem where generic templates are stored,
 	GenericTemplatesDir = "templates"
 )
 
+// Vars
 var (
+	// plr is a pluralize.Client used for pluralization in templates, providing functionality to determine
+	// singular and plural forms of words.
 	plr = pluralize.NewClient()
 
+	// BaseTemplates is an embedded filesystem containing the default templates for rendering Go code,
+	// allowing for easy access to template files within the codebase.
 	//go:embed templates/*
 	BaseTemplates embed.FS
 
+	// BaseFuncMap is a template.FuncMap that includes common string manipulation functions and a pluralization function,
 	BaseFuncMap = template.FuncMap{
 		"upper":     strings.ToUpper,
 		"lower":     strings.ToLower,

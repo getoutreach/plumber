@@ -10,7 +10,7 @@ import (
 func TestGenerated(t *testing.T) {
 	err := withFixture(
 		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.ShapeConfig{
+			err := shape.Run(&shape.Config{
 				Mixins: []shape.MixinConfig{
 					{
 						PlumberMixin: &shape.PlumberMixinConfig{

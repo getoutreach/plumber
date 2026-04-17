@@ -10,7 +10,7 @@ import (
 func TestQuery(t *testing.T) {
 	err := withFixture(
 		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.ShapeConfig{}, []string{"./..."})
+			err := shape.Run(&shape.Config{}, []string{"./..."})
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "query/consumer.go", "query/consumer.go.golden")
 			return nil
@@ -24,7 +24,7 @@ func TestQuery(t *testing.T) {
 func TestQueryTypeScope(t *testing.T) {
 	err := withFixture(
 		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.ShapeConfig{}, []string{"./..."})
+			err := shape.Run(&shape.Config{}, []string{"./..."})
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "querytypescope/consumer.go", "querytypescope/consumer.go.golden")
 			return nil
@@ -38,7 +38,7 @@ func TestQueryTypeScope(t *testing.T) {
 func TestQueryCrossPackage(t *testing.T) {
 	err := withFixture(
 		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.ShapeConfig{}, []string{"./..."})
+			err := shape.Run(&shape.Config{}, []string{"./..."})
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "querycross/consumer.go", "querycross/consumer.go.golden")
 			return nil

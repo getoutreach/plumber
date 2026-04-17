@@ -13,6 +13,7 @@ import (
 
 // TypeToExpr converts a go/types.Type to a dst.Expr suitable for AST manipulation.
 // This is useful when you need to inject fields with types discovered through type checking.
+// nolint: gocyclo,funlen //Why: The function is a straightforward type switch
 func TypeToExpr(typ types.Type, qualifier types.Qualifier) dst.Expr {
 	if typ == nil {
 		return &dst.Ident{Name: "interface{}"}

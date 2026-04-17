@@ -105,7 +105,7 @@ func (p *ASTParser) processFuncDecl(
 	file *dst.File,
 	decl *dst.FuncDecl,
 	matchers []Matcher,
-) (*contract.ConstructorInfo, string) {
+) (info *contract.ConstructorInfo, providerName string) {
 	// Check if this function matches any constructor pattern
 	providerName, matched := p.matchConstructorPattern(decl.Name.Name, matchers)
 	if !matched {
@@ -162,15 +162,15 @@ func (p *ASTParser) buildProviders(constructors []*contract.ConstructorInfo, pro
 		// Check if provider already exists
 		if _, exists := providerMap[providerName]; exists {
 			continue
-		} else {
-			// Create new provider
-			provider := &contract.Provider{
-				Name:        providerName,
-				Type:        ctor.ReturnType,
-				Constructor: ctor,
-			}
-			providerMap[providerName] = provider
 		}
+
+		// Create new provider
+		provider := &contract.Provider{
+			Name:        providerName,
+			Type:        ctor.ReturnType,
+			Constructor: ctor,
+		}
+		providerMap[providerName] = provider
 	}
 
 	// Convert map to slice

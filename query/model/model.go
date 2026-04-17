@@ -1,8 +1,10 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file defines the core AST data model for the plumber pipeline including Package, Type, Annotation, TypeKind, Function, Struct, and Interface types.
+// Description: This file defines the core AST data model for the plumber pipeline including Package,
+// Type, Annotation, TypeKind, Function, Struct, and Interface types.
 
-// Package model defines the core data model representing Go packages, types, annotations, and functions discovered by the plumber AST inspection pipeline.
+// Package model defines the core data model representing Go packages, types, annotations,
+// and functions discovered by the plumber AST inspection pipeline.
 package model
 
 import (
@@ -16,7 +18,8 @@ import (
 
 // Types
 type (
-	// Kind represents the kind of a type, such as struct, interface, func, map, slice, array, pointer, chan, or basic types like string, int, etc.
+	// Kind represents the kind of a type, such as struct, interface, func, map, slice,
+	// array, pointer, chan, or basic types like string, int, etc.
 	Kind string
 
 	// Position represents the position of a node in the source code.
@@ -78,6 +81,7 @@ type (
 	// Packages is a collection of Package, providing utility methods for looking up types by their fully qualified name (FQN).
 	Packages []*Package
 
+	// CommentGroup represents a group of comments associated with a node, including the comment text, annotations, and position.
 	CommentGroup struct {
 		Doc         string      `json:"doc,omitempty" yaml:"doc,omitempty"`
 		Annotations Annotations `json:"annotations,omitempty" yaml:"annotations,omitempty"`
@@ -103,7 +107,8 @@ type (
 		Underlaying *TypeKind `json:"underlaying" yaml:"underlaying,omitempty"`
 	}
 
-	// Type represents a Go type discovered in the AST, including its specification, name, and associated function, struct, or interface details if applicable.
+	// Type represents a Go type discovered in the AST, including its specification,
+	// name, and associated function, struct, or interface details if applicable.
 	Type struct {
 		*TypeNode `json:",inline" yaml:",inline"`
 		Spec      TypeSpec   `json:"spec" yaml:"spec"`
@@ -126,7 +131,8 @@ type (
 		Value string `json:"value" yaml:"value"`
 	}
 
-	// Var represents a variable, function argument, or struct field, including its name, type, documentation, annotations, and tags (for struct fields).
+	// Var represents a variable, function argument, or struct field, including its name,
+	// type, documentation, annotations, and tags (for struct fields).
 	Var struct {
 		Name         string          `json:"name,omitempty" yaml:"name,omitempty"`
 		FallbackName string          `json:"fallbackName,omitempty" yaml:"fallbackName,omitempty"`
@@ -136,7 +142,8 @@ type (
 		Tags         []Tag
 	}
 
-	// Function represents a function or method, including its name, receiver (for methods), arguments, results, and associated documentation and annotations.
+	// Function represents a function or method, including its name, receiver (for methods),
+	// arguments, results, and associated documentation and annotations.
 	Function struct {
 		TypeNode `json:",inline" yaml:",inline"`
 		Name     string `json:"name" yaml:"name"`

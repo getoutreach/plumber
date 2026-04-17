@@ -13,15 +13,15 @@ import (
 	"github.com/samber/lo"
 )
 
+// Merge takes a model.Package and a dst.File representing the generated code, and merges the
+// generated struct fields into the existing source file, returning the modified dst.File.
 func Merge(pkg *model.Package, file *dst.File) (*dst.File, error) {
 	importMap := astx.BuildImportMap(file)
 	var currentFile *dst.File
 	for _, decl := range file.Decls {
-		switch d := decl.(type) {
-		case *dst.GenDecl:
+		if d, ok := decl.(*dst.GenDecl); ok {
 			for _, spec := range d.Specs {
-				switch s := spec.(type) {
-				case *dst.TypeSpec:
+				if s, ok := spec.(*dst.TypeSpec); ok {
 					switch t := s.Type.(type) {
 					case *dst.StructType:
 						currentType, found := lo.Find(pkg.Types, func(t *model.Type) bool {
@@ -30,11 +30,11 @@ func Merge(pkg *model.Package, file *dst.File) (*dst.File, error) {
 						if !found {
 							return nil, fmt.Errorf("type %q not found in package %q", s.Name.Name, pkg.Path)
 						}
-						file, err := mergeStruct(currentType, t, importMap)
+						f, err := mergeStruct(currentType, t, importMap)
 						if err != nil {
 							return nil, fmt.Errorf("failed to merge struct %q: %w", s.Name.Name, err)
 						}
-						currentFile = file
+						currentFile = f
 					default:
 						return nil, fmt.Errorf("unsupported type declaration for %q in file %q: %T", s.Name.Name, file.Name, s.Type)
 					}
@@ -45,6 +45,9 @@ func Merge(pkg *model.Package, file *dst.File) (*dst.File, error) {
 	return currentFile, nil
 }
 
+// mergeStruct takes the current model.Type and the generated dst.StructType, and merges the fields from the generated struct
+// into the existing struct in the source file, ensuring that existing fields are not overwritten and that new fields are
+// properly annotated with imports.
 func mergeStruct(current *model.Type, generated *dst.StructType, importMap map[string]string) (*dst.File, error) {
 	pkg := current.GetPackage()
 
@@ -52,8 +55,6 @@ func mergeStruct(current *model.Type, generated *dst.StructType, importMap map[s
 	if file == nil {
 		return nil, fmt.Errorf("file %q not found in package %q", current.Position.Filename, pkg.Path)
 	}
-
-	//str := current.Struct
 	astObject := file.Scope.Lookup(current.Name)
 
 	if astObject == nil {

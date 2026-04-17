@@ -80,7 +80,7 @@ func TestPathIterator(t *testing.T) {
 	}
 
 	for _, dir := range dirs {
-		err := os.MkdirAll(filepath.Join(tmpDir, dir), 0755)
+		err := os.MkdirAll(filepath.Join(tmpDir, dir), 0o755)
 		assert.NilError(t, err)
 	}
 

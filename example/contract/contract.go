@@ -104,7 +104,7 @@ type Worker struct {
 	Queues []string
 }
 
-func (r Worker) SetQueues(value []string) {
+func (r *Worker) SetQueues(value []string) {
 	r.Queues = value
 }
 

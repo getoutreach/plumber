@@ -1,7 +1,7 @@
 name: plumber
 arguments:
   description: Orchestration library to construct application dependency graph and manage service tasks.
-  lintroller: platinum
+  lintroller: gold
   metrics: datadog
   oss: true
   commands:
@@ -23,7 +23,6 @@ modules:
   - name: github.com/getoutreach/stencil-golang
   - name: github.com/getoutreach/devbase
   - name: github.com/getoutreach/stencil-outreach
-    version: v0.29.0-rc.1
   - name: github.com/getoutreach/stencil-circleci
   - name: github.com/getoutreach/stencil-actions
   - name: github.com/getoutreach/stencil-discovery

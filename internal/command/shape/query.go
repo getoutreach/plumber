@@ -1,6 +1,8 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements the plumber:query annotation processor that searches for entities matching a regex pattern within a defined scope and populates annotated slice variables with compatible results via inplace DST manipulation.
+// Description: This file implements the plumber:query annotation processor that searches for entities
+// matching a regex pattern within a defined scope and populates annotated slice variables with
+// compatible results via inplace DST manipulation.
 
 package shape
 
@@ -99,7 +101,8 @@ func collectQueryTargets(pkgs model.Packages) ([]QueryTarget, error) {
 // It supports five forms:
 //   - Current package: "." — searches the package where the annotated variable is declared.
 //   - Current package type: ".TypeName" — searches fields/methods of a type in the current package.
-//   - Relative package: "./<relpath>" — resolves relative to the caller package path (e.g., "./sub" from "github.com/pkg" → "github.com/pkg/sub").
+//   - Relative package: "./<relpath>" — resolves relative to the caller package path
+//     (e.g., "./sub" from "github.com/pkg" → "github.com/pkg/sub").
 //   - Package scope: "github.com/pkg" — searches all exported entities in the package.
 //   - Type scope: "github.com/pkg.TypeName" — searches fields/methods of a specific type.
 func resolveScope(pkgs model.Packages, scope string, callerPkg *model.Package) (*types.Scope, *types.Named, error) {
@@ -162,21 +165,22 @@ func resolveScope(pkgs model.Packages, scope string, callerPkg *model.Package) (
 	typeName := scope[lastDot+1:]
 
 	for _, pkg := range pkgs {
-		if pkg.Path == pkgPath {
-			obj := pkg.Package.Package.Types.Scope().Lookup(typeName)
-			if obj == nil {
-				return nil, nil, fmt.Errorf("type %q not found in package %q", typeName, pkgPath)
-			}
-			tn, ok := obj.(*types.TypeName)
-			if !ok {
-				return nil, nil, fmt.Errorf("%q in package %q is not a type", typeName, pkgPath)
-			}
-			named, ok := tn.Type().(*types.Named)
-			if !ok {
-				return nil, nil, fmt.Errorf("type %q in package %q is not a named type", typeName, pkgPath)
-			}
-			return nil, named, nil
+		if pkg.Path != pkgPath {
+			continue
 		}
+		obj := pkg.Package.Package.Types.Scope().Lookup(typeName)
+		if obj == nil {
+			return nil, nil, fmt.Errorf("type %q not found in package %q", typeName, pkgPath)
+		}
+		tn, ok := obj.(*types.TypeName)
+		if !ok {
+			return nil, nil, fmt.Errorf("%q in package %q is not a type", typeName, pkgPath)
+		}
+		named, ok := tn.Type().(*types.Named)
+		if !ok {
+			return nil, nil, fmt.Errorf("type %q in package %q is not a named type", typeName, pkgPath)
+		}
+		return nil, named, nil
 	}
 
 	return nil, nil, fmt.Errorf("package %q (from scope %q) not found in loaded packages", pkgPath, scope)
@@ -376,19 +380,20 @@ func inflateVariable(pkg *model.Package, target QueryTarget, results []QueryResu
 				elts := make([]dst.Expr, 0, len(results))
 				for _, r := range results {
 					var expr dst.Expr
-					if target.Annotation.Receiver != "" {
+					switch {
+					case target.Annotation.Receiver != "":
 						// Type-scoped with receiver: use receiver.FieldOrMethodName
 						expr = &dst.SelectorExpr{
 							X:   &dst.Ident{Name: target.Annotation.Receiver},
 							Sel: &dst.Ident{Name: r.Name},
 						}
-					} else if r.PkgPath != "" && r.PkgPath != pkg.Path {
+					case r.PkgPath != "" && r.PkgPath != pkg.Path:
 						// External package: use qualified identifier.
 						expr = &dst.Ident{
 							Name: r.Name,
 							Path: r.PkgPath,
 						}
-					} else {
+					default:
 						// Same package: use unqualified identifier.
 						expr = &dst.Ident{
 							Name: r.Name,

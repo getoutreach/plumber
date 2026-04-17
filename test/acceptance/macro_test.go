@@ -10,7 +10,7 @@ import (
 func TestMacro(t *testing.T) {
 	err := withFixture(
 		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.ShapeConfig{
+			err := shape.Run(&shape.Config{
 				Macros: []shape.MacroConfig{
 					{
 						PlumberMacro: &shape.PlumberMacroConfig{

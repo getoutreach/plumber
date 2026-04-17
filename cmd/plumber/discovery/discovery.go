@@ -3,6 +3,8 @@
 // Description: Main discovery command runner
 // Managed: true
 
+// Package discovery implements the discovery command which analyzes container files to discover providers and augments the
+// container structs with missing provider fields.
 package discovery
 
 import (
@@ -62,12 +64,16 @@ func Run(c *cli.Context) error {
 	return nil
 }
 
+// containerInfo holds information about a container, including its configuration, file path, and associated source
+// file paths for discovery.
 type containerInfo struct {
 	config        *discovery.PlumberContainerConfig
 	containerPath string
 	sourcePaths   []string
 }
 
+// discoveredProviders holds the discovered providers for a container, along with a reference to the container
+// information and a map of provider mappings for augmentation.
 type discoveredProviders struct {
 	container   *containerInfo
 	providers   []*contract.Provider
@@ -126,9 +132,10 @@ func processApplication(ctx context.Context, baseDir string, app *discovery.Appl
 	return nil
 }
 
-func collectContainerInfo(baseDir string, app *discovery.Application, cfg *discovery.Config) ([]*containerInfo, []string) {
-	var allPaths []string
-	containers := make([]*containerInfo, 0)
+func collectContainerInfo(
+	baseDir string, app *discovery.Application, cfg *discovery.Config,
+) (containers []*containerInfo, allPaths []string) {
+	containers = make([]*containerInfo, 0)
 
 	for _, container := range app.Containers {
 		if container.PlumberContainer == nil {
@@ -293,7 +300,11 @@ func augmentContainer(discovered *discoveredProviders) error {
 	return nil
 }
 
-func discoverSourceTypes(astParser *discovery.ASTParser, sourcePaths []string, cfg *discovery.PlumberContainerConfig) (*contract.DiscoveryResult, error) {
+func discoverSourceTypes(
+	astParser *discovery.ASTParser,
+	sourcePaths []string,
+	cfg *discovery.PlumberContainerConfig,
+) (*contract.DiscoveryResult, error) {
 	fmt.Printf("    Source path(s): %d file(s)\n", len(sourcePaths))
 
 	// Create file filter for source files
@@ -368,12 +379,6 @@ func runGoimports(filePath string) error {
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("gofmt failed: %w\nOutput: %s", err, string(output))
 	}
-
-	// // Then run goimports to organize imports
-	// cmd = exec.Command("goimports", "-w", filePath)
-	// if output, err := cmd.CombinedOutput(); err != nil {
-	// 	return fmt.Errorf("goimports failed: %w\nOutput: %s", err, string(output))
-	// }
 	return nil
 }
 

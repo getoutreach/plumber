@@ -1,8 +1,10 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file provides acceptance test helpers including fixture management, golden file comparison, and plumber shape invocation utilities.
+// Description: This file provides acceptance test helpers including fixture management, golden file
+// comparison, and plumber shape invocation utilities.
 
-// Package acceptance_test provides shared helpers for acceptance tests that verify plumber shape and derive code generation against golden fixtures.
+// Package acceptance_test provides shared helpers for acceptance tests that verify plumber shape
+// and derive code generation against golden fixtures.
 package acceptance_test
 
 import (
@@ -37,7 +39,7 @@ func withFixture(fn func(ctx FixtureContext) error, files ...string) error {
 	}
 	tmpDir := baseDir
 	baseDir = path.Join(baseDir, "fixture")
-	if err := os.MkdirAll(baseDir, 0777); err != nil {
+	if err := os.MkdirAll(baseDir, 0o777); err != nil {
 		return err
 	}
 	defer func() {
@@ -57,7 +59,7 @@ func withFixture(fn func(ctx FixtureContext) error, files ...string) error {
 
 	for _, file := range files {
 		dirName := path.Dir(file)
-		if err := os.MkdirAll(dirName, 0777); err != nil {
+		if err := os.MkdirAll(dirName, 0o777); err != nil {
 			return fmt.Errorf("failed to create directory %q: %w", dirName, err)
 		}
 
@@ -94,9 +96,9 @@ func (ctx FixtureContext) AssertContent(t *testing.T, filename, expected string)
 	expectedContent, err := fixtures.ReadFile(path.Join("fixture", "@golden", expected))
 	assert.NilError(t, err)
 
-	regexp := regexp.MustCompile(`testrun-acceptance[a-z0-9]+/`)
+	re := regexp.MustCompile(`testrun-acceptance[a-z0-9]+/`)
 
-	content = regexp.ReplaceAll(content, []byte("testrun-acceptance/"))
+	content = re.ReplaceAll(content, []byte("testrun-acceptance/"))
 
 	assert.Equal(t, string(content), string(expectedContent))
 }

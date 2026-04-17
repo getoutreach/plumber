@@ -1,6 +1,7 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements template functions registered into the gen engine for type formatting, import path resolution, and annotation lookups during rendering.
+// Description: This file implements template functions registered into the gen engine for type
+// formatting, import path resolution, and annotation lookups during rendering.
 
 package render
 
@@ -20,6 +21,8 @@ import (
 	"github.com/samber/lo"
 )
 
+// typeScope is a helper struct used in template functions to maintain the current type being
+// rendered along with a scope for additional variables.
 type typeScope struct {
 	Type  *model.Type
 	Scope map[any]any
@@ -49,10 +52,12 @@ func extend(v any, kv ...any) (any, error) {
 	}
 }
 
-func expand_name(v string, t *model.Type) any {
+func expandName(v string, t *model.Type) any {
 	return strings.ReplaceAll(v, "{name}", t.Name)
 }
 
+// ModuleRegistration represents a registered module with its name, import ID, and a counter for handling
+// multiple imports of the same package.
 type ModuleRegistration struct {
 	Name    string
 	ID      string
@@ -79,6 +84,8 @@ func (r ModuleRegistration) String() string {
 	return fmt.Sprintf("%s %q", r.ID, r.Name)
 }
 
+// ModuleRegister is a registry for tracking imported modules during the rendering process, ensuring that necessary imports
+// are included in the generated code.
 type ModuleRegister struct {
 	presence map[string]ModuleRegistration
 	Imports  []ModuleRegistration
@@ -122,6 +129,8 @@ func (r *ModuleRegister) Register(name string, std bool) ModuleRegistration {
 	return r.presence[name]
 }
 
+// Ignores provides functionality to track and check for ignored groups during rendering,
+// allowing for conditional rendering based on group membership.
 type Ignores struct {
 	presence map[string]struct{}
 }
@@ -164,7 +173,11 @@ func typesRenderer(currentPkgPath string, register *ModuleRegister) func(spec mo
 	}
 }
 
-func typesRendererWithWrapper(currentPkgPath string, register *ModuleRegister, wrapper TypeWrapperProvider) func(o any, spec model.TypeSpec) (string, error) {
+func typesRendererWithWrapper(
+	currentPkgPath string,
+	register *ModuleRegister,
+	wrapper TypeWrapperProvider,
+) func(o any, spec model.TypeSpec) (string, error) {
 	c := typesRenderer(currentPkgPath, register)
 	return func(o any, spec model.TypeSpec) (string, error) {
 		if n, ok := o.(model.AnnotationProvider); ok {
@@ -182,7 +195,7 @@ func typesRendererWithWrapper(currentPkgPath string, register *ModuleRegister, w
 			}
 			return c(spec)
 		}
-		return "", fmt.Errorf("%T does not implement model.AnnotationProvider\n", o)
+		return "", fmt.Errorf("%T does not implement model.AnnotationProvider", o)
 	}
 }
 
@@ -235,11 +248,11 @@ func placeholder(name ...string) string {
 	return fmt.Sprintf("// <<plumber::Block(%s)>>\n// <</plumber::Block>>\n", strings.Join(name, "-"))
 }
 
-func fragment_start(name ...string) string {
+func fragmentStart(name ...string) string {
 	return fmt.Sprintf("// <<plumber::Fragment(%s)>>\n", strings.Join(name, "-"))
 }
 
-func fragment_end() string {
+func fragmentEnd() string {
 	return "// <</plumber::Fragment>>"
 }
 
@@ -249,7 +262,7 @@ func ignored(ignores *Ignores) func(groups ...string) bool {
 	}
 }
 
-func filterElements(provider any, elements any, groups ...string) (any, error) {
+func filterElements(provider, elements any, groups ...string) (any, error) {
 	array := reflect.ValueOf(elements)
 	annotations, ok := provider.(model.AnnotationProvider)
 
@@ -269,11 +282,11 @@ func filterElements(provider any, elements any, groups ...string) (any, error) {
 		return nil, fmt.Errorf("expected slice or array, got %s", array.Kind())
 	}
 
-	len := array.Len()
+	arrLen := array.Len()
 
-	filtered := reflect.MakeSlice(array.Type(), 0, len)
+	filtered := reflect.MakeSlice(array.Type(), 0, arrLen)
 
-	for i := 0; i < len; i++ {
+	for i := 0; i < arrLen; i++ {
 		elem := array.Index(i).Interface()
 		matches := true
 		for _, f := range filters {
@@ -299,14 +312,13 @@ func filterElement(element any, a model.Annotation) (bool, error) {
 		annName := a.Args[1]
 		if n, ok := element.(model.AnnotationProvider); ok {
 			return n.GetAnnotations().Find(annName) != nil, nil
-		} else {
-			return false, fmt.Errorf("filterElement: %T does not implement model.AnnotationProvider", element)
 		}
+		return false, fmt.Errorf("filterElement: %T does not implement model.AnnotationProvider", element)
 	}
 	return false, nil
 }
 
-func withRenderFuncMap(context Context, output string) (opt gen.RenderOptionsFunc, dispose func()) {
+func withRenderFuncMap(context *Context, output string) (opt gen.RenderOptionsFunc, dispose func()) {
 	var tp *model.Type
 	dispose = func() {
 		if tp != nil {
@@ -315,7 +327,7 @@ func withRenderFuncMap(context Context, output string) (opt gen.RenderOptionsFun
 	}
 	functions := template.FuncMap{
 		"extend":      extend,
-		"expand_name": expand_name,
+		"expand_name": expandName,
 		"type":        typesRenderer(context.PkgPath, context.Modules),
 		"type_wrap":   typesRendererWithWrapper(context.PkgPath, context.Modules, context.Wrapper),
 		"type_set": func(name string) (string, error) {
@@ -360,8 +372,8 @@ func withRenderFuncMap(context Context, output string) (opt gen.RenderOptionsFun
 		"ignored":          ignored(context.Ignores),
 		"filter_elements":  filterElements,
 		"placeholder":      placeholder,
-		"fragment_start":   fragment_start,
-		"fragment_end":     fragment_end,
+		"fragment_start":   fragmentStart,
+		"fragment_end":     fragmentEnd,
 		"receiver":         receiver,
 	}
 	return gen.WithFuncMap(functions), dispose

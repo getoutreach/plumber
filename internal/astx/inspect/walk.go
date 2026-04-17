@@ -30,6 +30,10 @@ func Walk(pkgs []*model.Package, visitor func(node model.Node) error) error {
 	return nil
 }
 
+// AnnotationMatcher is a function type that defines a predicate for matching annotations.
+// It takes an annotation as input and returns a boolean indicating whether the annotation
+// matches certain criteria. This is used in conjunction with the WithAnnotations helper
+// to filter nodes based on their annotations during AST traversal.
 type AnnotationMatcher func(annotation model.Annotation) bool
 
 func WithAnnotations(matcher AnnotationMatcher, visitor func(node model.Node) error) func(node model.Node) error {

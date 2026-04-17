@@ -1,8 +1,10 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements the template rendering engine including RenderContent, byte processors, render options, and utility functions for code generation.
+// Description: This file implements the template rendering engine including RenderContent, byte
+// processors, render options, and utility functions for code generation.
 
-// Package gen provides a template-based code generation engine with configurable byte processors, file I/O abstractions, and sprig-enhanced template rendering.
+// Package gen provides a template-based code generation engine with configurable byte processors,
+// file I/O abstractions, and sprig-enhanced template rendering.
 package gen
 
 import (
@@ -25,8 +27,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+// TemplateFunc is a function type that takes a template and returns a modified template
 type TemplateFunc func(*template.Template) *template.Template
 
+// PostProcessorFunc is a function type that processes a file after it has been generated
 type PostProcessorFunc func(filename string) error
 
 func (f PostProcessorFunc) Apply(filename string) error {
@@ -37,11 +41,13 @@ func (f PostProcessorFunc) Close() error {
 	return nil
 }
 
+// PostProcessor is an interface that defines methods for applying post-processing to generated files, allowing for
 type PostProcessor interface {
 	Apply(filename string) error
 	Close() error
 }
 
+// PostProcessors represents a collection of PostProcessor instances that can be applied sequentially to a file,
 type PostProcessors []PostProcessor
 
 func (pp PostProcessors) Apply(filepath string) error {
@@ -62,8 +68,11 @@ func (pp PostProcessors) Close() error {
 	return nil
 }
 
+// ByteProcessor is a function type that processes byte content, allowing for transformations such as
+// formatting and import management on generated code.
 type ByteProcessor func(filename string, content []byte) ([]byte, error)
 
+// Config represents the configuration for the code generation process, including template functions, package information,
 type Config struct {
 	FuncMap          template.FuncMap
 	Package          string
@@ -84,10 +93,14 @@ func Package(p string) *Config {
 	}
 }
 
+// linePositionRe is a regular expression that matches error messages containing line and position information,
 var linePositionRe = regexp.MustCompile(`(\d+):(\d+):(.*)`)
 
+// lineError is a regular expression that matches error messages containing line and position information,
+// allowing for enhanced error reporting with context about the location of errors in generated code.
 var lineError = regexp.MustCompile(`//(:? )?ERROR: ?(.*)`)
 
+// DebugProcessors is a slice of ByteProcessor functions that includes error detection and reporting for Go files,
 var DebugProcessors = []ByteProcessor{
 	func(filename string, content []byte) ([]byte, error) {
 		if !strings.HasSuffix(filename, ".go") {
@@ -101,6 +114,7 @@ var DebugProcessors = []ByteProcessor{
 	},
 }
 
+// DefaultByteProcessors is a slice of ByteProcessor functions that includes formatting and import processing for Go files,
 var DefaultByteProcessors = []ByteProcessor{
 	func(filename string, content []byte) ([]byte, error) {
 		if !strings.HasSuffix(filename, ".go") {
@@ -109,7 +123,7 @@ var DefaultByteProcessors = []ByteProcessor{
 		buf, err := format.Source(content)
 		if err != nil {
 			fmt.Println(displayError(string(content), err.Error()))
-			//regexp.
+			// regexp.
 			log.Fatal("format output:", err)
 			return content, err
 		}
@@ -148,6 +162,7 @@ func displayError(content, err string) string {
 	return strings.Join(lines, "\n")
 }
 
+// RenderOptions represents the options for rendering templates, including template functions, bundles, and individual templates,
 type RenderOptions struct {
 	TemplateFileName string
 	TemplateName     string
@@ -182,6 +197,8 @@ func (op *RenderOptions) Apply(t *template.Template) (*template.Template, error)
 	return t, err
 }
 
+// RenderOptionsFunc is a function type that implements the RenderOption interface, allowing for flexible
+// application of rendering options to a RenderOptions struct.
 type RenderOptionsFunc func(*RenderOptions) error
 
 func (f RenderOptionsFunc) Apply(o *RenderOptions) error {
@@ -206,6 +223,8 @@ func WithTemplate(t *template.Template) RenderOptionsFunc {
 	})
 }
 
+// templateBundle represents a bundle of templates loaded from a filesystem, allowing for organized management
+// of template files during rendering.
 type templateBundle struct {
 	FS   fs.FS
 	Path string
@@ -241,6 +260,8 @@ func WithRenderOptions(opts ...RenderOptionsFunc) RenderOptionsFunc {
 	})
 }
 
+// RenderOption is an interface that defines a method for applying rendering options to a RenderOptions struct,
+// allowing for flexible configuration of template rendering behavior.
 type RenderOption interface {
 	Apply(*RenderOptions) error
 }
@@ -344,9 +365,13 @@ func Stringify(i interface{}) string {
 	}
 }
 
+// title var
 var title = color.New(color.BgHiWhite).Add(color.FgBlack).SprintFunc()
+
+// component var
 var component = color.New(color.BgWhite).Add(color.FgBlack).SprintFunc()
 
+// size var
 var size = 40
 
 func Title(s string) FeatureFunc {

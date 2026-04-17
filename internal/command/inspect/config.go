@@ -4,13 +4,13 @@
 
 package inspect
 
-// Config represents the overall configuration for the inspect command, including the format and annotation settings.
-type Config struct {
-	Inspect *InspectConfig `yaml:"plumber.inspect"`
+// FileConfig represents the overall configuration for the inspect command, including the format and annotation settings.
+type FileConfig struct {
+	Inspect *Config `yaml:"plumber.inspect"`
 }
 
-// InspectConfig holds specific configuration options for the inspect command, such as output format and annotation filters.
-type InspectConfig struct {
+// Config holds specific configuration options for the inspect command, such as output format and annotation filters.
+type Config struct {
 	Format            string              `yaml:"format,omitempty"`
 	AnnotationsConfig []AnnotationsConfig `yaml:"annotations,omitempty"`
 }

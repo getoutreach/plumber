@@ -21,10 +21,9 @@ func Run(c *cli.Context) error {
 
 	configPath := c.String("config")
 
-	shapeConfig := shape.ShapeConfig{}
+	shapeConfig := shape.Config{}
 
 	if configPath != "" {
-
 		// Resolve absolute path for config file
 		absConfigPath, err := filepath.Abs(configPath)
 		if err != nil {
@@ -35,12 +34,12 @@ func Run(c *cli.Context) error {
 		// baseDir := filepath.Dir(absConfigPath)
 
 		// Parse the configuration
-		cfg, err := command.ParseConfig[shape.Config](absConfigPath)
+		cfg, err := command.ParseConfig[shape.FileConfig](absConfigPath)
 		if err != nil {
 			return fmt.Errorf("failed to parse config: %w", err)
 		}
 
-		includes, err := command.ParseConfigs[shape.Config](
+		includes, err := command.ParseConfigs[shape.FileConfig](
 			lo.Map(
 				cfg.Includes,
 				func(include shape.IncludeConfig, _ int) string { return include.Path },

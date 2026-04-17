@@ -6,13 +6,13 @@
 package discovery_test
 
 import (
-	"fmt"
 	"go/types"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/getoutreach/plumber/internal/discovery"
+	"github.com/getoutreach/plumber/internal/discovery/contract"
 	"gotest.tools/v3/assert"
 )
 
@@ -34,7 +34,7 @@ func NewUser(name string, age int) *User {
 }
 `
 
-	err := os.WriteFile(testFile, []byte(content), 0644)
+	err := os.WriteFile(testFile, []byte(content), 0o644)
 	assert.NilError(t, err)
 
 	file, dec, err := discovery.ParseFile(testFile)
@@ -73,28 +73,20 @@ func TestASTParserDiscover(t *testing.T) {
 }
 
 func TestASTParserWithMockCode(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create a test package with multiple files
-	goModContent := `module github.com/getoutreach/testpkg
-
-go 1.23
-`
-	err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644)
-	assert.NilError(t, err)
+	dir := testFixtureDir(t, "mock_code")
 
 	// Create multiple Go files to test cross-file type resolution
-	typesGoContent := `package testpkg
+	typesGoContent := `package mock_code
 
 // Container is a shared container type
 type Container struct {
 	Name string
 }
 `
-	err = os.WriteFile(filepath.Join(tmpDir, "types.go"), []byte(typesGoContent), 0644)
+	err := os.WriteFile(filepath.Join(dir, "types.go"), []byte(typesGoContent), 0o644)
 	assert.NilError(t, err)
 
-	serviceGoContent := `package testpkg
+	serviceGoContent := `package mock_code
 
 // Service is a test service
 type Service struct {
@@ -117,13 +109,13 @@ func CreateRepository(db string) (*Repository, error) {
 	return &Repository{DB: db}, nil
 }
 `
-	err = os.WriteFile(filepath.Join(tmpDir, "service.go"), []byte(serviceGoContent), 0644)
+	err = os.WriteFile(filepath.Join(dir, "service.go"), []byte(serviceGoContent), 0o644)
 	assert.NilError(t, err)
 
 	// Test with both files - this should resolve cross-file types
 	parser, err := discovery.NewASTParser(
-		filepath.Join(tmpDir, "service.go"),
-		filepath.Join(tmpDir, "types.go"),
+		filepath.Join(dir, "service.go"),
+		filepath.Join(dir, "types.go"),
 	)
 	assert.NilError(t, err)
 
@@ -139,27 +131,37 @@ func CreateRepository(db string) (*Repository, error) {
 	// Should find both providers
 	assert.Assert(t, len(result.Providers) >= 2, "should find at least 2 providers")
 
-	// Verify first provider (Service)
-	assert.Equal(t, result.Providers[0].Name, "Service")
-	assert.Assert(t, result.Providers[0].Type != nil)
-	assert.Assert(t, result.Providers[0].Constructor != nil, "Service should have a constructor")
-	assert.Equal(t, result.Providers[0].Constructor.FunctionName, "NewService")
-
-	// Verify second provider (Repository)
-	assert.Equal(t, result.Providers[1].Name, "Repository")
-	assert.Assert(t, result.Providers[1].Type != nil)
-	assert.Assert(t, result.Providers[1].Constructor != nil, "Repository should have a constructor")
-	assert.Equal(t, result.Providers[1].Constructor.FunctionName, "CreateRepository")
-
-	assert.Assert(t, !result.Providers[0].Constructor.ReturnsError(), "first constructor should not return error")
-	assert.Assert(t, result.Providers[1].Constructor.ReturnsError(), "second constructor should return error")
-
-	for _, p := range result.Providers[1].Constructor.ReturnParameters {
-		fmt.Println(types.TypeString(p.TypeInfo.Type, RelativeTo(p.TypeInfo.Package.Types)))
+	// Build a map for order-independent assertions
+	byName := make(map[string]*contract.Provider)
+	for _, p := range result.Providers {
+		byName[p.Name] = p
 	}
 
-	fmt.Println()
-	// fmt.Println(c)
+	// Verify Service provider
+	svc, ok := byName["Service"]
+	assert.Assert(t, ok, "should find Service provider")
+	assert.Assert(t, svc.Type != nil)
+	assert.Assert(t, svc.Constructor != nil, "Service should have a constructor")
+	assert.Equal(t, svc.Constructor.FunctionName, "NewService")
+	assert.Assert(t, !svc.Constructor.ReturnsError(),
+		"Service constructor should not return error")
+
+	// Verify Repository provider
+	repo, ok := byName["Repository"]
+	assert.Assert(t, ok, "should find Repository provider")
+	assert.Assert(t, repo.Type != nil)
+	assert.Assert(t, repo.Constructor != nil,
+		"Repository should have a constructor")
+	assert.Equal(t, repo.Constructor.FunctionName, "CreateRepository")
+	assert.Assert(t, repo.Constructor.ReturnsError(),
+		"Repository constructor should return error")
+
+	for _, p := range repo.Constructor.ReturnParameters {
+		t.Log(types.TypeString(
+			p.TypeInfo.Type,
+			RelativeTo(p.TypeInfo.Package.Types),
+		))
+	}
 }
 
 // RelativeTo returns a [Qualifier] that fully qualifies members of

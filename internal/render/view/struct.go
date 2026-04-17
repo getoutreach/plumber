@@ -7,10 +7,13 @@ package view
 
 import "github.com/getoutreach/plumber/query/model"
 
+// Base represents the base view containing a scope for variables that can be used in templates.
 type Base struct {
 	Scope map[string]interface{}
 }
 
+// Struct represents a view for rendering a struct type, containing the base scope and the specific type information
+// for the struct being rendered.
 type Struct struct {
 	Base
 	Type *model.Type

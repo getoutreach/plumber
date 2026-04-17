@@ -13,11 +13,13 @@ import (
 	"github.com/getoutreach/plumber/internal/render/view"
 )
 
-func Finalize(context Context, scope map[string]any, parts []string, output string, opener gen.FileOpener, opts ...gen.WriterOption) (*Output, error) {
+func Finalize(
+	context *Context, scope map[string]any, parts []string, output string, opener gen.FileOpener, opts ...gen.WriterOption,
+) (*Output, error) {
 	writer := gen.NewWriter(append([]gen.WriterOption{gen.WithFileOpener(opener), func(wc *gen.WriterConfig) {
 		wc.Overwrite = true
 		wc.WriterOptions = append(wc.WriterOptions, func(s *gen.BlockWriterSettings) {
-			s.PlaceholderName = "plumber"
+			s.PlaceholderName = PlaceholderName
 		})
 	}}, opts...)...)
 	ctx := gen.NewContext("neco")

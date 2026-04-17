@@ -1,7 +1,10 @@
 // Copyright 2024 Outreach Corporation. All Rights Reserved.
 
-// Description: Path iterator for loop config hydration
+// Description: This file provides dependency resolution
+// sentinel types for generated container code.
 
+// Package discovery provides runtime sentinel types used by
+// generated container code to detect undeclared dependencies.
 package discovery
 
 import (
@@ -10,8 +13,11 @@ import (
 	"github.com/getoutreach/plumber"
 )
 
+// FailingUndeclaredDependency is a sentinel type used to represent an
+// undeclared dependency in the container.
 type FailingUndeclaredDependency struct{}
 
+// UndeclaredDependency returns a sentinel value representing an undeclared dependency of type T.
 func UndeclaredDependency[T any](value T) *FailingUndeclaredDependency {
 	return &FailingUndeclaredDependency{}
 }

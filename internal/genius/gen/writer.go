@@ -1,6 +1,7 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements Writer, ByteProcessingWriter, BlockWriter, and MemoryFileOpener for file I/O and plumber-block-aware content merging.
+// Description: This file implements Writer, ByteProcessingWriter, BlockWriter, and MemoryFileOpener
+// for file I/O and plumber-block-aware content merging.
 
 package gen
 
@@ -14,8 +15,11 @@ import (
 	"strings"
 )
 
+// DefaultWriter is a default instance of Writer with default byte processors, providing a convenient
+// way to write content with standard processing applied.
 var DefaultWriter = NewWriter(WithByteProcessors(DefaultByteProcessors))
 
+// ByteProcessingWriter is an io.WriteCloser that buffers written bytes and applies a series of ByteProcessors to the content
 type ByteProcessingWriter struct {
 	buf            bytes.Buffer
 	postProcessors []ByteProcessor
@@ -50,13 +54,19 @@ func (w *ByteProcessingWriter) Close() error {
 	return err
 }
 
+// reParams is a regular expression used to parse parameters from block headers,
+// allowing for structured handling of parameters
 var reParams = regexp.MustCompile(`([^=]+)=?([^ ]+)?`)
 
+// BlockContent represents the content of a block identified by a name, allowing for structured handling of blocks
+// in the generated content.
 type BlockContent struct {
 	Name    []byte
 	Content []byte
 }
 
+// Element represents a single block or fragment parsed from the file content, allowing for structured handling
+// of different types of content blocks.
 type Element struct {
 	Header        []byte
 	CommentPrefix []byte
@@ -65,15 +75,23 @@ type Element struct {
 	Params        FragmentParams
 }
 
+// Elements represents a collection of blocks and fragments parsed from the file content,
+// allowing for structured handling of different types of content blocks in the generated files.
 type Elements struct {
 	Blocks    []Element
 	Fragments []Element
 }
 
+// Constants for default block names and patterns used in the block writer for identifying and
+// preserving blocks in generated content.
 const (
+	// DefaultBlockName is the default pattern used to identify blocks in the generated content,
+	// allowing for dynamic content insertion while preserving existing code structure.
 	DefaultBlockName = "Block-API"
 )
 
+// FileOpener is an interface that abstracts file operations, allowing for different implementations
+// such as in-memory or system file operations.
 type FileOpener interface {
 	MkdirAll(string, os.FileMode) error
 	Open(string) (io.ReadWriteCloser, error)
@@ -81,6 +99,7 @@ type FileOpener interface {
 	Content(string) []byte
 }
 
+// MemoryFileOpener is a FileOpener that operates on in-memory buffers, allowing for file-like operations
 type MemoryFileOpener interface {
 	FileOpener
 }
@@ -89,6 +108,8 @@ func NewSystemFileOpener() FileOpener {
 	return &SystemFileOpener{}
 }
 
+// SystemFileOpener is a FileOpener that interacts with the actual file system, allowing for reading, writing,
+// and directory creation operations on real files and directories.
 type SystemFileOpener struct{}
 
 func (s *SystemFileOpener) Open(filename string) (io.ReadWriteCloser, error) {
@@ -107,10 +128,12 @@ func (s *SystemFileOpener) Create(filename string) (io.ReadWriteCloser, error) {
 	return os.Create(filename)
 }
 
-func (s *SystemFileOpener) MkdirAll(path string, perm os.FileMode) error {
-	return os.MkdirAll(path, perm)
+func (s *SystemFileOpener) MkdirAll(dirPath string, perm os.FileMode) error {
+	return os.MkdirAll(dirPath, perm)
 }
 
+// BufferFile is an in-memory implementation of io.ReadWriteCloser, allowing for file-like operations on a
+// byte buffer without interacting with the actual file system.
 type BufferFile struct {
 	*bytes.Buffer
 }
@@ -119,6 +142,8 @@ func (bf *BufferFile) Close() error {
 	return nil
 }
 
+// BufferFileOpener is a FileOpener that operates on in-memory buffers, allowing for file-like operations
+// without interacting with the actual file system,
 type BufferFileOpener struct {
 	buffers   map[string]*BufferFile
 	Filenames []string
@@ -155,7 +180,7 @@ func (o *BufferFileOpener) Write(filename string, content []byte) error {
 	return nil
 }
 
-func (o *BufferFileOpener) MkdirAll(path string, perm os.FileMode) error {
+func (o *BufferFileOpener) MkdirAll(dirPath string, perm os.FileMode) error {
 	return nil
 }
 
@@ -166,6 +191,9 @@ func (o *BufferFileOpener) Content(filename string) []byte {
 	return nil
 }
 
+// ReadOnlyFileOpener is a FileOpener that allows reading from the file system but writes to an in-memory buffer,
+// enabling a read-only view of the file system while still supporting file creation and writing for
+// generated content without affecting the actual file system.
 type ReadOnlyFileOpener struct {
 	fs     *SystemFileOpener
 	memory *BufferFileOpener
@@ -190,14 +218,15 @@ func (o *ReadOnlyFileOpener) Write(filename string, content []byte) error {
 	return o.memory.Write(filename, content)
 }
 
-func (o *ReadOnlyFileOpener) MkdirAll(path string, perm os.FileMode) error {
-	return o.memory.MkdirAll(path, perm)
+func (o *ReadOnlyFileOpener) MkdirAll(dirPath string, perm os.FileMode) error {
+	return o.memory.MkdirAll(dirPath, perm)
 }
 
 func (o *ReadOnlyFileOpener) Content(filename string) []byte {
 	return o.memory.Content(filename)
 }
 
+// BlockWriterSettings represents the configuration settings for a BlockWriter, including placeholder name, block name, and block pattern.
 type BlockWriterSettings struct {
 	// Placeholder name describes the name of the block
 	PlaceholderName string
@@ -210,6 +239,7 @@ type BlockWriterSettings struct {
 	BlockPattern string
 }
 
+// BlockWriterOption is a functional option type for configuring the BlockWriter, allowing for flexible and composable
 type BlockWriterOption func(*BlockWriterSettings)
 
 func WithPlaceholderName(name string) BlockWriterOption {
@@ -218,6 +248,7 @@ func WithPlaceholderName(name string) BlockWriterOption {
 	}
 }
 
+// blockWriter is responsible for writing content to a file while preserving existing blocks defined by special comments.
 type blockWriter struct {
 	fileName        string
 	buf             bytes.Buffer
@@ -245,8 +276,12 @@ func NewBlockWriterWithOpener(fileName string, op FileOpener, opts ...BlockWrite
 		op:              op,
 		placeholderName: settings.PlaceholderName,
 		blockName:       settings.BlockName,
-		reBlocks:        regexp.MustCompile(`(//|#) ?<<` + settings.PlaceholderName + `::Block\(([^)]+)\)>>((?:\n|.)*?)(?://|#) ?<</` + settings.PlaceholderName + `::Block>>`),
-		reFragment:      regexp.MustCompile(`(//|#) ?<<` + settings.PlaceholderName + `::Fragment\(([^)]+)\)>>((?:\n|.)*?)(?://|#)? ?<</` + settings.PlaceholderName + `::Fragment>>`),
+		reBlocks: regexp.MustCompile(
+			`(//|#) ?<<` + settings.PlaceholderName + `::Block\(([^)]+)\)>>` +
+				`((?:\n|.)*?)(?://|#) ?<</` + settings.PlaceholderName + `::Block>>`),
+		reFragment: regexp.MustCompile(
+			`(//|#) ?<<` + settings.PlaceholderName + `::Fragment\(([^)]+)\)>>` +
+				`((?:\n|.)*?)(?://|#)? ?<</` + settings.PlaceholderName + `::Fragment>>`),
 	}
 	return w
 }
@@ -294,6 +329,8 @@ func (w *blockWriter) parseBlocks(body []byte) *Elements {
 	}
 }
 
+// FragmentParams represents a collection of parameters for a fragment, allowing for easy retrieval and
+// string representation of the parameters associated with a fragment in the generated content.
 type FragmentParams []FragmentParam
 
 func (fp FragmentParams) ByName(name string) (FragmentParam, bool) {
@@ -317,6 +354,7 @@ func (fp FragmentParams) String(prefixes ...string) string {
 	return strings.Join(prefixes, "") + strings.Join(fragments, " ")
 }
 
+// FragmentParam represents a single parameter for a fragment, containing a name and an optional value.
 type FragmentParam struct {
 	Name  string
 	Value string
@@ -389,7 +427,9 @@ func (w *blockWriter) Close() error {
 	if blocks != nil {
 		for _, b := range blocks.Blocks {
 			name := string(b.Header)
-			re := regexp.MustCompile(`(?://|#) ?<<` + w.placeholderName + `::Block\(` + name + `\)>>((.|\n)*?)(?://|#) ?<</` + w.placeholderName + `::Block>>`)
+			re := regexp.MustCompile(
+				`(?://|#) ?<<` + w.placeholderName + `::Block\(` + name + `\)>>` +
+					`((.|\n)*?)(?://|#) ?<</` + w.placeholderName + `::Block>>`)
 
 			buf.WriteString(string(b.CommentPrefix) + ` <<` + w.placeholderName + `::Block(` + name + `)>>`)
 			buf.Write(b.Content)
@@ -405,7 +445,9 @@ func (w *blockWriter) Close() error {
 			if _, found := b.Params.ByName("locked"); !found {
 				continue
 			}
-			re := regexp.MustCompile(`(?://|#) ?<<` + w.placeholderName + `::Fragment\(` + string(b.Name) + `[^\)]*\)>>((.|\n)*?)(?://|#) ?<</` + w.placeholderName + `::Fragment>>`)
+			re := regexp.MustCompile(
+				`(?://|#) ?<<` + w.placeholderName + `::Fragment\(` + string(b.Name) +
+					`[^\)]*\)>>((.|\n)*?)(?://|#) ?<</` + w.placeholderName + `::Fragment>>`)
 
 			buf.WriteString(string(b.CommentPrefix) + ` <<` + w.placeholderName + `::Fragment(` + string(b.Name) + b.Params.String(" ") + `)>>`)
 			buf.Write(b.Content)
@@ -438,10 +480,14 @@ func FindBlocks(blockName string, body []byte) []BlockContent {
 	return blocks
 }
 
+// Writer provides functionality to write generated content to files, with support for byte processing,
+// block handling, and file opening through configurable options.
 type Writer struct {
 	config WriterConfig
 }
 
+// WriterConfig is a configuration struct for the Writer, containing settings for byte processors, output directory,
+// overwrite behavior, block handling, and file opening.
 type WriterConfig struct {
 	ByteProcessors []ByteProcessor
 	OutputDir      string
@@ -465,7 +511,7 @@ func WithByteProcessors(byteProcessors []ByteProcessor) WriterOption {
 	}
 }
 
-func (c WriterConfig) Clone() WriterConfig {
+func (c *WriterConfig) Clone() WriterConfig {
 	return WriterConfig{
 		WriterOptions:  c.WriterOptions,
 		OutputDir:      c.OutputDir,
@@ -478,17 +524,20 @@ func (c WriterConfig) Clone() WriterConfig {
 	}
 }
 
-func (cfg WriterConfig) Apply(opts ...WriterOption) WriterConfig {
+// nolint: gocritic //Why: We want maintain data immutability and avoid side effects when applying options
+func (c WriterConfig) Apply(opts ...WriterOption) WriterConfig {
 	for _, opt := range opts {
-		opt(&cfg)
+		opt(&c)
 	}
-	return cfg
+	return c
 }
 
-func (cfg *WriterConfig) OutputFilePath(fileName string) string {
-	return path.Join(cfg.OutputDir, fileName)
+func (c *WriterConfig) OutputFilePath(fileName string) string {
+	return path.Join(c.OutputDir, fileName)
 }
 
+// WriterOption is a functional option type for configuring the Writer, allowing for flexible and composable
+// configuration of the Writer's behavior and settings when writing generated content to files.
 type WriterOption func(*WriterConfig)
 
 func NewWriter(opts ...WriterOption) *Writer {
