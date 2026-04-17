@@ -28,7 +28,7 @@ func TestOutput(t *testing.T) {
 			},
 			expected: "example_generated.go",
 			annotations: []model.Annotation{
-				model.NewAnnotation(contract.OptionOutput, "{name}_generated{ext}"),
+				model.NewAnnotation(contract.OptionOutput, []string{"{name}_generated{ext}"}),
 			},
 		},
 		{
@@ -38,7 +38,7 @@ func TestOutput(t *testing.T) {
 			},
 			expected: "example_generated.go",
 			annotations: []model.Annotation{
-				model.NewAnnotation(contract.OptionOutput, "{suffix:generated}"),
+				model.NewAnnotation(contract.OptionOutput, []string{"{suffix:generated}"}),
 			},
 		},
 	}

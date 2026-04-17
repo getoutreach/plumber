@@ -217,8 +217,22 @@ func (p *Package) File(filename string) *dst.File {
 	return nil
 }
 
-func NewAnnotation(name string, args ...string) Annotation {
-	return Annotation{Name: name, Args: args}
+// AnnotationOption is a functional option for configuring an Annotation.
+type AnnotationOption func(*Annotation)
+
+// WithNamedArgs returns an AnnotationOption that sets the named arguments on an Annotation.
+func WithNamedArgs(namedArgs map[string]string) AnnotationOption {
+	return func(a *Annotation) {
+		a.NamedArgs = namedArgs
+	}
+}
+
+func NewAnnotation(name string, args []string, opts ...AnnotationOption) Annotation {
+	a := Annotation{Name: name, Args: args}
+	for _, opt := range opts {
+		opt(&a)
+	}
+	return a
 }
 
 func (aa Annotations) Find(name string) *Annotation {

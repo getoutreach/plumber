@@ -191,9 +191,44 @@ macros:
         - { name: plumber:output, args: ["{suffix:generated}"] }
 ```
 
-At runtime, `expandMacros()` in `shape.go` replaces the `@derive` annotation with
+At runtime, `expandMacros()` in `macro.go` replaces the `@derive` annotation with
 `plumber:derive MacroDerived` + `plumber:output {suffix:generated}` on the node's
 annotation list.  The rest of the pipeline then processes them normally.
+
+#### Template expansion in macros
+
+Macro annotation `args` and `namedArgs` values support Go `text/template` syntax,
+allowing macros to forward arguments from the call site into the expanded annotations.
+
+The template context (`macroTemplateData` in `macro.go`) exposes:
+
+- `.Args` (`[]string`) — positional arguments from the triggering annotation.
+- `.NamedArgs` (`map[string]string`) — named `key=value` arguments from the triggering annotation.
+
+Example config with templates:
+```yaml
+macros:
+  - plumber.macro:
+      name: "@tderive"
+      annotations:
+        - { name: plumber:derive, args: ["{{ index .Args 0 }}"] }
+        - { name: plumber:output, args: ["{{ .NamedArgs.file }}"] }
+```
+
+Example Go source:
+```go
+// @tderive Widget file=generated.go
+type Order struct { ... }
+```
+
+This expands to `plumber:derive Widget` + `plumber:output generated.go`.
+
+Implementation details:
+- `expandTemplateStr()` short-circuits when the string has no `{{`, so the existing
+  `{name}` / `{suffix:...}` transformer placeholders pass through unaffected.
+- Template errors (bad syntax, missing keys) cause a hard failure — `expandMacros()`
+  returns an error that aborts the pipeline.
+- Only `args` and `namedArgs` values are templated; annotation names are not.
 
 **Key differences between macros and mixins:**
 
@@ -295,7 +330,9 @@ inspect.ScanFiles() → filenames
 inspect.Inspect()   → []*model.Package   (AST → model)
         │
         ▼
-expandMacros()       — replace @<name> annotations with macro-defined annotation lists
+expandMacros()       — replace @<name> annotations with macro-defined annotation lists;
+                        template expressions ({{ .Args }}, {{ .NamedArgs }}) in the
+                        macro's args/namedArgs are expanded against the call-site arguments
         │
         ▼
 inspect.Walk()       — filter nodes with plumber:shape or plumber:derive annotations
@@ -341,6 +378,7 @@ file, so golden files use `testrun-acceptance/` as a stable placeholder.
 | `TestGenerated` | `generated/model.go`, `generated/types.go` | `mixing.model.filtrable` mixin with `annotation.has is:filtrable` filter | `generated/generated.go` matches golden |
 | `TestMerge` | `merge/model.go`, `merge/types.go`, `merge/blended.go` | No extra config (`ShapeConfig{}`) | `merge/blended.go` merged golden |
 | `TestMacro` | `macro/model.go` | `@derive` macro expanding to `plumber:derive MacroDerived` + `plumber:output generated.go` | `macro/generated.go` matches golden |
+| `TestMacroTemplate` | `macrotemplate/model.go` | `@tderive` macro with `{{ index .Args 0 }}` template expanding call-site arg into derive name | `macrotemplate/generated.go` matches golden |
 
 ---
 
@@ -360,7 +398,7 @@ file, so golden files use `testrun-acceptance/` as a stable placeholder.
 |---|---|
 | Add a new annotation option | `contract/contract.go` (add constant) + `transformer.go` (`defaultOptions` slice + `BasicTransformer.Add`) |
 | Add a new config field | `config.go` (add field + yaml tag) + `ShapeConfig.MergeShape()` if it needs include-merging |
-| Add a new macro | `config.go` (`MacroConfig`) + `plumber.shape.yaml` or included YAML (`macros` section); expansion is automatic via `expandMacros()` in `shape.go` |
+| Add a new macro | `config.go` (`MacroConfig`) + `plumber.shape.yaml` or included YAML (`macros` section); expansion is automatic via `expandMacros()` in `macro.go`. Macro args/namedArgs values support `text/template` syntax (see `macroTemplateData` in `macro.go`) |
 | Add a new filter function | `internal/astx/inspect/` filter predicates |
 | Add a new template | `internal/render/templates/` (embedded) or via `plumber.shape.yaml` template sources |
 | Add a new template source | `contract/contract.go` (`PlumberTemplateSourceConfig`) + `templates/templates.go` (`Load`/`Checkout`) |

@@ -6,7 +6,6 @@
 package shape
 
 import (
-	"fmt"
 	"path"
 	"regexp"
 	"strings"
@@ -199,57 +198,4 @@ func (t *BasicTransformer) Accepts(annotation string) bool {
 
 func (t *BasicTransformer) Add(annotation model.Annotation) {
 	t.Annotations = append(t.Annotations, annotation)
-}
-
-// DeriveTransformer is a concrete implementation of the Transformer interface for deriving new types based on existing struct types.
-type DeriveTransformer struct {
-	BasicTransformer
-}
-
-// NewDeriveTransformer creates a new DeriveTransformer with the given position and annotation.
-func NewDeriveTransformer(pos model.Position, a model.Annotation) *DeriveTransformer {
-	return &DeriveTransformer{
-		BasicTransformer: BasicTransformer{
-			Position:       pos,
-			Name:           "derive",
-			AllowedOptions: defaultOptions,
-			Options:        a,
-		},
-	}
-}
-
-func (t *DeriveTransformer) Render(
-	context *render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener,
-) (string, error) {
-	if tp.Struct == nil {
-		return "", fmt.Errorf("derive transformer can only be applied to struct types, got %s", tp.Spec.Kind)
-	}
-	return render.Derive(context, tp, scope, output, opener)
-}
-
-// Shaper is a concrete implementation of the Transformer interface
-// for generating new types based on existing struct or interface types.
-type Shaper struct {
-	BasicTransformer
-}
-
-// NewShaper creates a new Shaper transformer with the given position and annotation.
-func NewShaper(pos model.Position, a model.Annotation) *Shaper {
-	return &Shaper{
-		BasicTransformer: BasicTransformer{
-			Position:       pos,
-			Name:           "shape",
-			AllowedOptions: defaultOptions,
-			Options:        a,
-		},
-	}
-}
-
-func (t *Shaper) Render(
-	context *render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener,
-) (string, error) {
-	if tp.Interface == nil && tp.Struct == nil {
-		return "", fmt.Errorf("shape transformer can only be applied to interface or struct types, got %s", tp.Spec.Kind)
-	}
-	return render.Shape(context, tp, scope, output, opener)
 }

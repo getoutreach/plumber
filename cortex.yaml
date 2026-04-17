@@ -48,7 +48,7 @@ info:
     ## <<Stencil::Block(extraAliases)>>
     ## <</Stencil::Block>>
     reporting_team: ce-ecs
-    lintroller: platinum
+    lintroller: gold
   x-cortex-groups:
     - lifecycle:in_development
     - product:Outreach

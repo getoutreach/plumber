@@ -11,7 +11,7 @@ import (
 	"github.com/dave/dst/decorator"
 	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
-	"github.com/getoutreach/plumber/internal/command/shape/templates"
+	"github.com/getoutreach/plumber/internal/command/shape/source"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/internal/render/view"
@@ -36,7 +36,7 @@ func buildContext(cfg *Config, modules *render.ModuleRegister, pkg *model.Packag
 // loading any necessary templates based on the transformer's annotations and the provided configuration.
 func transformationContext(context *render.Context, cfg *Config, t *Transformation) (*render.Context, error) {
 	names := t.Transformer.GetAnnotations().FindAll(contract.OptionTemplate).FlatArgs()
-	opts, err := templates.Load(cfg.Sources, &cfg.Templates, cfg.CacheDir, names, render.EmbededTemplates)
+	opts, err := source.LoadTemplates(cfg.Sources, &cfg.Templates, cfg.CacheDir, names, render.EmbededTemplates)
 	if err != nil {
 		return context, err
 	}

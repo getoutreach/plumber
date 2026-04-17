@@ -417,6 +417,45 @@ MacroDerived` + `plumber:output {suffix:generated}` on the node before any trans
 building occurs.  The result is a `generated` mode derive that produces
 `worker_generated.go` containing a `MacroDerived` struct.
 
+### Template expansion
+
+Macro annotation values support Go `text/template` syntax, giving macros access to the
+arguments passed at the call site. The template data context exposes:
+
+| Field       | Type                | Description                                           |
+|-------------|---------------------|-------------------------------------------------------|
+| `.Args`     | `[]string`          | Positional arguments from the triggering annotation   |
+| `.NamedArgs`| `map[string]string` | Named arguments (`key=value`) from the triggering annotation |
+
+#### Defining a macro with templates
+
+```yaml
+macros:
+  - plumber.macro:
+      name: "@tderive"
+      annotations:
+        - { name: plumber:derive, args: ["{{ index .Args 0 }}"] }
+        - { name: plumber:output, args: ["{{ .NamedArgs.file }}"] }
+```
+
+#### Using a macro with arguments
+
+```go
+// @tderive Widget file=generated.go
+type Order struct {
+    ID    string
+    Total int
+}
+```
+
+This expands to `plumber:derive Widget` + `plumber:output generated.go`, producing a
+`Widget` struct derived from `Order`.
+
+Strings that do not contain `{{` are passed through unchanged, so the existing
+`{name}` / `{suffix:...}` placeholder syntax used by transformers is unaffected.
+Template errors (e.g. referencing a missing key) cause a hard failure and abort the
+pipeline.
+
 ### Macros vs mixins
 
 | | Macros | Mixins |

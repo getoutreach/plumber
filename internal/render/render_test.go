@@ -71,8 +71,8 @@ func TestTesting(t *testing.T) {
 	content, err := Derive(&context, tp, map[string]any{
 		"Derive": view.Annotable{
 			Annotations: []model.Annotation{
-				model.NewAnnotation("plumber:name", "MyDerivedStruct"),
-				model.NewAnnotation("plumber:comment", "Better struct comment"),
+				model.NewAnnotation("plumber:name", []string{"MyDerivedStruct"}),
+				model.NewAnnotation("plumber:comment", []string{"Better struct comment"}),
 			},
 		},
 	}, "derived_output.go", gen.NewBufferFileOpener())
