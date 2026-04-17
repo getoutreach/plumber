@@ -48,3 +48,17 @@ func TestQueryCrossPackage(t *testing.T) {
 	)
 	assert.NilError(t, err)
 }
+
+func TestQueryLocal(t *testing.T) {
+	err := withFixture(
+		func(ctx FixtureContext) error {
+			err := shape.Run(&shape.Config{}, []string{"./..."})
+			assert.NilError(t, err)
+			ctx.AssertContent(t, "querylocal/consumer.go", "querylocal/consumer.go.golden")
+			return nil
+		},
+		"querylocal/providers.go",
+		"querylocal/consumer.go",
+	)
+	assert.NilError(t, err)
+}

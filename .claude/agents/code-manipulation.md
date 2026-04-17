@@ -54,9 +54,12 @@ internal/command/
     ├── manager.go              — GeneratorManager (generated mode), InplaceManager (inplace mode)
     ├── merge.go                — inplace struct field merging via DST
     ├── wrapper.go              — TypeWrapper: rewrites field types by FQN/kind matching
+    ├── query.go                — plumber:query processor: collectQueryTargets, executeQuery, inflateVariable (package-level + function-body vars)
     └── templates/              — git checkout (with includes support) + local load helpers for external templates
 
-internal/astx/inspect/         — ScanFiles(), Inspect(), Walk(), WithAnnotations() — shared AST layer
+internal/astx/
+├── dstutil.go                  — shared DST walking utilities: FindNodes, FindNode, Walk, Visitor, RecursiveVisitor, MatchType, etc.
+├── inspect/                    — ScanFiles(), Inspect(), Walk(), WithAnnotations() — shared AST layer
 internal/render/                — render.Context, Output, Derive(), Shape(), Finalize()
 query/model/model.go            — Package, Type, Annotation, TypeSpec, Struct, Interface, Function, …
 
@@ -64,11 +67,17 @@ test/acceptance/
 ├── acceptance.go               — withFixture() helper + AssertContent() golden-file comparison
 ├── generated_test.go           — TestGenerated: generated mode + mixin filter
 ├── merge_test.go               — TestMerge: inplace derive into existing struct
-└── macro_test.go               — TestMacro: macro expansion into plumber:derive + plumber:output
-    fixture/
+├── macro_test.go               — TestMacro, TestMacroTemplate
+├── query_test.go               — TestQuery, TestQueryTypeScope, TestQueryCrossPackage, TestQueryLocal
+└── fixture/
     ├── generated/model.go      — annotated with plumber:derive + plumber:mixin
     ├── merge/model.go          — annotated with plumber:derive + plumber:mode inplace
     ├── macro/model.go          — annotated with @derive macro
+    ├── macrotemplate/model.go  — annotated with @tderive (template macro)
+    ├── query/                  — package-level query fixture
+    ├── querytypescope/         — type-scoped query fixture
+    ├── querycross/             — cross-package query fixture
+    ├── querylocal/             — function-body local var query fixture
     └── @golden/                — golden files (*.golden) compared byte-for-byte
 
 docs/
@@ -110,6 +119,7 @@ There are also **macro annotations** in the form `// @<name>` (see below).
 | `plumber:comment`      | `<text>` | Append comment to generated declaration |
 | `plumber:context`      | `<pkg/Type>` | Package-level annotation: point at a specific model type |
 | `plumber:scope`        | `"<Name>" type="<FQN>"` | Inject a resolved `*model.Type` into `.Scope.Custom.<Name>` |
+| `plumber:query`        | `"<regex>" scope="<scope>" [receiver="<var>"]` | Populate annotated slice variable with matching entities |
 
 ### Custom scope (`plumber:scope`)
 
@@ -230,6 +240,40 @@ Implementation details:
   returns an error that aborts the pipeline.
 - Only `args` and `namedArgs` values are templated; annotation names are not.
 
+### Query annotations (`plumber:query`)
+
+`plumber:query` annotates a slice variable (package-level or function-body) to populate
+it with entities matching a regex pattern.  Queries run as a separate pass in `processQueries()`
+**after** macro expansion and before transformer building.
+
+**Syntax:** `// plumber:query "<regex>" scope="<scope>" [receiver="<var>"]`
+
+- First positional arg: regex pattern matched against entity names (function names,
+  method names, etc.)
+- `scope`: package path to search, or `"."` for same package, or a type FQN like
+  `".TypeName"` for type-scoped queries (searches methods/fields of that type)
+- `receiver`: required when scope resolves to a named type — the variable name used
+  to qualify method calls (e.g., `receiver="r"` → `r.MethodName()`)
+
+**Variable requirements:**
+- Must be a typed slice (e.g., `[]func()`) — the element type determines which
+  entities are compatible
+- Package-level: standard `var` declaration with composite literal
+- Function-body: explicit `var` declaration with composite literal (not `:=`)
+
+**Implementation flow** (`query.go`):
+1. `collectQueryTargets()` — finds package-level vars via `model.PackageVar` annotations
+   and function-body vars via `collectLocalQueryTargets()` (DST walking with `astx.FindNodes`)
+2. `parseQueryAnnotation()` — extracts pattern, scope, receiver from the annotation
+3. `executeQuery()` — resolves scope, finds matching entities, filters by type compatibility
+4. `inflateVariable()` — modifies the DST composite literal to inject matched results
+5. `processQueries()` — orchestrates the above, writes modified files back
+
+For function-body variables, annotations are parsed from DST decoration strings
+(`GenDecl.Decs.Start`) using `annotationsFromDecs()` which strips `//` prefixes and
+delegates to `inspect.ParseAnnotations`. Type resolution uses the DST→AST node mapping
+(`pkg.Decorator.Ast.Nodes`) to access `types.Info.Defs`.
+
 **Key differences between macros and mixins:**
 
 | | Macros | Mixins |
@@ -339,6 +383,10 @@ inspect.Walk()       — filter nodes with plumber:shape or plumber:derive annot
                         (including those injected by macros)
         │
         ▼
+processQueries()     — find plumber:query-annotated variables (package-level + function-body),
+                        match entities by regex/scope, inflate composite literals via DST
+        │
+        ▼
 buildTransformers()  — per-node: create DeriveTransformer or ShapeTransformer,
                         resolve plumber:mixin refs from config
         │
@@ -379,6 +427,10 @@ file, so golden files use `testrun-acceptance/` as a stable placeholder.
 | `TestMerge` | `merge/model.go`, `merge/types.go`, `merge/blended.go` | No extra config (`ShapeConfig{}`) | `merge/blended.go` merged golden |
 | `TestMacro` | `macro/model.go` | `@derive` macro expanding to `plumber:derive MacroDerived` + `plumber:output generated.go` | `macro/generated.go` matches golden |
 | `TestMacroTemplate` | `macrotemplate/model.go` | `@tderive` macro with `{{ index .Args 0 }}` template expanding call-site arg into derive name | `macrotemplate/generated.go` matches golden |
+| `TestQuery` | `query/providers.go`, `query/consumer.go` | No extra config | `query/consumer.go` inplace with matched provider functions |
+| `TestQueryTypeScope` | `querytypescope/types.go`, `querytypescope/consumer.go` | No extra config | `querytypescope/consumer.go` inplace with matched type methods |
+| `TestQueryCrossPackage` | `querycross/providers/providers.go`, `querycross/consumer.go` | No extra config | `querycross/consumer.go` inplace with cross-package matches |
+| `TestQueryLocal` | `querylocal/providers.go`, `querylocal/consumer.go` | No extra config | `querylocal/consumer.go` inplace with function-body var populated |
 
 ---
 
@@ -402,4 +454,5 @@ file, so golden files use `testrun-acceptance/` as a stable placeholder.
 | Add a new filter function | `internal/astx/inspect/` filter predicates |
 | Add a new template | `internal/render/templates/` (embedded) or via `plumber.shape.yaml` template sources |
 | Add a new template source | `contract/contract.go` (`PlumberTemplateSourceConfig`) + `templates/templates.go` (`Load`/`Checkout`) |
+| Add a new query pattern | `query.go` (`collectQueryTargets`, `executeQuery`, `inflateVariable`); for new entity types, extend `matchEntity` / type compatibility checks |
 | Debug generation output | Add `plumber inspect ./...` first to see the model that shape will operate on |

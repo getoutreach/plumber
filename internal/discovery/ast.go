@@ -173,10 +173,16 @@ func (p *ASTParser) buildProviders(constructors []*contract.ConstructorInfo, pro
 		providerMap[providerName] = provider
 	}
 
-	// Convert map to slice
+	// Convert map to slice preserving constructor discovery order
+	seen := make(map[string]bool)
 	providers := make([]*contract.Provider, 0, len(providerMap))
-	for _, provider := range providerMap {
-		providers = append(providers, provider)
+	for _, ctor := range constructors {
+		name := providerNames[ctor.FunctionName]
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		providers = append(providers, providerMap[name])
 	}
 
 	return providers

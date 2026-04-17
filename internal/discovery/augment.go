@@ -226,7 +226,7 @@ func (a *Augmenter) addFieldsToStruct(
 	// Track packages that need to be imported
 	neededPackages = make(map[string]bool)
 
-	defineFuncDeclaration := templates.FuncDeclaration(file, "Define")
+	defineFuncDeclaration := astx.FuncDeclaration(file, "Define")
 
 	for _, provider := range missingProviders {
 		// Determine field type based on provider
@@ -287,7 +287,7 @@ func (a *Augmenter) addFieldsToStruct(
 
 			return &dst.CallExpr{
 				Fun: &dst.IndexListExpr{
-					Indices: []dst.Expr{templates.ToTypeDefinition(param.TypeInfo.Type)},
+					Indices: []dst.Expr{astx.ToTypeDefinition(param.TypeInfo.Type)},
 					X: &dst.Ident{
 						Name: "Undefined",
 						Path: "github.com/getoutreach/plumber/discovery",
@@ -320,7 +320,7 @@ func (a *Augmenter) addFieldsToStruct(
 		// r := decorator.NewRestorerWithImports("root", gopackages.New("."))
 		// restoredFile, err := r.RestoreFile(file)
 
-		f := templates.FuncDeclaration(resolver, "DependencyResolverResolve")
+		f := astx.FuncDeclaration(resolver, "DependencyResolverResolve")
 
 		defineFuncDeclaration.Body.List = append(defineFuncDeclaration.Body.List, f.Body.List...)
 	}
@@ -425,23 +425,23 @@ func (a *Augmenter) collectPackagesFromType(typ types.Type, packages map[string]
 }
 
 func (a *Augmenter) ensureDependencyRequired(dec *decorator.Decorator, file *dst.File, containerName string) bool {
-	defineFuncDeclaration := templates.FuncDeclaration(file, "Define")
+	defineFuncDeclaration := astx.FuncDeclaration(file, "Define")
 
-	resolvers := templates.FindNodes(defineFuncDeclaration, func(node dst.Node) (match, recurse bool) {
-		return templates.MatchOnly(templates.IsFuncCallTo(node, "Resolver"))
+	resolvers := astx.FindNodes(defineFuncDeclaration, func(node dst.Node) (match, recurse bool) {
+		return astx.MatchOnly(astx.IsFuncCallTo(node, "Resolver"))
 	})
 
 	for _, resolver := range resolvers {
-		requireFunc := templates.FindNode(resolver, func(node dst.Node) (match bool, recurse bool) {
-			return templates.MatchOnly(templates.IsFuncCallTo(node, "Require"))
+		requireFunc := astx.FindNode(resolver, func(node dst.Node) (match bool, recurse bool) {
+			return astx.MatchOnly(astx.IsFuncCallTo(node, "Require"))
 		})
-		thenFunc := templates.FindNode(resolver, func(node dst.Node) (match bool, recurse bool) {
-			return templates.MatchOnly(templates.IsFuncCallTo(node, "Then"))
+		thenFunc := astx.FindNode(resolver, func(node dst.Node) (match bool, recurse bool) {
+			return astx.MatchOnly(astx.IsFuncCallTo(node, "Then"))
 		})
 
-		thenCallback := templates.FindCallbackBody(thenFunc, 0)
+		thenCallback := astx.FindCallbackBody(thenFunc, 0)
 
-		functionCalls := templates.FindNodes(thenCallback, func(node dst.Node) (match bool, recurse bool) {
+		functionCalls := astx.FindNodes(thenCallback, func(node dst.Node) (match bool, recurse bool) {
 			_, ok := node.(*dst.CallExpr)
 			return ok, true
 		})

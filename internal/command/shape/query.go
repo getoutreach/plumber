@@ -2,19 +2,22 @@
 
 // Description: This file implements the plumber:query annotation processor that searches for entities
 // matching a regex pattern within a defined scope and populates annotated slice variables with
-// compatible results via inplace DST manipulation.
+// compatible results via inplace DST manipulation. Supports both package-level and function-body variables.
 
 package shape
 
 import (
 	"fmt"
+	"go/ast"
 	"go/token"
 	"go/types"
 	"regexp"
 	"strings"
 
 	"github.com/dave/dst"
+	"github.com/dave/dst/decorator"
 	"github.com/getoutreach/plumber/internal/astx"
+	"github.com/getoutreach/plumber/internal/astx/inspect"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/query/model"
 )
@@ -30,10 +33,55 @@ type QueryAnnotation struct {
 	Receiver string
 }
 
-// QueryTarget represents a package-level variable annotated with plumber:query.
+// QueryTarget represents a variable annotated with plumber:query, either at
+// package level or inside a function/method body.
 type QueryTarget struct {
-	Var        *model.PackageVar
+	Var        *model.PackageVar // non-nil for package-level vars
+	LocalVar   *LocalQueryVar    // non-nil for function-body vars
 	Annotation QueryAnnotation
+}
+
+// LocalQueryVar represents a query-annotated variable declared inside a function
+// or method body, discovered via DST walking rather than the inspect pipeline.
+type LocalQueryVar struct {
+	Name         string
+	VarType      types.Type
+	CompositeLit *dst.CompositeLit
+	File         *dst.File
+	Filename     string
+	Package      *model.Package
+}
+
+// GetPackage returns the package that contains the target variable.
+func (t *QueryTarget) GetPackage() *model.Package {
+	if t.Var != nil {
+		return t.Var.GetPackage()
+	}
+	return t.LocalVar.Package
+}
+
+// GetName returns the name of the target variable.
+func (t *QueryTarget) GetName() string {
+	if t.Var != nil {
+		return t.Var.Name
+	}
+	return t.LocalVar.Name
+}
+
+// GetVarType returns the go/types.Type of the target variable.
+func (t *QueryTarget) GetVarType() types.Type {
+	if t.Var != nil {
+		return t.Var.VarType
+	}
+	return t.LocalVar.VarType
+}
+
+// GetFilename returns the source filename of the target variable.
+func (t *QueryTarget) GetFilename() string {
+	if t.Var != nil {
+		return t.Var.Position.Filename
+	}
+	return t.LocalVar.Filename
 }
 
 // QueryResult represents a matched entity name and its source package path.
@@ -72,10 +120,12 @@ func parseQueryAnnotation(ann model.Annotation) (*QueryAnnotation, error) {
 	}, nil
 }
 
-// collectQueryTargets finds all package-level variables annotated with plumber:query
-// and returns them as QueryTarget values.
+// collectQueryTargets finds all variables annotated with plumber:query (both package-level
+// and function-body) and returns them as QueryTarget values.
 func collectQueryTargets(pkgs model.Packages) ([]QueryTarget, error) {
 	var targets []QueryTarget
+
+	// Package-level variables discovered by the inspect pipeline.
 	for _, pkg := range pkgs {
 		for _, v := range pkg.Vars {
 			ann := v.Annotations.Find(contract.OptionQuery)
@@ -94,7 +144,131 @@ func collectQueryTargets(pkgs model.Packages) ([]QueryTarget, error) {
 			})
 		}
 	}
+
+	// Function-body variables discovered via DST walking.
+	localTargets, err := collectLocalQueryTargets(pkgs)
+	if err != nil {
+		return nil, err
+	}
+	targets = append(targets, localTargets...)
+
 	return targets, nil
+}
+
+// annotationsFromDecs extracts plumber annotations from DST node decoration
+// strings (comments like "// plumber:query ...").
+func annotationsFromDecs(decs ...dst.Decorations) model.Annotations {
+	var lines []string
+	for _, dec := range decs {
+		for _, s := range dec {
+			s = strings.TrimSpace(s)
+			if strings.HasPrefix(s, "//") {
+				line := strings.TrimPrefix(s, "//")
+				line = strings.TrimSpace(line)
+				lines = append(lines, line)
+			}
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	return inspect.ParseAnnotations(strings.Join(lines, "\n"))
+}
+
+// collectLocalQueryTargets walks all DST files in each package to find
+// plumber:query-annotated variable declarations inside function and method bodies.
+func collectLocalQueryTargets(pkgs model.Packages) ([]QueryTarget, error) {
+	var targets []QueryTarget
+
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Package.Syntax {
+			filename := pkg.Package.Decorator.Filenames[file]
+
+			// Find all DeclStmt nodes (var declarations inside function bodies).
+			nodes := astx.FindNodes(file, func(node dst.Node) (match, recurse bool) {
+				_, ok := node.(*dst.DeclStmt)
+				if ok {
+					return true, true
+				}
+				return false, true
+			})
+
+			for _, node := range nodes {
+				declStmt := node.(*dst.DeclStmt)
+				genDecl, ok := declStmt.Decl.(*dst.GenDecl)
+				if !ok || genDecl.Tok != token.VAR {
+					continue
+				}
+
+				// Collect annotations from decorations on both the DeclStmt and GenDecl.
+				anns := annotationsFromDecs(declStmt.Decs.Start, genDecl.Decs.Start)
+				ann := anns.Find(contract.OptionQuery)
+				if ann == nil {
+					continue
+				}
+
+				qa, err := parseQueryAnnotation(*ann)
+				if err != nil {
+					return nil, fmt.Errorf("local variable at %s: %w", filename, err)
+				}
+
+				// Process each ValueSpec in the GenDecl.
+				for _, spec := range genDecl.Specs {
+					vs, ok := spec.(*dst.ValueSpec)
+					if !ok {
+						continue
+					}
+					for i, nameIdent := range vs.Names {
+						if i >= len(vs.Values) {
+							continue
+						}
+						compLit, ok := vs.Values[i].(*dst.CompositeLit)
+						if !ok {
+							continue
+						}
+
+						// Resolve the variable's type via DST→AST→TypesInfo mapping.
+						varType, err := resolveLocalVarType(pkg.Package, nameIdent)
+						if err != nil {
+							return nil, fmt.Errorf("local variable %q at %s: %w", nameIdent.Name, filename, err)
+						}
+
+						targets = append(targets, QueryTarget{
+							LocalVar: &LocalQueryVar{
+								Name:         nameIdent.Name,
+								VarType:      varType,
+								CompositeLit: compLit,
+								File:         file,
+								Filename:     filename,
+								Package:      pkg,
+							},
+							Annotation: *qa,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return targets, nil
+}
+
+// resolveLocalVarType maps a DST variable identifier to its go/types.Type
+// using the decorator's DST→AST node mapping and the type checker's Defs map.
+func resolveLocalVarType(pkg *decorator.Package, nameIdent *dst.Ident) (types.Type, error) {
+	astNode, ok := pkg.Decorator.Ast.Nodes[nameIdent]
+	if !ok {
+		return nil, fmt.Errorf("could not map DST ident to AST node")
+	}
+	astIdent, ok := astNode.(*ast.Ident)
+	if !ok {
+		return nil, fmt.Errorf("mapped AST node is not an *ast.Ident")
+	}
+	obj, ok := pkg.Package.TypesInfo.Defs[astIdent]
+	if !ok || obj == nil {
+		return nil, fmt.Errorf("type information not available")
+	}
+	return obj.Type(), nil
 }
 
 // resolveScope loads the scope's types.Scope for searching.
@@ -189,7 +363,7 @@ func resolveScope(pkgs model.Packages, scope string, callerPkg *model.Package) (
 // executeQuery finds all entities matching the query pattern within the resolved scope
 // that are type-compatible with the variable's element type.
 func executeQuery(pkgs model.Packages, target QueryTarget) ([]QueryResult, error) {
-	scope, named, err := resolveScope(pkgs, target.Annotation.Scope, target.Var.GetPackage())
+	scope, named, err := resolveScope(pkgs, target.Annotation.Scope, target.GetPackage())
 	if err != nil {
 		return nil, err
 	}
@@ -197,17 +371,17 @@ func executeQuery(pkgs model.Packages, target QueryTarget) ([]QueryResult, error
 	// Type-scoped queries require a receiver to generate valid field/method access.
 	if named != nil {
 		if target.Annotation.Receiver == "" {
-			return nil, fmt.Errorf("type-scoped query for variable %q requires a receiver=<varname> named argument", target.Var.Name)
+			return nil, fmt.Errorf("type-scoped query for variable %q requires a receiver=<varname> named argument", target.GetName())
 		}
-		if err := validateReceiver(target.Var.GetPackage(), target.Annotation.Receiver, named); err != nil {
+		if err := validateReceiver(target.GetPackage(), target.Annotation.Receiver, named); err != nil {
 			return nil, err
 		}
 	}
 
-	varType := target.Var.VarType
+	varType := target.GetVarType()
 	elemType := sliceElementType(varType)
 	if elemType == nil {
-		return nil, fmt.Errorf("variable %q is not a slice type", target.Var.Name)
+		return nil, fmt.Errorf("variable %q is not a slice type", target.GetName())
 	}
 
 	var results []QueryResult
@@ -343,9 +517,47 @@ func validateReceiver(callerPkg *model.Package, receiverName string, named *type
 	return nil
 }
 
+// buildResultExprs builds DST expressions from query results for populating a composite literal.
+func buildResultExprs(target QueryTarget, pkg *model.Package, results []QueryResult) []dst.Expr {
+	elts := make([]dst.Expr, 0, len(results))
+	for _, r := range results {
+		var expr dst.Expr
+		switch {
+		case target.Annotation.Receiver != "":
+			// Type-scoped with receiver: use receiver.FieldOrMethodName
+			expr = &dst.SelectorExpr{
+				X:   &dst.Ident{Name: target.Annotation.Receiver},
+				Sel: &dst.Ident{Name: r.Name},
+			}
+		case r.PkgPath != "" && r.PkgPath != pkg.Path:
+			// External package: use qualified identifier.
+			expr = &dst.Ident{
+				Name: r.Name,
+				Path: r.PkgPath,
+			}
+		default:
+			// Same package: use unqualified identifier.
+			expr = &dst.Ident{
+				Name: r.Name,
+			}
+		}
+		elts = append(elts, expr)
+	}
+	return elts
+}
+
 // inflateVariable modifies the DST of the source file to populate the variable's
 // composite literal with the query results.
 func inflateVariable(pkg *model.Package, target QueryTarget, results []QueryResult) (*dst.File, error) {
+	elts := buildResultExprs(target, pkg, results)
+
+	// For local variables, we already have the composite literal captured during discovery.
+	if target.LocalVar != nil {
+		target.LocalVar.CompositeLit.Elts = elts
+		return target.LocalVar.File, nil
+	}
+
+	// Package-level variables: find the declaration in the top-level DST.
 	file := pkg.File(target.Var.Position.Filename)
 	if file == nil {
 		return nil, fmt.Errorf("file %q not found in package %q", target.Var.Position.Filename, pkg.Path)
@@ -376,32 +588,6 @@ func inflateVariable(pkg *model.Package, target QueryTarget, results []QueryResu
 					return nil, fmt.Errorf("variable %q value is not a composite literal", varName)
 				}
 
-				// Build the element expressions from query results.
-				elts := make([]dst.Expr, 0, len(results))
-				for _, r := range results {
-					var expr dst.Expr
-					switch {
-					case target.Annotation.Receiver != "":
-						// Type-scoped with receiver: use receiver.FieldOrMethodName
-						expr = &dst.SelectorExpr{
-							X:   &dst.Ident{Name: target.Annotation.Receiver},
-							Sel: &dst.Ident{Name: r.Name},
-						}
-					case r.PkgPath != "" && r.PkgPath != pkg.Path:
-						// External package: use qualified identifier.
-						expr = &dst.Ident{
-							Name: r.Name,
-							Path: r.PkgPath,
-						}
-					default:
-						// Same package: use unqualified identifier.
-						expr = &dst.Ident{
-							Name: r.Name,
-						}
-					}
-					elts = append(elts, expr)
-				}
-
 				compLit.Elts = elts
 				return file, nil
 			}
@@ -427,11 +613,11 @@ func processQueries(pkgs model.Packages) ([]*QueryOutput, error) {
 
 	for _, target := range targets {
 		fmt.Printf("Processing query for variable %q (pattern=%s, scope=%s)\n",
-			target.Var.Name, target.Annotation.Pattern, target.Annotation.Scope)
+			target.GetName(), target.Annotation.Pattern, target.Annotation.Scope)
 
 		results, err := executeQuery(pkgs, target)
 		if err != nil {
-			return nil, fmt.Errorf("query for variable %q failed: %w", target.Var.Name, err)
+			return nil, fmt.Errorf("query for variable %q failed: %w", target.GetName(), err)
 		}
 
 		fmt.Printf("  Found %d matching entities\n", len(results))
@@ -439,14 +625,14 @@ func processQueries(pkgs model.Packages) ([]*QueryOutput, error) {
 			fmt.Printf("    - %s (pkg: %s)\n", r.Name, r.PkgPath)
 		}
 
-		pkg := target.Var.GetPackage()
+		pkg := target.GetPackage()
 		file, err := inflateVariable(pkg, target, results)
 		if err != nil {
-			return nil, fmt.Errorf("failed to inflate variable %q: %w", target.Var.Name, err)
+			return nil, fmt.Errorf("failed to inflate variable %q: %w", target.GetName(), err)
 		}
 
 		outputs = append(outputs, &QueryOutput{
-			Filename: target.Var.Position.Filename,
+			Filename: target.GetFilename(),
 			File:     file,
 			Package:  pkg,
 		})

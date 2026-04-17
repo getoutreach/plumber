@@ -464,3 +464,76 @@ pipeline.
 | Expansion stage | Before `Walk` (early) | Inside `buildTransformers` (late) |
 | Can inject entry-point annotations | Yes | No |
 | Config key | `macros` | `mixins` |
+
+---
+
+## Queries
+
+The `plumber:query` annotation populates a slice variable with entities (functions, types,
+variables) matching a regex pattern within a given scope. Queries run after template
+rendering and modify the source file in-place via DST manipulation.
+
+### Annotation syntax
+
+```
+plumber:query "<regex>" scope="<scope>" [receiver="<var>"]
+```
+
+- **`<regex>`** — Go regular expression matched against entity names.
+- **`scope`** (required) — Where to search. Supported forms:
+  - `"."` — current package
+  - `".TypeName"` — fields/methods of a type in the current package
+  - `"./relpath"` — relative package path
+  - `"github.com/pkg"` — external package
+  - `"github.com/pkg.TypeName"` — type in an external package
+- **`receiver`** (optional, required for type-scoped) — variable name to qualify field/method access.
+
+### Package-level variables
+
+```go
+// plumber:query "^Init.*" scope="."
+var InitFunctions = []func(){}
+```
+
+After processing, `InitFunctions` is populated with all exported `func()` entities whose
+name matches `^Init.*` in the current package.
+
+### Function-body variables
+
+Queries also work on variables declared inside function and method bodies:
+
+```go
+func Setup() {
+    // plumber:query "^Init.*" scope="."
+    var initFuncs = []func(){}
+    for _, f := range initFuncs {
+        f()
+    }
+}
+```
+
+The comment annotation is placed directly above the `var` declaration inside the function
+body. Only explicit `var` declarations with a composite literal value are supported
+(short `:=` declarations are not).
+
+### Type-scoped queries
+
+```go
+var r Registry
+
+// plumber:query "^Get.*" scope=".Registry" receiver="r"
+var Getters = []func() string{}
+```
+
+This populates `Getters` with `r.GetAlpha`, `r.GetBeta`, etc. — all fields/methods of
+`Registry` matching `^Get.*` with a compatible `func() string` signature.
+
+### Cross-package queries
+
+```go
+// plumber:query "^Init.*" scope="./providers"
+var InitFunctions = []func(){}
+```
+
+Results from external packages use qualified identifiers (`providers.InitAlpha`) and the
+import is automatically managed by the DST restorer.
