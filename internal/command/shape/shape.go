@@ -254,7 +254,6 @@ func restoreOutputs(output []*ManagerOutput) error {
 
 // restoreOutput takes a ManagerOutput, the corresponding dst.File content, and the decorator.Package,
 func restoreOutput(output *ManagerOutput, content *dst.File, pkg *decorator.Package) error {
-	fmt.Println("Restoring", output.Output.Filename)
 	var buf bytes.Buffer
 	r := decorator.NewRestorerWithImports(pkg.PkgPath, gopackages.WithHints("./", map[string]string{"time": "time"}))
 

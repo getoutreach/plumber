@@ -333,7 +333,7 @@ func (a *Augmenter) addFieldsToStruct(
 func (a *Augmenter) determineFieldTypeExpr(provider *contract.Provider) dst.Expr {
 	// Default to plumber.D wrapper
 	wrapperSel := &dst.SelectorExpr{
-		X:   &dst.Ident{Name: "plumber"},
+		X:   &dst.Ident{Name: "github.com/getoutreach/plumber"},
 		Sel: &dst.Ident{Name: "D"}, // Default to D (dependency)
 	}
 
@@ -425,6 +425,7 @@ func (a *Augmenter) collectPackagesFromType(typ types.Type, packages map[string]
 }
 
 func (a *Augmenter) ensureDependencyRequired(dec *decorator.Decorator, file *dst.File, containerName string) bool {
+	fmt.Println("!!!!!", "Ensuring dependencies are required in Define method for container", containerName)
 	defineFuncDeclaration := astx.FuncDeclaration(file, "Define")
 
 	resolvers := astx.FindNodes(defineFuncDeclaration, func(node dst.Node) (match, recurse bool) {

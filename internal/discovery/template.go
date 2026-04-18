@@ -58,7 +58,7 @@ func (r *TemplateRenderer) RenderContainer(
 	ctx := r.buildContextMap(containerName, app, sourceModule)
 
 	// Parse and execute template
-	tmpl, err := template.New("container").Funcs(template.FuncMap{
+	tmpl, err := template.New("plumber").Funcs(template.FuncMap{
 		"print": fmt.Sprintf,
 	}).Parse(r.templateStr)
 	if err != nil {
@@ -66,7 +66,7 @@ func (r *TemplateRenderer) RenderContainer(
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, ctx); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, "plumber/command/discovery/container", ctx); err != nil {
 		return fmt.Errorf("failed to execute template: %w", err)
 	}
 

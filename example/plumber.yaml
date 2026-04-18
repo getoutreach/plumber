@@ -33,7 +33,8 @@ applications:
                 - New(?P<name>.*)
 templates:
   container: |
-    // Copyright 2025 Outreach Corporation. All Rights Reserved.
+    {{ define "plumber/command/discovery/container" }}
+    // Copyright 2026 Outreach Corporation. All Rights Reserved.
     // Description: {{ .container.name }} related dependencies {{ .package_name}}
     package {{ .package_name}}
 
@@ -47,3 +48,4 @@ templates:
     // Define dependency resolvers
     func (c *{{ .container.name }}) Define(ctx context.Context, cf {{ .config.type }}, a *Container) {
     }
+    {{ end }}
