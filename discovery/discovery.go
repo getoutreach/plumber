@@ -38,16 +38,21 @@ func (*FailingUndeclaredDependency) Error() error {
 	return fmt.Errorf("undeclared dependency")
 }
 
+// Unresolved indicates a dependency that has not been resolved yet. It panics when accessed.
 func Unresolved[T any]() T {
 	var zero T
 	panic("unresolved dependency of type " + fmt.Sprintf("%T", zero))
 }
 
+// Undefined is used to represent a dependency that was unresolved and it a scalar value like a string or int.
+// It panics when accessed.
 func Undefined[T any]() T {
 	var zero T
 	panic("undefined dependency of type " + fmt.Sprintf("%T", zero))
 }
 
+// OneOf is used to represent a dependency that was resolved to multiple candidates
+// and user needs to select one. It panics when accessed.
 func OneOf[T any](...T) T {
 	var zero T
 	panic("unselected one of dependency of type " + fmt.Sprintf("%T", zero))
