@@ -7,8 +7,8 @@ package shape
 import (
 	"fmt"
 
+	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/genius/gen"
-	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 )
 

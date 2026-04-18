@@ -1,6 +1,6 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements the Derive renderer which generates blended/filtered struct variants from annotated source types.
+// Description: This file implements the Shape renderer which generates forwarding/wrapper struct definitions from annotated source types.
 
 package render
 
@@ -8,15 +8,12 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/genius/gen"
-	"github.com/getoutreach/plumber/internal/render/view"
 	"github.com/getoutreach/plumber/query/model"
 )
 
-// PlaceholderName is the name used in templates to reference the context for rendering.
-const PlaceholderName = "plumber"
-
-func Derive(context *Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error) {
+func Shape(context *Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error) {
 	writer := gen.NewWriter(gen.WithFileOpener(opener), func(wc *gen.WriterConfig) {
 		wc.Overwrite = true
 		wc.WriterOptions = append(wc.WriterOptions, func(s *gen.BlockWriterSettings) {
@@ -40,11 +37,12 @@ func Derive(context *Context, tp *model.Type, scope map[string]any, output strin
 				},
 			}
 			return ctx.Write(wr, output, func(ctx *gen.Context, w io.Writer) error {
-				return gen.RenderContent(ctx, "plumber/command/derive", w, c,
+				return gen.RenderContent(ctx, "plumber/command/shape", w, c,
 					fm,
 					gen.WithFS(EmbededTemplates,
 						"templates/command/command.gtpl",
-						"templates/command/command_derive.gtpl",
+						"templates/command/command_shape.gtpl",
+						"templates/command/command_shape_interface.gtpl",
 					),
 					gen.WithRenderOptions(context.RenderOptions...),
 				)

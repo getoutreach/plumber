@@ -12,8 +12,8 @@ import (
 
 	"github.com/dave/dst"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/genius/gen"
-	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/genius/gen"
-	"github.com/getoutreach/plumber/internal/render/view"
 	"github.com/getoutreach/plumber/query/model"
 )
 

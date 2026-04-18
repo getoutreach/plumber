@@ -9,8 +9,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/genius/gen"
-	"github.com/getoutreach/plumber/internal/render/view"
 )
 
 func Finalize(

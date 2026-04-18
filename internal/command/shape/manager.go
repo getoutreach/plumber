@@ -11,10 +11,10 @@ import (
 	"github.com/dave/dst/decorator"
 	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/command/shape/render"
+	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/command/shape/source"
 	"github.com/getoutreach/plumber/internal/genius/gen"
-	"github.com/getoutreach/plumber/internal/render"
-	"github.com/getoutreach/plumber/internal/render/view"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
