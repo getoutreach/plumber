@@ -6,12 +6,13 @@
 package discovery
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"text/template"
+
+	"github.com/getoutreach/plumber/internal/command/discovery/render"
+	"github.com/getoutreach/plumber/internal/genius/gen"
 )
 
 // TemplateContext contains the data passed to container templates
@@ -54,21 +55,10 @@ func (r *TemplateRenderer) RenderContainer(
 	app *Application,
 	sourceModule string,
 ) error {
-	// Build template context as a map for easy template access
-	ctx := r.buildContextMap(containerName, app, sourceModule)
-
-	// Parse and execute template
-	tmpl, err := template.New("plumber").Funcs(template.FuncMap{
-		"print": fmt.Sprintf,
-	}).Parse(r.templateStr)
-	if err != nil {
-		return fmt.Errorf("failed to parse template: %w", err)
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "plumber/command/discovery/container", ctx); err != nil {
-		return fmt.Errorf("failed to execute template: %w", err)
-	}
+	var (
+		// Build template context as a map for easy template access
+		ctx = r.buildContextMap(containerName, app, sourceModule)
+	)
 
 	// Ensure directory exists
 	dir := filepath.Dir(containerPath)
@@ -76,8 +66,8 @@ func (r *TemplateRenderer) RenderContainer(
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// Write rendered content
-	if err := os.WriteFile(containerPath, buf.Bytes(), 0o600); err != nil {
+	// Rendered content
+	if err := render.Render(containerPath, ctx, gen.NewSystemFileOpener(), gen.WithTemplateContent(r.templateStr)); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 

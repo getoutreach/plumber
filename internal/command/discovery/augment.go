@@ -59,8 +59,8 @@ func (a *Augmenter) AugmentContainerStruct(
 	}
 
 	var (
-		result         = &AugmentResult{}
-		neededPackages map[string]bool
+		result = &AugmentResult{}
+		//neededPackages map[string]bool
 	)
 
 	// Identify missing providers by checking existing struct fields
@@ -70,18 +70,7 @@ func (a *Augmenter) AugmentContainerStruct(
 		importAliases := a.buildImportAliasMap(file)
 
 		// Add missing fields to the struct
-		result, neededPackages = a.addFieldsToStruct(file, containerName, structDecl, missingProviders, importAliases, providerMap)
-
-		// Add plumber import if not present
-		astx.EnsureImport(pkg, file, "github.com/getoutreach/plumber")
-
-		// Add context import for Define method
-		astx.EnsureImport(pkg, file, "context")
-
-		// Add imports for all packages used in the field types
-		for pkgPath := range neededPackages {
-			astx.EnsureImport(pkg, file, pkgPath)
-		}
+		result, _ = a.addFieldsToStruct(file, containerName, structDecl, missingProviders, importAliases, providerMap)
 	}
 
 	changed := a.ensureDependencyRequired(dec, file, containerName)
@@ -332,10 +321,7 @@ func (a *Augmenter) addFieldsToStruct(
 // Returns a dst.Expr representing plumber.D[T] (or plumber.R[T] for runners)
 func (a *Augmenter) determineFieldTypeExpr(provider *contract.Provider) dst.Expr {
 	// Default to plumber.D wrapper
-	wrapperSel := &dst.SelectorExpr{
-		X:   &dst.Ident{Name: "github.com/getoutreach/plumber"},
-		Sel: &dst.Ident{Name: "D"}, // Default to D (dependency)
-	}
+	wrapperSel := &dst.Ident{Name: "D", Path: "github.com/getoutreach/plumber"}
 
 	// Determine the inner type from the provider's type
 	var innerType dst.Expr

@@ -171,6 +171,7 @@ type RenderOptions struct {
 	TemplateFuncs   []func(*template.Template) *template.Template
 	TemplateBundles []templateBundle
 	Templates       []*template.Template
+	TemplateContent []string
 }
 
 func (op *RenderOptions) Apply(t *template.Template) (*template.Template, error) {
@@ -191,6 +192,12 @@ func (op *RenderOptions) Apply(t *template.Template) (*template.Template, error)
 		t, err = t.AddParseTree(i.Name(), i.Tree)
 		if err != nil {
 			return nil, errors.Wrap(err, "renderoption: addparsetree")
+		}
+	}
+	for _, c := range op.TemplateContent {
+		t, err = t.Parse(c)
+		if err != nil {
+			return nil, errors.Wrap(err, "renderoption: parse content")
 		}
 	}
 
@@ -218,6 +225,15 @@ func WithTemplate(t *template.Template) RenderOptionsFunc {
 	return RenderOptionsFunc(func(ro *RenderOptions) error {
 		if t != nil {
 			ro.Templates = append(ro.Templates, t)
+		}
+		return nil
+	})
+}
+
+func WithTemplateContent(content string) RenderOptionsFunc {
+	return RenderOptionsFunc(func(ro *RenderOptions) error {
+		if content != "" {
+			ro.TemplateContent = append(ro.TemplateContent, content)
 		}
 		return nil
 	})

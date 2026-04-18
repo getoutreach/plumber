@@ -23,6 +23,12 @@ import (
 
 // Run executes the discovery command
 func Run(c *cli.Context) error {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", r)
+			os.Exit(1)
+		}
+	}()
 	ctx := c.Context
 	configPath := c.String("config")
 
@@ -390,11 +396,6 @@ func renderContainerFromTemplate(
 	sourceModule string,
 	cfg *discovery.Config,
 ) error {
-	// Check if template is available
-	if cfg.Templates.Container == "" {
-		return fmt.Errorf("no container template defined in configuration")
-	}
-
 	// Create template renderer
 	renderer := discovery.NewTemplateRenderer(cfg.Templates.Container)
 
