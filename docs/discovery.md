@@ -53,17 +53,18 @@ applications:
       # Container with loop — generates one container per matched directory
       - plumber.container:
           comment: "Adapter modules"
-          name: "{{ .module | capitalize }}"
+          name: "{{ .module }}"
           container:
-            path: ./application_{{ .module }}.go
+            path: ./application_{{ .module_slug }}.go
           source:
-            path: ./adapter/{{ .module }}/
+            path: ./adapter/{{ .module_path }}/
           matchers:
             - constructors:
                 - New(?P<name>.*)
                 - Factory(?P<name>.*)
         loop:
-          path: adapter/(?P<module>\w+)
+          # [\w/]+ captures nested subdirectories (e.g., outbound/redis)
+          path: adapter/(?P<module>[\w/]+)
 
       # Static container — no loop, scans a single directory
       - plumber.container:
@@ -305,6 +306,24 @@ The `loop` directive generates multiple containers from a directory structure. I
 a regex with named capture groups to extract variables from directory paths, then
 hydrates the container config template for each match.
 
+Directories that contain no `.go` files are automatically skipped — intermediate
+directories (e.g., `adapter/outbound/` when only `adapter/outbound/redis/` has Go files)
+do not produce empty containers.
+
+### Derived variables
+
+For each captured regex variable `X` with raw value `v`, three template variables are
+automatically derived:
+
+| Variable | Derivation | Example (`v = outbound/redis`) |
+|---|---|---|
+| `{{ .X }}` | PascalCase — split on `/`, capitalize each segment, join | `OutboundRedis` |
+| `{{ .X_slug }}` | Slug — replace `/` with `_` | `outbound_redis` |
+| `{{ .X_path }}` | Raw captured value | `outbound/redis` |
+
+For simple (non-nested) values like `async`, all three produce consistent results:
+`Async`, `async`, `async`.
+
 ### Example
 
 Given this directory layout:
@@ -315,32 +334,36 @@ adapter/
   database/
   graphql/
   grpc/
+  outbound/          ← no .go files here, only subdirectories
+    redis/           ← has .go files
 ```
 
 And this config:
 
 ```yaml
 - plumber.container:
-    name: "{{ .module | capitalize }}"
+    name: "{{ .module }}"
     container:
-      path: ./application_{{ .module }}.go
+      path: ./application_{{ .module_slug }}.go
     source:
-      path: ./adapter/{{ .module }}/
+      path: ./adapter/{{ .module_path }}/
     matchers:
       - constructors:
           - New(?P<name>.*)
   loop:
-    path: adapter/(?P<module>\w+)
+    path: adapter/(?P<module>[\w/]+)
 ```
 
-Discovery expands this into four containers:
+Discovery expands this into five containers (skipping `adapter/outbound/` which has no
+Go files):
 
-| Variable `module` | Container name | Output file | Source path |
-|---|---|---|---|
-| `async` | `Async` | `./application_async.go` | `./adapter/async/` |
-| `database` | `Database` | `./application_database.go` | `./adapter/database/` |
-| `graphql` | `Graphql` | `./application_graphql.go` | `./adapter/graphql/` |
-| `grpc` | `Grpc` | `./application_grpc.go` | `./adapter/grpc/` |
+| `module` | `module_slug` | `module_path` | Container name | Output file |
+|---|---|---|---|---|
+| `Async` | `async` | `async` | `Async` | `./application_async.go` |
+| `Database` | `database` | `database` | `Database` | `./application_database.go` |
+| `Graphql` | `graphql` | `graphql` | `Graphql` | `./application_graphql.go` |
+| `Grpc` | `grpc` | `grpc` | `Grpc` | `./application_grpc.go` |
+| `OutboundRedis` | `outbound_redis` | `outbound/redis` | `OutboundRedis` | `./application_outbound_redis.go` |
 
 Each expanded container is processed independently — providers are discovered from its
 source path and the container file is augmented accordingly.
@@ -355,8 +378,14 @@ variables and helpers.
 
 ### Variables in container config (from loop)
 
-Variables are extracted from the `loop.path` regex named capture groups. In the example
-above, `(?P<module>\w+)` produces a `module` variable.
+For each named capture group in the `loop.path` regex, three variables are derived
+automatically (see [Derived variables](#derived-variables) above):
+
+| Suffix | Description |
+|---|---|
+| `{{ .X }}` | PascalCase — suitable for Go identifiers (struct names) |
+| `{{ .X_slug }}` | Underscore-separated — suitable for filenames |
+| `{{ .X_path }}` | Raw captured value — suitable for filesystem paths |
 
 ### Variables in `templates.container`
 
@@ -373,10 +402,15 @@ above, `(?P<module>\w+)` produces a `module` variable.
 
 | Helper | Description | Example |
 |---|---|---|
-| `capitalize` | Uppercase first letter | `{{ .module \| capitalize }}` → `Async` |
-| `upper` | All uppercase | `{{ .module \| upper }}` → `ASYNC` |
-| `lower` | All lowercase | `{{ .module \| lower }}` → `async` |
-| `title` | Title case | `{{ .module \| title }}` → `Async` |
+| `capitalize` | PascalCase from path segments | `{{ .v \| capitalize }}` — `outbound/redis` → `OutboundRedis` |
+| `slug` | Replace `/` with `_` | `{{ .v \| slug }}` — `outbound/redis` → `outbound_redis` |
+| `upper` | All uppercase | `{{ .v \| upper }}` → `ASYNC` |
+| `lower` | All lowercase | `{{ .v \| lower }}` → `async` |
+| `title` | Title case | `{{ .v \| title }}` → `Async` |
+
+Note: since loop variables are pre-derived (`{{ .module }}` is already PascalCase),
+the `capitalize` and `slug` functions are mainly useful when applying transformations
+directly to raw values or to `{{ .X_path }}` variables.
 
 ---
 
@@ -389,7 +423,8 @@ plumber.yaml
 Parse config
     │
     ▼
-Expand loops (scan directories, hydrate templates)
+Expand loops (scan directories, filter out dirs without .go files,
+              derive variables, hydrate templates)
     │
     ▼
 For each container:

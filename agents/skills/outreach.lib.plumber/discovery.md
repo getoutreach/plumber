@@ -35,17 +35,18 @@ applications:
     config: '*"github.com/getoutreach/plumber/example".Config'
     containers:
       - plumber.container:
-          name: "{{ .module | capitalize }}"
+          name: "{{ .module }}"
           container:
-            path: ./application_{{ .module }}.go
+            path: ./application_{{ .module_slug }}.go
           source:
-            path: ./adapter/{{ .module }}/
+            path: ./adapter/{{ .module_path }}/
           matchers:
             - constructors:
                 - New(?P<name>.*)
                 - Factory(?P<name>.*)
         loop:
-          path: adapter/(?P<module>\w+)
+          # [\w/]+ captures nested subdirectories (e.g., outbound/redis)
+          path: adapter/(?P<module>[\w/]+)
 
       - plumber.container:
           name: "Scenario"
@@ -80,17 +81,24 @@ templates:
 
 ### Loop expansion
 
-The `loop` directive generates multiple containers from a directory structure:
+The `loop` directive generates multiple containers from a directory structure. Directories
+without `.go` files are automatically skipped (no empty containers).
 
 ```yaml
 loop:
-  path: adapter/(?P<module>\w+)
+  path: adapter/(?P<module>[\w/]+)
 ```
 
-Given `adapter/async/`, `adapter/database/`, `adapter/grpc/`, this expands the container
-config three times with `module` set to `async`, `database`, `grpc` respectively.
+For each captured variable `X`, three template variables are derived:
 
-Template helpers: `capitalize`, `upper`, `lower`, `title`.
+| Variable | Derivation | `outbound/redis` | `async` |
+|---|---|---|---|
+| `{{ .X }}` | PascalCase | `OutboundRedis` | `Async` |
+| `{{ .X_slug }}` | Replace `/` with `_` | `outbound_redis` | `async` |
+| `{{ .X_path }}` | Raw value | `outbound/redis` | `async` |
+
+Template helpers: `capitalize` (PascalCase from path), `slug` (replace `/` with `_`),
+`upper`, `lower`, `title`.
 
 ## Provider discovery
 
@@ -191,3 +199,5 @@ These compile but panic at runtime, making issues visible during `ContainerResol
 - **Resolve `OneOf` and `Undefined` sentinels manually** after generation — they are placeholders that panic at runtime.
 - **Update matchers in `plumber.yaml`** to control which constructors are discovered.
 - **Imports are managed automatically** — discovery adds all necessary imports for generated code.
+- **Use `[\w/]+` in loop regex** to capture nested subdirectories (e.g., `adapter/outbound/redis`).
+- **Use `{{ .module }}` for Go identifiers** (PascalCase), `{{ .module_slug }}` for filenames, `{{ .module_path }}` for filesystem paths in source/container path templates.

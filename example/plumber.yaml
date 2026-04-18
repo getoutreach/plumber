@@ -7,11 +7,11 @@ applications:
     containers:
       - plumber.container:
           comment: "Adapter modules"
-          name: "{{ .module | capitalize }}"
+          name: "{{ .module }}"
           container:
-            path: ./application_{{ .module }}.go
+            path: ./application_{{ .module_slug }}.go
           source:
-            path: ./adapter/{{ .module }}/
+            path: ./adapter/{{ .module_path }}/
           # matchers define constructor patterns to discover
           matchers:
             - constructors:
@@ -20,8 +20,8 @@ applications:
                 - Factory(?P<name>.*)
         # loop allows to define multiple containers using
         loop:
-          # path allows scanning a folder structure and declares a variables using named re named group expression
-          path: adapter/(?P<module>\w+)
+          # path scans a folder structure; [\w/]+ captures nested subdirectories
+          path: adapter/(?P<module>[\w/]+)
       - plumber.container:
           name: "Scenario"
           container:
