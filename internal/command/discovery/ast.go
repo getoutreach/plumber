@@ -15,7 +15,7 @@ import (
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
 	"github.com/getoutreach/plumber/internal/astx"
-	"github.com/getoutreach/plumber/internal/discovery/contract"
+	"github.com/getoutreach/plumber/internal/command/discovery/contract"
 )
 
 // ASTParser parses Go source files and extracts type information

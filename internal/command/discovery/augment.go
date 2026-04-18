@@ -18,8 +18,8 @@ import (
 	"github.com/dave/dst/decorator/resolver/gopackages"
 	"github.com/dave/dst/dstutil"
 	"github.com/getoutreach/plumber/internal/astx"
-	"github.com/getoutreach/plumber/internal/discovery/contract"
-	"github.com/getoutreach/plumber/internal/discovery/templates"
+	"github.com/getoutreach/plumber/internal/command/discovery/contract"
+	"github.com/getoutreach/plumber/internal/command/discovery/templates"
 	"github.com/samber/lo"
 )
 
@@ -425,7 +425,6 @@ func (a *Augmenter) collectPackagesFromType(typ types.Type, packages map[string]
 }
 
 func (a *Augmenter) ensureDependencyRequired(dec *decorator.Decorator, file *dst.File, containerName string) bool {
-	fmt.Println("!!!!!", "Ensuring dependencies are required in Define method for container", containerName)
 	defineFuncDeclaration := astx.FuncDeclaration(file, "Define")
 
 	resolvers := astx.FindNodes(defineFuncDeclaration, func(node dst.Node) (match, recurse bool) {

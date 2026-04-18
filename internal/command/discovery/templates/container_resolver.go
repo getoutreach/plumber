@@ -14,7 +14,7 @@ import (
 	"github.com/dave/dst/decorator"
 	"github.com/dave/dst/dstutil"
 	"github.com/getoutreach/plumber/internal/astx"
-	"github.com/getoutreach/plumber/internal/discovery/contract"
+	"github.com/getoutreach/plumber/internal/command/discovery/contract"
 )
 
 // fixtureFS is an embedded filesystem containing the template for the container resolver code.

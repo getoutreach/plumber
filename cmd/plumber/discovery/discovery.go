@@ -16,8 +16,8 @@ import (
 	"strings"
 
 	"github.com/getoutreach/plumber/internal/command"
-	"github.com/getoutreach/plumber/internal/discovery"
-	"github.com/getoutreach/plumber/internal/discovery/contract"
+	"github.com/getoutreach/plumber/internal/command/discovery"
+	"github.com/getoutreach/plumber/internal/command/discovery/contract"
 	"github.com/urfave/cli/v2"
 )
 

@@ -8,7 +8,7 @@ package discovery_test
 import (
 	"testing"
 
-	"github.com/getoutreach/plumber/internal/discovery"
+	"github.com/getoutreach/plumber/internal/command/discovery"
 	"gotest.tools/v3/assert"
 )
 

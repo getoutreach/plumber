@@ -8,7 +8,7 @@ package discovery
 
 import (
 	"github.com/dave/dst"
-	"github.com/getoutreach/plumber/internal/discovery/contract"
+	"github.com/getoutreach/plumber/internal/command/discovery/contract"
 	"github.com/samber/lo"
 )
 
