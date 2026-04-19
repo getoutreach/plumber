@@ -212,6 +212,58 @@ from the embedded `plumber/command/discovery/application` template. This creates
 dependency container with `NewApplication()` and `Container` struct scaffolding. Template
 overrides from `plumber.discovery.templates.application` (and `global`) are applied.
 
+### Application augmentation
+
+After all sub-containers have been discovered and augmented, discovery ensures the root
+application `Container` struct references all sub-containers. For each container that is
+not already declared as a field, discovery:
+
+1. Adds a `*ContainerType` pointer field to the `Container` struct.
+2. Adds a `ContainerName: new(ContainerType)` key-value entry to the composite literal
+   in `NewApplication`.
+3. Adds `a.ContainerName` to the variadic arguments of `plumber.DefineContainers(...)`.
+
+**Before** (only `Async` declared manually):
+
+```go
+type Container struct {
+    plumber.Container
+    Async *Async
+}
+
+func NewApplication(ctx context.Context, cf *Config, definers ...Definer) *Container {
+    a := &Container{
+        Async: new(Async),
+    }
+    return plumber.DefineContainers(ctx, cf, definers, a,
+        a.Async,
+    )
+}
+```
+
+**After** (discovery adds `Database`):
+
+```go
+type Container struct {
+    plumber.Container
+    Async    *Async
+    Database *Database
+}
+
+func NewApplication(ctx context.Context, cf *Config, definers ...Definer) *Container {
+    a := &Container{
+        Async:    new(Async),
+        Database: new(Database),
+    }
+    return plumber.DefineContainers(ctx, cf, definers, a,
+        a.Async,
+        a.Database,
+    )
+}
+```
+
+This keeps the application file in sync with the discovered containers automatically.
+
 ---
 
 ## Automatic dependency wiring

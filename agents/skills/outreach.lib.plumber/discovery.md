@@ -171,6 +171,17 @@ the embedded application template (`plumber/command/discovery/application`). Thi
 the root `Container` struct and `NewApplication()` function. Templates from
 `plumber.discovery.templates.application` and `global` are applied.
 
+### Application augmentation
+
+After sub-container augmentation, discovery ensures the root application `Container`
+struct declares all sub-containers. For each missing container it:
+
+1. Adds a `*ContainerType` field to the `Container` struct.
+2. Adds `ContainerName: new(ContainerType)` to the `NewApplication` composite literal.
+3. Adds `a.ContainerName` to `plumber.DefineContainers(...)` variadic args.
+
+This keeps the application file in sync with discovered containers automatically.
+
 ## Automatic dependency wiring
 
 Discovery builds a global provider map indexing every discovered provider by its Go type.
@@ -227,5 +238,6 @@ These compile but panic at runtime, making issues visible during `ContainerResol
 - **Resolve `OneOf` and `Undefined` sentinels manually** after generation — they are placeholders that panic at runtime.
 - **Update matchers in `plumber.yaml`** to control which constructors are discovered.
 - **Imports are managed automatically** — discovery adds all necessary imports for generated code.
+- **Application file is auto-synced** — discovery adds missing sub-container fields, `new()` inits, and `DefineContainers` args automatically.
 - **Use `[\w/]+` in loop regex** to capture nested subdirectories (e.g., `adapter/outbound/redis`).
 - **Use `{{ .module }}` for Go identifiers** (PascalCase), `{{ .module_slug }}` for filenames, `{{ .module_path }}` for filesystem paths in source/container path templates.

@@ -207,6 +207,17 @@ func processApplication(
 		}
 	}
 
+	// Phase 3: Augment application file with sub-container declarations
+	if app.Application != nil && app.Application.Path != "" {
+		appPath := app.Application.Path
+		if !filepath.IsAbs(appPath) {
+			appPath = filepath.Join(baseDir, appPath)
+		}
+		if err := augmentApplicationFile(appPath, containers); err != nil {
+			return fmt.Errorf("failed to augment application file: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -372,6 +383,60 @@ func augmentContainer(discovered *discoveredProviders) error {
 
 	// Run goimports to fix imports
 	if err := runGoimports(info.containerPath); err != nil {
+		fmt.Printf("    ⚠ Warning: Failed to run goimports: %v\n", err)
+	}
+
+	return nil
+}
+
+// augmentApplicationFile augments the root application file to ensure all
+// sub-containers are declared as struct fields, initialized with new(), and
+// passed to DefineContainers.
+func augmentApplicationFile(appPath string, containers []*containerInfo) error {
+	fmt.Printf("\n  Phase 3: Augmenting application file...\n")
+
+	// Collect unique container names
+	var containerNames []string
+	for _, info := range containers {
+		containerNames = append(containerNames, info.config.Name)
+	}
+
+	if len(containerNames) == 0 {
+		fmt.Printf("    No containers to register in application\n")
+		return nil
+	}
+
+	// Parse the application file
+	astParser, err := discovery.NewASTParser(appPath)
+	if err != nil {
+		return fmt.Errorf("failed to create AST parser for application: %w", err)
+	}
+
+	file, pkg, dec := astParser.GetFileAndDecorator(appPath)
+	if file == nil {
+		return fmt.Errorf("failed to get AST for application file")
+	}
+
+	augmenter := discovery.NewAugmenter()
+	result, err := augmenter.AugmentApplicationStruct(
+		pkg, appPath, containerNames, file, dec,
+	)
+	if err != nil {
+		fmt.Printf("    ⚠ Warning: Failed to augment application: %v\n", err)
+		return nil
+	}
+
+	if len(result.Added) > 0 {
+		fmt.Printf("    Added containers: %s\n",
+			strings.Join(result.Added, ", "))
+	}
+	if len(result.Skipped) > 0 {
+		fmt.Printf("    Skipped existing: %s\n",
+			strings.Join(result.Skipped, ", "))
+	}
+
+	// Run goimports to fix imports
+	if err := runGoimports(appPath); err != nil {
 		fmt.Printf("    ⚠ Warning: Failed to run goimports: %v\n", err)
 	}
 
