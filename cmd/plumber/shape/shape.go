@@ -9,9 +9,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/getoutreach/plumber/internal/command"
+	"github.com/getoutreach/plumber/internal/command/config"
 	"github.com/getoutreach/plumber/internal/command/shape"
-	"github.com/samber/lo"
 	"github.com/urfave/cli/v2"
 )
 
@@ -30,25 +29,11 @@ func Run(c *cli.Context) error {
 			return fmt.Errorf("failed to resolve config path: %w", err)
 		}
 
-		// Use config file's directory as base directory
-		// baseDir := filepath.Dir(absConfigPath)
-
-		// Parse the configuration
-		cfg, err := command.ParseConfig[shape.FileConfig](absConfigPath)
+		// Parse and merge configuration (includes resolved automatically)
+		cfg, err := config.Load(absConfigPath)
 		if err != nil {
 			return fmt.Errorf("failed to parse config: %w", err)
 		}
-
-		includes, err := command.ParseConfigs[shape.FileConfig](
-			lo.Map(
-				cfg.Includes,
-				func(include shape.IncludeConfig, _ int) string { return include.Path },
-			)...,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to parse included configs: %w", err)
-		}
-		cfg.Merge(includes...)
 
 		shapeConfig = cfg.Shape
 	}

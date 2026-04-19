@@ -37,77 +37,83 @@ any changes made.
 
 ## Configuration (`plumber.yaml`)
 
-Discovery is driven by a `plumber.yaml` file at the application root. It declares which
-source directories to scan, what constructor patterns to match, and where to write the
-generated container files.
+Discovery is driven by a `plumber.yaml` file at the application root. The configuration
+uses the unified plumber file format — all discovery settings live under the
+`plumber.discovery:` key. It declares which source directories to scan, what constructor
+patterns to match, and where to write the generated container files.
+
+The file also supports a top-level `includes:` key for merging additional config files
+(glob patterns supported).
 
 ```yaml
-applications:
-  - name: application
-    # Fully qualified Go module path
-    module: github.com/getoutreach/plumber/example
-    # Config struct type (quoted import path for external packages)
-    config: '*"github.com/getoutreach/plumber/example".Config'
+plumber.discovery:
+  applications:
+    - name: application
+      # Fully qualified Go module path
+      module: github.com/getoutreach/plumber/example
+      # Config struct type (quoted import path for external packages)
+      config: '*"github.com/getoutreach/plumber/example".Config'
 
-    containers:
-      # Container with loop — generates one container per matched directory
-      - plumber.container:
-          comment: "Adapter modules"
-          name: "{{ .module }}"
-          container:
-            path: ./application_{{ .module_slug }}.go
-          source:
-            path: ./adapter/{{ .module_path }}/
-          matchers:
-            - constructors:
-                - New(?P<name>.*)
-                - Factory(?P<name>.*)
-        loop:
-          # [\w/]+ captures nested subdirectories (e.g., outbound/redis)
-          path: adapter/(?P<module>[\w/]+)
+      containers:
+        # Container with loop — generates one container per matched directory
+        - plumber.container:
+            comment: "Adapter modules"
+            name: "{{ .module }}"
+            container:
+              path: ./application_{{ .module_slug }}.go
+            source:
+              path: ./adapter/{{ .module_path }}/
+            matchers:
+              - constructors:
+                  - New(?P<name>.*)
+                  - Factory(?P<name>.*)
+          loop:
+            # [\w/]+ captures nested subdirectories (e.g., outbound/redis)
+            path: adapter/(?P<module>[\w/]+)
 
-      # Static container — no loop, scans a single directory
-      - plumber.container:
-          name: "Scenario"
-          container:
-            path: ./application_scenario.go
-          source:
-            path: ./scenario/
-          matchers:
-            - constructors:
-                - New(?P<name>.*)
+        # Static container — no loop, scans a single directory
+        - plumber.container:
+            name: "Scenario"
+            container:
+              path: ./application_scenario.go
+            source:
+              path: ./scenario/
+            matchers:
+              - constructors:
+                  - New(?P<name>.*)
 
-# Template for generating new container files when they don't exist yet
-templates:
-  container: |
-    package {{ .package_name }}
+  # Template for generating new container files when they don't exist yet
+  templates:
+    container: |
+      package {{ .package_name }}
 
-    import (
-      "context"
-    )
+      import (
+        "context"
+      )
 
-    // {{ .container.name }} dependency container
-    type {{ .container.name }} struct {}
+      // {{ .container.name }} dependency container
+      type {{ .container.name }} struct {}
 
-    // Define dependency resolvers
-    func (c *{{ .container.name }}) Define(ctx context.Context, cf {{ .config.type }}, a *Container) {
-    }
+      // Define dependency resolvers
+      func (c *{{ .container.name }}) Define(ctx context.Context, cf {{ .config.type }}, a *Container) {
+      }
 ```
 
 ### Schema reference
 
 | Field | Description |
 |---|---|
-| `applications[].name` | Application identifier |
-| `applications[].module` | Go module path for the application |
-| `applications[].config` | Fully qualified config struct type |
-| `containers[].plumber.container.name` | Container struct name (supports template variables) |
-| `containers[].plumber.container.comment` | Comment added to the generated container |
-| `containers[].plumber.container.container.path` | Output file path for the container (supports template variables) |
-| `containers[].plumber.container.source.path` | Source directory to scan for constructors (supports template variables) |
-| `containers[].plumber.container.matchers[].constructors` | Regex patterns for matching constructor functions |
-| `containers[].loop.path` | Regex with named capture groups for directory iteration |
-| `templates.container` | Go template for generating new container file skeletons |
+| `includes[].path` | Path (glob supported) to additional config files to merge |
+| `plumber.discovery.applications[].name` | Application identifier |
+| `plumber.discovery.applications[].module` | Go module path for the application |
+| `plumber.discovery.applications[].config` | Fully qualified config struct type |
+| `plumber.discovery.…containers[].plumber.container.name` | Container struct name (supports template variables) |
+| `plumber.discovery.…containers[].plumber.container.comment` | Comment added to the generated container |
+| `plumber.discovery.…containers[].plumber.container.container.path` | Output file path for the container (supports template variables) |
+| `plumber.discovery.…containers[].plumber.container.source.path` | Source directory to scan for constructors (supports template variables) |
+| `plumber.discovery.…containers[].plumber.container.matchers[].constructors` | Regex patterns for matching constructor functions |
+| `plumber.discovery.…containers[].loop.path` | Regex with named capture groups for directory iteration |
+| `plumber.discovery.templates.container` | Go template for generating new container file skeletons |
 
 ---
 

@@ -1,38 +1,39 @@
-applications:
-  - name: application
-    # fqn of the config struct to use for this application
-    module: github.com/getoutreach/plumber/example
-    config: '*"github.com/getoutreach/plumber/example".Config'
-    # for each application we defined a plumber sub containers
-    containers:
-      - plumber.container:
-          comment: "Adapter modules"
-          name: "{{ .module }}"
-          container:
-            path: ./application_{{ .module_slug }}.go
-          source:
-            path: ./adapter/{{ .module_path }}/
-          # matchers define constructor patterns to discover
-          matchers:
-            - constructors:
-                # Named capture group "name" extracts the provider name
-                - New(?P<name>.*)
-                - Factory(?P<name>.*)
-        # loop allows to define multiple containers using
-        loop:
-          # path scans a folder structure; [\w/]+ captures nested subdirectories
-          path: adapter/(?P<module>[\w/]+)
-      - plumber.container:
-          name: "Scenario"
-          container:
-            path: ./application_scenario.go
-          source:
-            path: ./scenario/
-          matchers:
-            - constructors:
-                - New(?P<name>.*)
-templates:
-  container: |
-    {{ define "plumber/command/discovery/file/copyright" }}
-    // Copyright (c) 2026 Outreach Corporation. All Rights Reserved.
-    {{ end }}
+plumber.discovery:
+  applications:
+    - name: application
+      # fqn of the config struct to use for this application
+      module: github.com/getoutreach/plumber/example
+      config: '*"github.com/getoutreach/plumber/example".Config'
+      # for each application we defined a plumber sub containers
+      containers:
+        - plumber.container:
+            comment: "Adapter modules"
+            name: "{{ .module }}"
+            container:
+              path: ./application_{{ .module_slug }}.go
+            source:
+              path: ./adapter/{{ .module_path }}/
+            # matchers define constructor patterns to discover
+            matchers:
+              - constructors:
+                  # Named capture group "name" extracts the provider name
+                  - New(?P<name>.*)
+                  - Factory(?P<name>.*)
+          # loop allows to define multiple containers using
+          loop:
+            # path scans a folder structure; [\w/]+ captures nested subdirectories
+            path: adapter/(?P<module>[\w/]+)
+        - plumber.container:
+            name: "Scenario"
+            container:
+              path: ./application_scenario.go
+            source:
+              path: ./scenario/
+            matchers:
+              - constructors:
+                  - New(?P<name>.*)
+  templates:
+    container: |
+      {{ define "plumber/command/discovery/file/copyright" }}
+      // Copyright (c) 2026 Outreach Corporation. All Rights Reserved.
+      {{ end }}

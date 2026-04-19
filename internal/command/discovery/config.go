@@ -61,3 +61,11 @@ type Matcher struct {
 type LoopConfig struct {
 	Path string `yaml:"path"`
 }
+
+// MergeDiscovery merges another Config into this one, appending applications.
+func (c *Config) MergeDiscovery(other *Config) {
+	c.Applications = append(c.Applications, other.Applications...)
+	if other.Templates.Container != "" && c.Templates.Container == "" {
+		c.Templates.Container = other.Templates.Container
+	}
+}

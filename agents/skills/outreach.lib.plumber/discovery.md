@@ -28,56 +28,61 @@ go run cmd/plumber/plumber.go discovery --config plumber.yaml
 
 ## Configuration (`plumber.yaml`)
 
+All discovery settings live under the `plumber.discovery:` key in the unified config format.
+An optional top-level `includes:` key allows merging additional config files.
+
 ```yaml
-applications:
-  - name: application
-    module: github.com/getoutreach/plumber/example
-    config: '*"github.com/getoutreach/plumber/example".Config'
-    containers:
-      - plumber.container:
-          name: "{{ .module }}"
-          container:
-            path: ./application_{{ .module_slug }}.go
-          source:
-            path: ./adapter/{{ .module_path }}/
-          matchers:
-            - constructors:
-                - New(?P<name>.*)
-                - Factory(?P<name>.*)
-        loop:
-          # [\w/]+ captures nested subdirectories (e.g., outbound/redis)
-          path: adapter/(?P<module>[\w/]+)
+plumber.discovery:
+  applications:
+    - name: application
+      module: github.com/getoutreach/plumber/example
+      config: '*"github.com/getoutreach/plumber/example".Config'
+      containers:
+        - plumber.container:
+            name: "{{ .module }}"
+            container:
+              path: ./application_{{ .module_slug }}.go
+            source:
+              path: ./adapter/{{ .module_path }}/
+            matchers:
+              - constructors:
+                  - New(?P<name>.*)
+                  - Factory(?P<name>.*)
+          loop:
+            # [\w/]+ captures nested subdirectories (e.g., outbound/redis)
+            path: adapter/(?P<module>[\w/]+)
 
-      - plumber.container:
-          name: "Scenario"
-          container:
-            path: ./application_scenario.go
-          source:
-            path: ./scenario/
-          matchers:
-            - constructors:
-                - New(?P<name>.*)
+        - plumber.container:
+            name: "Scenario"
+            container:
+              path: ./application_scenario.go
+            source:
+              path: ./scenario/
+            matchers:
+              - constructors:
+                  - New(?P<name>.*)
 
-templates:
-  container: |
-    package {{ .package_name}}
-    import ("context")
-    type {{ .container.name }} struct {}
-    func (c *{{ .container.name }}) Define(ctx context.Context, cf {{ .config.type }}, a *Container) {}
+  templates:
+    container: |
+      package {{ .package_name}}
+      import ("context")
+      type {{ .container.name }} struct {}
+      func (c *{{ .container.name }}) Define(ctx context.Context, cf {{ .config.type }}, a *Container) {}
 ```
 
 ### Key config fields
 
 | Field | Description |
 |---|---|
-| `applications[].module` | Go module path |
-| `applications[].config` | Fully qualified config struct type |
-| `containers[].plumber.container.name` | Container struct name (template variables supported) |
-| `containers[].plumber.container.container.path` | Output file for the container |
-| `containers[].plumber.container.source.path` | Source directory to scan for constructors |
-| `containers[].plumber.container.matchers[].constructors` | Regex patterns with `(?P<name>...)` capture group |
-| `containers[].loop.path` | Regex with named capture groups for directory iteration |
-| `templates.container` | Go template for generating new container file skeletons |
+| `includes[].path` | Path (glob supported) to additional config files to merge |
+| `plumber.discovery.applications[].module` | Go module path |
+| `plumber.discovery.applications[].config` | Fully qualified config struct type |
+| `plumber.discovery.…containers[].plumber.container.name` | Container struct name (template variables supported) |
+| `plumber.discovery.…containers[].plumber.container.container.path` | Output file for the container |
+| `plumber.discovery.…containers[].plumber.container.source.path` | Source directory to scan for constructors |
+| `plumber.discovery.…containers[].plumber.container.matchers[].constructors` | Regex patterns with `(?P<name>...)` capture group |
+| `plumber.discovery.…containers[].loop.path` | Regex with named capture groups for directory iteration |
+| `plumber.discovery.templates.container` | Go template for generating new container file skeletons |
 
 ### Loop expansion
 

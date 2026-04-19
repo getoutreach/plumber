@@ -15,7 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/getoutreach/plumber/internal/command"
+	"github.com/getoutreach/plumber/internal/command/config"
 	"github.com/getoutreach/plumber/internal/command/discovery"
 	"github.com/getoutreach/plumber/internal/command/discovery/contract"
 	"github.com/urfave/cli/v2"
@@ -42,10 +42,11 @@ func Run(c *cli.Context) error {
 	baseDir := filepath.Dir(absConfigPath)
 
 	// Parse the configuration
-	cfg, err := command.ParseConfig[discovery.Config](absConfigPath)
+	fileCfg, err := config.Load(absConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
+	cfg := &fileCfg.Discovery
 
 	// Process loops to expand containers
 	if err := discovery.ProcessLoops(cfg, baseDir); err != nil {

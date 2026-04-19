@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/getoutreach/plumber/internal/command"
+	"github.com/getoutreach/plumber/internal/command/config"
 	"github.com/getoutreach/plumber/internal/command/inspect"
 	"github.com/urfave/cli/v2"
 )
@@ -30,15 +30,12 @@ func Run(c *cli.Context) error {
 			return fmt.Errorf("failed to resolve config path: %w", err)
 		}
 
-		// Use config file's directory as base directory
-		// baseDir := filepath.Dir(absConfigPath)
-
 		// Parse the configuration
-		c, err := command.ParseConfig[inspect.FileConfig](absConfigPath)
+		fileCfg, err := config.Load(absConfigPath)
 		if err != nil {
 			return fmt.Errorf("failed to parse config: %w", err)
 		}
-		cfg = c.Inspect
+		cfg = &fileCfg.Inspect
 	}
 
 	if format != "" {
