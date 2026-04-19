@@ -18,6 +18,9 @@ import (
 	"github.com/getoutreach/plumber/internal/command/config"
 	"github.com/getoutreach/plumber/internal/command/discovery"
 	"github.com/getoutreach/plumber/internal/command/discovery/contract"
+	"github.com/getoutreach/plumber/internal/command/discovery/render"
+	"github.com/getoutreach/plumber/internal/command/template"
+	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/urfave/cli/v2"
 )
 
@@ -58,12 +61,56 @@ func Run(c *cli.Context) error {
 	fmt.Println("=======================")
 	discovery.PrintConfig(os.Stdout, cfg)
 
+	// Resolve per-file template references from the unified templates config.
+	// Global templates apply to all renders; container/application templates are additive.
+	globalOpts, err := template.ResolveRefs(
+		cfg.Templates.Global,
+		fileCfg.Templates.Sources,
+		fileCfg.Templates.Content,
+		template.DefaultCacheDir,
+		render.EmbededTemplates,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve global templates: %w", err)
+	}
+
+	containerRefOpts, err := template.ResolveRefs(
+		cfg.Templates.Container,
+		fileCfg.Templates.Sources,
+		fileCfg.Templates.Content,
+		template.DefaultCacheDir,
+		render.EmbededTemplates,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve container templates: %w", err)
+	}
+
+	applicationRefOpts, err := template.ResolveRefs(
+		cfg.Templates.Application,
+		fileCfg.Templates.Sources,
+		fileCfg.Templates.Content,
+		template.DefaultCacheDir,
+		render.EmbededTemplates,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve application templates: %w", err)
+	}
+
+	// Build final per-file opts: global + per-file
+	containerOpts := make([]gen.RenderOptionsFunc, 0, len(globalOpts)+len(containerRefOpts))
+	containerOpts = append(containerOpts, globalOpts...)
+	containerOpts = append(containerOpts, containerRefOpts...)
+
+	applicationOpts := make([]gen.RenderOptionsFunc, 0, len(globalOpts)+len(applicationRefOpts))
+	applicationOpts = append(applicationOpts, globalOpts...)
+	applicationOpts = append(applicationOpts, applicationRefOpts...)
+
 	// Process each application
 	for _, app := range cfg.Applications {
 		fmt.Printf("\nProcessing application: %s\n", app.Name)
 		fmt.Println(strings.Repeat("-", 50))
 
-		if err := processApplication(ctx, baseDir, &app, cfg); err != nil {
+		if err := processApplication(ctx, baseDir, &app, containerOpts, applicationOpts); err != nil {
 			return fmt.Errorf("failed to process application %q: %w", app.Name, err)
 		}
 	}
@@ -87,12 +134,36 @@ type discoveredProviders struct {
 	providerMap map[string]*contract.ProviderMapping
 }
 
-func processApplication(ctx context.Context, baseDir string, app *discovery.Application, cfg *discovery.Config) error {
+func processApplication(
+	ctx context.Context, baseDir string, app *discovery.Application,
+	containerOpts, applicationOpts []gen.RenderOptionsFunc,
+) error {
 	// Collect container information and file paths
-	containers, allPaths := collectContainerInfo(baseDir, app, cfg)
+	containers, allPaths := collectContainerInfo(baseDir, app, containerOpts)
 	if len(containers) == 0 {
 		fmt.Printf("  No valid containers to process\n")
 		return nil
+	}
+
+	// Render application file if configured and not already present
+	if app.Application != nil && app.Application.Path != "" {
+		appPath := app.Application.Path
+		if !filepath.IsAbs(appPath) {
+			appPath = filepath.Join(baseDir, appPath)
+		}
+		if _, err := os.Stat(appPath); os.IsNotExist(err) {
+			fmt.Printf("  Rendering application file: %s\n", appPath)
+			renderer := discovery.NewTemplateRenderer(containerOpts, applicationOpts)
+			sourceModule := ""
+			if len(containers) > 0 && containers[0].config.Source != nil {
+				sourceModule = getSourceModulePath(baseDir, containers[0].config.Source.Path, app.Module)
+			}
+			if err := renderer.RenderApplication(appPath, app.Name, app, sourceModule); err != nil {
+				fmt.Printf("    ⚠ Warning: Failed to render application file: %v\n", err)
+			} else {
+				fmt.Printf("    ✓ Application file created from template at %s\n", appPath)
+			}
+		}
 	}
 
 	// Create a map to hold the provider mappings
@@ -140,7 +211,7 @@ func processApplication(ctx context.Context, baseDir string, app *discovery.Appl
 }
 
 func collectContainerInfo(
-	baseDir string, app *discovery.Application, cfg *discovery.Config,
+	baseDir string, app *discovery.Application, containerOpts []gen.RenderOptionsFunc,
 ) (containers []*containerInfo, allPaths []string) {
 	containers = make([]*containerInfo, 0)
 
@@ -169,7 +240,7 @@ func collectContainerInfo(
 			if containerCfg.Source != nil {
 				sourceModule := getSourceModulePath(baseDir, containerCfg.Source.Path, app.Module)
 
-				if err := renderContainerFromTemplate(containerPath, containerCfg.Name, app, sourceModule, cfg); err != nil {
+				if err := renderContainerFromTemplate(containerPath, containerCfg.Name, app, sourceModule, containerOpts); err != nil {
 					fmt.Printf("    ⚠ Warning: Failed to render template: %v\n", err)
 					fmt.Printf("    ⚠ Warning: Container file does not exist at %s (skipping)\n", containerPath)
 					continue
@@ -395,10 +466,10 @@ func renderContainerFromTemplate(
 	containerName string,
 	app *discovery.Application,
 	sourceModule string,
-	cfg *discovery.Config,
+	templateOpts []gen.RenderOptionsFunc,
 ) error {
-	// Create template renderer
-	renderer := discovery.NewTemplateRenderer(cfg.Templates.Container)
+	// Create template renderer with container opts (application opts not needed here)
+	renderer := discovery.NewTemplateRenderer(templateOpts, nil)
 
 	// Render the container file
 	return renderer.RenderContainer(containerPath, containerName, app, sourceModule)

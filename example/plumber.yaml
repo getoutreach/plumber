@@ -1,9 +1,25 @@
+plumber.templates:
+  content:
+    - name: file.copyright
+      content: |
+        {{define "plumber/command/discovery/file/copyright"}}
+        // Copyright (c) 2026 Outreach Corporation. All Rights Reserved.
+        {{end}}
+
 plumber.discovery:
+  templates:
+    global:
+      - name: file.copyright
+    container: []
+    application: []
   applications:
     - name: application
       # fqn of the config struct to use for this application
       module: github.com/getoutreach/plumber/example
       config: '*"github.com/getoutreach/plumber/example".Config'
+      # application file rendered once if it doesn't exist
+      application:
+        path: ./application.go
       # for each application we defined a plumber sub containers
       containers:
         - plumber.container:
@@ -32,8 +48,3 @@ plumber.discovery:
             matchers:
               - constructors:
                   - New(?P<name>.*)
-  templates:
-    container: |
-      {{ define "plumber/command/discovery/file/copyright" }}
-      // Copyright (c) 2026 Outreach Corporation. All Rights Reserved.
-      {{ end }}

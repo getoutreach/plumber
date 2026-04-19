@@ -29,14 +29,30 @@ go run cmd/plumber/plumber.go discovery --config plumber.yaml
 ## Configuration (`plumber.yaml`)
 
 All discovery settings live under the `plumber.discovery:` key in the unified config format.
-An optional top-level `includes:` key allows merging additional config files.
+An optional top-level `includes:` key allows merging additional config files. Template
+overrides are provided via `plumber.templates:` (shared with other commands).
 
 ```yaml
+plumber.templates:
+  content:
+    - name: file.copyright
+      content: |
+        {{define "plumber/command/discovery/file/copyright"}}
+        // Copyright (c) 2026 My Company. All Rights Reserved.
+        {{end}}
+
 plumber.discovery:
+  templates:
+    global:
+      - name: file.copyright    # applied to ALL renders
+    container: []               # additional templates for container renders only
+    application: []             # additional templates for application renders only
   applications:
     - name: application
       module: github.com/getoutreach/plumber/example
       config: '*"github.com/getoutreach/plumber/example".Config'
+      application:
+        path: ./application.go  # rendered once if not present
       containers:
         - plumber.container:
             name: "{{ .module }}"
@@ -61,13 +77,6 @@ plumber.discovery:
             matchers:
               - constructors:
                   - New(?P<name>.*)
-
-  templates:
-    container: |
-      package {{ .package_name}}
-      import ("context")
-      type {{ .container.name }} struct {}
-      func (c *{{ .container.name }}) Define(ctx context.Context, cf {{ .config.type }}, a *Container) {}
 ```
 
 ### Key config fields
@@ -75,14 +84,21 @@ plumber.discovery:
 | Field | Description |
 |---|---|
 | `includes[].path` | Path (glob supported) to additional config files to merge |
+| `plumber.templates.content[].name` | Template block name (matches `{{define "..."}}`) |
+| `plumber.templates.content[].content` | Inline template content override |
+| `plumber.templates.sources[].local.path` | Local directory with template files |
+| `plumber.templates.sources[].git.repository` | Git repo URL for remote templates |
+| `plumber.discovery.templates.global[]` | Template refs applied to all file renders |
+| `plumber.discovery.templates.container[]` | Template refs for container file renders only |
+| `plumber.discovery.templates.application[]` | Template refs for application file renders only |
 | `plumber.discovery.applications[].module` | Go module path |
 | `plumber.discovery.applications[].config` | Fully qualified config struct type |
+| `plumber.discovery.applications[].application.path` | Output file for the root application container |
 | `plumber.discovery.…containers[].plumber.container.name` | Container struct name (template variables supported) |
 | `plumber.discovery.…containers[].plumber.container.container.path` | Output file for the container |
 | `plumber.discovery.…containers[].plumber.container.source.path` | Source directory to scan for constructors |
 | `plumber.discovery.…containers[].plumber.container.matchers[].constructors` | Regex patterns with `(?P<name>...)` capture group |
 | `plumber.discovery.…containers[].loop.path` | Regex with named capture groups for directory iteration |
-| `plumber.discovery.templates.container` | Go template for generating new container file skeletons |
 
 ### Loop expansion
 
@@ -146,7 +162,14 @@ If the constructor returns `(T, error)`, `ResolveError` is used instead of `Reso
 
 ### New container files
 
-When a container file does not exist, discovery creates it from `templates.container`.
+When a container file does not exist, discovery creates it from the embedded container template.
+
+### Application file
+
+When `application.path` is set and the file doesn't exist, discovery renders it from
+the embedded application template (`plumber/command/discovery/application`). This creates
+the root `Container` struct and `NewApplication()` function. Templates from
+`plumber.discovery.templates.application` and `global` are applied.
 
 ## Automatic dependency wiring
 

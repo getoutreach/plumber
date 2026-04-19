@@ -1,8 +1,8 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements Git-based template source checkout using sparse clones for the shape command template loader.
+// Description: Git-based template source checkout using sparse clones.
 
-package source
+package template
 
 import (
 	"fmt"
@@ -12,11 +12,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/samber/lo"
 )
 
-func checkoutGit(cfg *contract.PlumberTemplateGitSourceConfig, cacheDir string) ([]string, error) {
+func checkoutGit(cfg *GitSourceConfig, cacheDir string) ([]string, error) {
 	if cfg.Ref == "" {
 		cfg.Ref = "main"
 	}
@@ -47,7 +46,7 @@ func checkoutGit(cfg *contract.PlumberTemplateGitSourceConfig, cacheDir string) 
 		return nil, err
 	}
 
-	dirs := lo.Map(cfg.Templates, func(t contract.PlumberTemplateConfig, _ int) string {
+	dirs := lo.Map(cfg.Templates, func(t FileRef, _ int) string {
 		p := path.Dir(t.Path)
 		p = strings.TrimPrefix(p, "./")
 		p = strings.TrimPrefix(p, "/")

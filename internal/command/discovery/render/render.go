@@ -23,7 +23,7 @@ var (
 )
 
 func Render(
-	output string, c map[string]any, opener gen.FileOpener, opts ...gen.RenderOptionsFunc,
+	output string, entryTemplate string, c map[string]any, opener gen.FileOpener, opts ...gen.RenderOptionsFunc,
 ) error {
 	writer := gen.NewWriter(gen.WithFileOpener(opener), func(wc *gen.WriterConfig) {
 		wc.Overwrite = true
@@ -38,7 +38,7 @@ func Render(
 	features := gen.Features{
 		gen.FeatureFunc(func(ctx *gen.Context, wr *gen.Writer) error {
 			return ctx.Write(wr, output, func(ctx *gen.Context, w io.Writer) error {
-				return gen.RenderContent(ctx, "plumber/command/discovery/container", w, c,
+				return gen.RenderContent(ctx, entryTemplate, w, c,
 					gen.WithFuncMap(funcMap),
 					gen.WithFS(EmbededTemplates,
 						"templates/command/discovery.gtpl",

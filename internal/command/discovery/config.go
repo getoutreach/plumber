@@ -5,23 +5,39 @@
 
 package discovery
 
+import (
+	"github.com/getoutreach/plumber/internal/command/template"
+)
+
 // Config represents the root configuration for plumber discovery
 type Config struct {
-	Applications []Application   `yaml:"applications"`
-	Templates    TemplatesConfig `yaml:"templates,omitempty"`
+	Applications []Application `yaml:"applications"`
+	Templates    Templates     `yaml:"templates,omitempty"`
 }
 
-// TemplatesConfig contains template definitions
-type TemplatesConfig struct {
-	Container string `yaml:"container,omitempty"`
+// Templates configures which templates to use when rendering discovery files.
+// Global templates are applied to all file renders. Container and Application
+// templates are additive per-file overrides. Each entry can be either inline
+// content (has Content field) or a name reference resolved from the root-level
+// plumber.templates registry.
+type Templates struct {
+	Global      []template.ContentConfig `yaml:"global,omitempty"`
+	Container   []template.ContentConfig `yaml:"container,omitempty"`
+	Application []template.ContentConfig `yaml:"application,omitempty"`
 }
 
 // Application represents a single application module
 type Application struct {
-	Name       string      `yaml:"name"`
-	Module     string      `yaml:"module,omitempty"`
-	Config     string      `yaml:"config,omitempty"`
-	Containers []Container `yaml:"containers"`
+	Name        string                 `yaml:"name"`
+	Module      string                 `yaml:"module,omitempty"`
+	Config      string                 `yaml:"config,omitempty"`
+	Application *ApplicationPathConfig `yaml:"application,omitempty"`
+	Containers  []Container            `yaml:"containers"`
+}
+
+// ApplicationPathConfig specifies the path to the root application container file.
+type ApplicationPathConfig struct {
+	Path string `yaml:"path"`
 }
 
 // Container represents a plumber sub-container configuration
@@ -65,7 +81,4 @@ type LoopConfig struct {
 // MergeDiscovery merges another Config into this one, appending applications.
 func (c *Config) MergeDiscovery(other *Config) {
 	c.Applications = append(c.Applications, other.Applications...)
-	if other.Templates.Container != "" && c.Templates.Container == "" {
-		c.Templates.Container = other.Templates.Container
-	}
 }

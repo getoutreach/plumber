@@ -176,6 +176,10 @@ plumber.shape:
 `includes` expands globs and merges by appending: sources, templates, macros, mixins,
 wrappers. Git sources can declare their own `includes` for co-located config.
 
+Template sources can also be defined at root level under `plumber.templates:` — these are
+shared across all commands (shape, discovery). Shape-specific sources under `plumber.shape.sources`
+and `plumber.shape.templates.content` are automatically promoted to the root level at load time.
+
 ## Macros vs mixins
 
 | | Macros | Mixins |

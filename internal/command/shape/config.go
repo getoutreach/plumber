@@ -6,7 +6,7 @@ package shape
 
 import (
 	"github.com/getoutreach/plumber/internal/command/inspect"
-	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/command/template"
 )
 
 // FileConfig represents the overall configuration for the shape command,
@@ -20,13 +20,13 @@ type FileConfig struct {
 // Config holds specific configuration options for the shape command, such as working directory,
 // cache directory, template sources, mixins, and type wrappers.
 type Config struct {
-	WorkingDir string                                 `yaml:"workingDir,omitempty"`
-	CacheDir   string                                 `yaml:"cacheDir,omitempty"`
-	Sources    []contract.PlumberTemplateSourceConfig `yaml:"sources,omitempty"`
-	Templates  contract.PlumberTemplatesConfig        `yaml:"templates,omitempty"`
-	Macros     []MacroConfig                          `yaml:"macros,omitempty"`
-	Mixins     []MixinConfig                          `yaml:"mixins,omitempty"`
-	Type       TypeConfig                             `yaml:"type,omitempty"`
+	WorkingDir string                       `yaml:"workingDir,omitempty"`
+	CacheDir   string                       `yaml:"cacheDir,omitempty"`
+	Sources    []template.SourceConfig      `yaml:"sources,omitempty"`
+	Templates  template.TemplatesFileConfig `yaml:"templates,omitempty"`
+	Macros     []MacroConfig                `yaml:"macros,omitempty"`
+	Mixins     []MixinConfig                `yaml:"mixins,omitempty"`
+	Type       TypeConfig                   `yaml:"type,omitempty"`
 }
 
 // TypeConfig represents the configuration for type transformations in the shape command,

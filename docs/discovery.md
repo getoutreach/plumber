@@ -46,13 +46,32 @@ The file also supports a top-level `includes:` key for merging additional config
 (glob patterns supported).
 
 ```yaml
+# Shared template overrides — accessible by all commands
+plumber.templates:
+  content:
+    - name: file.copyright
+      content: |
+        {{define "plumber/command/discovery/file/copyright"}}
+        // Copyright (c) 2026 Outreach Corporation. All Rights Reserved.
+        {{end}}
+
 plumber.discovery:
+  # Per-file template references (resolved from plumber.templates registry)
+  templates:
+    global:
+      - name: file.copyright    # applied to ALL renders (container + application)
+    container: []               # additional templates for container file renders only
+    application: []             # additional templates for application file renders only
+
   applications:
     - name: application
       # Fully qualified Go module path
       module: github.com/getoutreach/plumber/example
       # Config struct type (quoted import path for external packages)
       config: '*"github.com/getoutreach/plumber/example".Config'
+      # Application file — rendered once if it doesn't exist
+      application:
+        path: ./application.go
 
       containers:
         # Container with loop — generates one container per matched directory
@@ -81,22 +100,6 @@ plumber.discovery:
             matchers:
               - constructors:
                   - New(?P<name>.*)
-
-  # Template for generating new container files when they don't exist yet
-  templates:
-    container: |
-      package {{ .package_name }}
-
-      import (
-        "context"
-      )
-
-      // {{ .container.name }} dependency container
-      type {{ .container.name }} struct {}
-
-      // Define dependency resolvers
-      func (c *{{ .container.name }}) Define(ctx context.Context, cf {{ .config.type }}, a *Container) {
-      }
 ```
 
 ### Schema reference
@@ -104,16 +107,23 @@ plumber.discovery:
 | Field | Description |
 |---|---|
 | `includes[].path` | Path (glob supported) to additional config files to merge |
+| `plumber.templates.sources[].local.path` | Local directory containing template files |
+| `plumber.templates.sources[].git.repository` | Git repo URL for template source |
+| `plumber.templates.content[].name` | Name of an inline template (must match `{{define "..."}}` block) |
+| `plumber.templates.content[].content` | Inline template content |
+| `plumber.discovery.templates.global[]` | Template refs applied to all file renders |
+| `plumber.discovery.templates.container[]` | Template refs applied to container file renders only |
+| `plumber.discovery.templates.application[]` | Template refs applied to application file renders only |
 | `plumber.discovery.applications[].name` | Application identifier |
 | `plumber.discovery.applications[].module` | Go module path for the application |
 | `plumber.discovery.applications[].config` | Fully qualified config struct type |
+| `plumber.discovery.applications[].application.path` | Output file path for the root application container |
 | `plumber.discovery.…containers[].plumber.container.name` | Container struct name (supports template variables) |
 | `plumber.discovery.…containers[].plumber.container.comment` | Comment added to the generated container |
 | `plumber.discovery.…containers[].plumber.container.container.path` | Output file path for the container (supports template variables) |
 | `plumber.discovery.…containers[].plumber.container.source.path` | Source directory to scan for constructors (supports template variables) |
 | `plumber.discovery.…containers[].plumber.container.matchers[].constructors` | Regex patterns for matching constructor functions |
 | `plumber.discovery.…containers[].loop.path` | Regex with named capture groups for directory iteration |
-| `plumber.discovery.templates.container` | Go template for generating new container file skeletons |
 
 ---
 
@@ -191,9 +201,16 @@ If the constructor returns `(T, error)`, `ResolveError` is used instead of `Reso
 
 ### New container files
 
-When a container file does not exist yet, discovery creates it from the `templates.container`
-template before augmentation. The template receives context variables including
-`package_name`, `container.name`, and `config.type`.
+When a container file does not exist yet, discovery creates it from the embedded
+`plumber/command/discovery/container` template before augmentation. The template receives
+context variables including `package_name`, `container.name`, and `config.type`.
+
+### Application file
+
+When `application.path` is set and the file does not already exist, discovery renders it
+from the embedded `plumber/command/discovery/application` template. This creates the root
+dependency container with `NewApplication()` and `Container` struct scaffolding. Template
+overrides from `plumber.discovery.templates.application` (and `global`) are applied.
 
 ---
 
@@ -426,28 +443,36 @@ directly to raw values or to `{{ .X_path }}` variables.
 plumber.yaml
     │
     ▼
-Parse config
+Parse config (includes, template registry, discovery settings)
+    │
+    ▼
+Resolve template refs (global + container + application from registry)
     │
     ▼
 Expand loops (scan directories, filter out dirs without .go files,
               derive variables, hydrate templates)
     │
     ▼
-For each container:
+For each application:
     │
-    ├─ Container file missing?
-    │     → Generate skeleton from templates.container
+    ├─ Application file missing & application.path set?
+    │     → Generate skeleton from templates.application
     │
-    ├─ Scan source path with AST parser
-    │     → Match constructors against regex patterns
-    │     → Extract provider name, type, and parameters
-    │
-    └─ Augment container file
-          ├─ Add missing plumber.D[T] struct fields
-          ├─ Generate Resolver blocks with constructor calls
-          ├─ Wire arguments from provider map
-          │     (single match → .Instance(), multiple → OneOf, none → Undefined)
-          ├─ Auto-populate Require() from .Instance() usage
-          ├─ Manage imports
-          └─ Write modified file
+    └─ For each container:
+        │
+        ├─ Container file missing?
+        │     → Generate skeleton from templates.container
+        │
+        ├─ Scan source path with AST parser
+        │     → Match constructors against regex patterns
+        │     → Extract provider name, type, and parameters
+        │
+        └─ Augment container file
+              ├─ Add missing plumber.D[T] struct fields
+              ├─ Generate Resolver blocks with constructor calls
+              ├─ Wire arguments from provider map
+              │     (single match → .Instance(), multiple → OneOf, none → Undefined)
+              ├─ Auto-populate Require() from .Instance() usage
+              ├─ Manage imports
+              └─ Write modified file
 ```

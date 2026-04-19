@@ -1,10 +1,8 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements template loading and checkout for the shape command,
-// supporting local, git, and embedded template sources.
+// Description: Template loading and checkout orchestrator supporting local, git, and embedded template sources.
 
-// Package source provides template loading and Git checkout utilities for shape command template sources.
-package source
+package template
 
 import (
 	"embed"
@@ -14,16 +12,17 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 )
 
-// DefaultCacheDir is the default directory used for caching Git repositories when checking out templates for the shape command.
+// DefaultCacheDir is the default directory used for caching Git repositories
+// when checking out templates.
 const DefaultCacheDir = "~/.outreach/.plumber"
 
-// Checkout performs Git checkouts for all Git-based template sources, using sparse clones to efficiently
-// retrieve only the necessary template files.
-func Checkout(sources []contract.PlumberTemplateSourceConfig, cacheDir string) ([]string, error) {
+// Checkout performs Git checkouts for all Git-based template sources, using sparse clones
+// to efficiently retrieve only the necessary template files. It returns include paths
+// found within git repos (for merging additional config).
+func Checkout(sources []SourceConfig, cacheDir string) ([]string, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -60,9 +59,59 @@ func Checkout(sources []contract.PlumberTemplateSourceConfig, cacheDir string) (
 	return includePaths, nil
 }
 
+// LoadAllContent converts all inline content templates into render option functions.
+// This is used by commands like discovery where content templates provide override
+// blocks ({{define "..."}}) rather than being referenced by name.
+func LoadAllContent(content []ContentConfig) ([]gen.RenderOptionsFunc, error) {
+	var opts []gen.RenderOptionsFunc
+	for _, c := range content {
+		t, err := template.New(c.Name).Parse(c.Content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse content template %q: %w", c.Name, err)
+		}
+		opts = append(opts, gen.WithTemplate(t))
+	}
+	return opts, nil
+}
+
+// ResolveRefs resolves a list of ContentConfig references into render options.
+// Each ref is either:
+//   - Inline content (Content is non-empty): parsed as a template directly.
+//   - Name reference (Content is empty): resolved from the registry (sources + content)
+//     via LoadTemplates.
+func ResolveRefs(
+	refs []ContentConfig,
+	sources []SourceConfig,
+	registry []ContentConfig,
+	cacheDir string,
+	fs embed.FS,
+) ([]gen.RenderOptionsFunc, error) {
+	var opts []gen.RenderOptionsFunc
+	for _, ref := range refs {
+		if ref.Content != "" {
+			// Inline content — parse directly
+			t, err := template.New(ref.Name).Parse(ref.Content)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse inline template %q: %w", ref.Name, err)
+			}
+			opts = append(opts, gen.WithTemplate(t))
+		} else {
+			// Name reference — resolve from registry (sources + content)
+			resolved, err := LoadTemplates(sources, registry, cacheDir, []string{ref.Name}, fs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve template %q: %w", ref.Name, err)
+			}
+			opts = append(opts, resolved...)
+		}
+	}
+	return opts, nil
+}
+
+// LoadTemplates resolves template names to render option functions by searching through
+// sources in priority order: embedded (plumber: prefix), git/local sources, inline content.
 func LoadTemplates(
-	sources []contract.PlumberTemplateSourceConfig,
-	cfg *contract.PlumberTemplatesConfig,
+	sources []SourceConfig,
+	content []ContentConfig,
 	cacheDir string,
 	names []string,
 	fs embed.FS,
@@ -112,7 +161,7 @@ func LoadTemplates(
 				return nil, fmt.Errorf("Unsupported template configuration for %T", s)
 			}
 		}
-		for _, s := range cfg.Content {
+		for _, s := range content {
 			if s.Name == name {
 				t, err := template.New(s.Name).Parse(s.Content)
 				if err != nil {

@@ -36,15 +36,18 @@ type ConfigContext struct {
 	Remote bool   `json:"remote"`
 }
 
-// TemplateRenderer handles rendering of container templates
+// TemplateRenderer handles rendering of container and application templates
 type TemplateRenderer struct {
-	templateStr string
+	containerOpts   []gen.RenderOptionsFunc
+	applicationOpts []gen.RenderOptionsFunc
 }
 
-// NewTemplateRenderer creates a new template renderer
-func NewTemplateRenderer(templateStr string) *TemplateRenderer {
+// NewTemplateRenderer creates a new template renderer with separate container and application render options.
+// Global options should be merged into both slices by the caller.
+func NewTemplateRenderer(containerOpts, applicationOpts []gen.RenderOptionsFunc) *TemplateRenderer {
 	return &TemplateRenderer{
-		templateStr: templateStr,
+		containerOpts:   containerOpts,
+		applicationOpts: applicationOpts,
 	}
 }
 
@@ -67,12 +70,42 @@ func (r *TemplateRenderer) RenderContainer(
 	}
 
 	// Rendered content
-	if err := render.Render(containerPath, ctx, gen.NewSystemFileOpener(), gen.WithTemplateContent(r.templateStr)); err != nil {
+	if err := render.Render(
+		containerPath, "plumber/command/discovery/container",
+		ctx, gen.NewSystemFileOpener(), r.containerOpts...,
+	); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
 	// Note: goimports will be run after augmentation adds fields to the struct
 	// Running it now would remove imports that will be needed after augmentation
+
+	return nil
+}
+
+// RenderApplication renders an application file from template
+func (r *TemplateRenderer) RenderApplication(
+	applicationPath string,
+	containerName string,
+	app *Application,
+	sourceModule string,
+) error {
+	var (
+		ctx = r.buildContextMap(containerName, app, sourceModule)
+	)
+
+	// Ensure directory exists
+	dir := filepath.Dir(applicationPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	if err := render.Render(
+		applicationPath, "plumber/command/discovery/application",
+		ctx, gen.NewSystemFileOpener(), r.applicationOpts...,
+	); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
 
 	return nil
 }

@@ -1,8 +1,8 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file defines annotation option constants and template configuration types used by the shape command.
+// Description: This file defines annotation option constants used by the shape command.
 
-// Package contract defines the annotation constants and template configuration types for the plumber shape command.
+// Package contract defines the annotation constants for the plumber shape command.
 package contract
 
 // Option constants for annotations used in plumber templates and code generation.
@@ -41,53 +41,4 @@ const (
 	// allowing templates to access additional type information beyond the subject type.
 	// Usage: plumber:scope "MyType" type="pkg/path".TypeName
 	OptionScope = "plumber:scope"
-)
-
-// Types
-type (
-	// PlumberTemplatesConfig represents the overall configuration for plumber templates content.
-	PlumberTemplatesConfig struct {
-		Content []PlumberTemplateContentConfig `yaml:"content,omitempty"`
-	}
-
-	// PlumberTemplateSourceConfig represents a source of templates, which can be either local or from a Git repository.
-	PlumberTemplateSourceConfig struct {
-		Local *PlumberTemplateLocalSourceConfig `yaml:"local,omitempty"`
-		Git   *PlumberTemplateGitSourceConfig   `yaml:"git,omitempty"`
-	}
-
-	// PlumberTemplateLocalSourceConfig represents a local source of templates, specifying the path to the templates and the templates to use.
-	PlumberTemplateLocalSourceConfig struct {
-		Path      string                  `yaml:"path"`
-		Templates []PlumberTemplateConfig `yaml:"templates,omitempty"`
-	}
-
-	// PlumberTemplateGitSourceConfig represents a Git source of templates, specifying the repository, reference, and templates to use.
-	// It also supports includes for loading additional configuration files from the Git repository.
-	PlumberTemplateGitSourceConfig struct {
-		Repository string                    `yaml:"repository"`
-		Ref        string                    `yaml:"ref,omitempty"`
-		Includes   []PlumberGitIncludeConfig `yaml:"includes,omitempty"`
-		Templates  []PlumberTemplateConfig   `yaml:"templates,omitempty"`
-	}
-
-	// PlumberGitIncludeConfig represents an include path for loading additional configuration files
-	// from within a Git repository source, supporting glob patterns relative to the repository root.
-	PlumberGitIncludeConfig struct {
-		Path string `yaml:"path"`
-	}
-
-	// PlumberTemplateConfig represents a single template configuration,
-	// specifying the name of the template and an optional path to the template file.
-	PlumberTemplateConfig struct {
-		Name string `yaml:"name"`
-		Path string `yaml:"path,omitempty"`
-	}
-
-	// PlumberTemplateContentConfig represents a template configuration that includes the content of the template directly,
-	// allowing for inline template definitions without needing a separate file.
-	PlumberTemplateContentConfig struct {
-		Name    string `yaml:"name"`
-		Content string `yaml:"content"`
-	}
 )

@@ -21,7 +21,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/render"
-	"github.com/getoutreach/plumber/internal/command/shape/source"
+	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
@@ -69,7 +69,7 @@ func Run(config *Config, args []string) error {
 // checkoutAndMergeIncludes checks out template sources from git and merges
 // any config files found via git source includes into the shape config.
 func checkoutAndMergeIncludes(config *Config) error {
-	includePaths, err := source.Checkout(config.Sources, config.CacheDir)
+	includePaths, err := template.Checkout(config.Sources, config.CacheDir)
 	if err != nil {
 		return fmt.Errorf("failed to checkout templates: %w", err)
 	}
