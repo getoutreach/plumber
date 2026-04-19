@@ -52,7 +52,11 @@ internal/command/
     ├── shape.go                — Run(): scan → inspect → expandMacros → walk annotations → build transformers → render → restore
     ├── transformer.go          — Transformer interface; DeriveTransformer, ShapeTransformer, BasicTransformer
     ├── manager.go              — GeneratorManager (generated mode), InplaceManager (inplace mode)
-    ├── merge.go                — inplace struct field merging via DST
+    ├── merge.go                — inplace merge dispatcher: routes TypeSpec, FuncDecl, ValueSpec
+    ├── merge_func.go           — function/method merge: params, body, receiver lookup
+    ├── merge_stmt.go           — statement-by-statement body merge, deep merge (calls, composite lits, switch cases)
+    ├── merge_var.go            — variable merge (add if missing, skip if exists)
+    ├── merge_test.go           — unit tests for all merge logic
     ├── wrapper.go              — TypeWrapper: rewrites field types by FQN/kind matching
     ├── query.go                — plumber:query processor: collectQueryTargets, executeQuery, inflateVariable (package-level + function-body vars)
     └── templates/              — git checkout (with includes support) + local load helpers for external templates
@@ -72,6 +76,7 @@ test/acceptance/
 └── fixture/
     ├── generated/model.go      — annotated with plumber:derive + plumber:mixin
     ├── merge/model.go          — annotated with plumber:derive + plumber:mode inplace
+    ├── mergecomplex/           — complex inplace merge: struct fields, functions, methods, switch cases
     ├── macro/model.go          — annotated with @derive macro
     ├── macrotemplate/model.go  — annotated with @tderive (template macro)
     ├── query/                  — package-level query fixture
@@ -301,6 +306,70 @@ delegates to `inspect.ParseAnnotations`. Type resolution uses the DST→AST node
 - Uses `Merge()` in `merge.go` which walks the DST and appends to the target `StructType`.
 - Managed by `InplaceManager`.
 
+#### Inplace merge implementation
+
+The merge pipeline is: render template → `decorator.Parse()` → `Merge(pkg, generatedFile)`
+→ returns modified `*dst.File` → `decorator.NewRestorerWithImports` → write file.
+
+**Source files:**
+
+| File | Contents |
+|---|---|
+| `merge.go` | `Merge()` dispatcher — routes `*dst.TypeSpec`, `*dst.FuncDecl`, `*dst.ValueSpec` to sub-mergers |
+| `merge_func.go` | `mergeFunc()`, `addFunc()`, `mergeParams()`, `findFuncDecl()`, `annotateFuncDecl()`, `findExistingFunc()` |
+| `merge_stmt.go` | `mergeBody()`, `statementsMatch()`, `deepMergeStmt()`, `deepMergeExpr()`, `mergeCallArgs()`, `mergeCompositeLit()`, `mergeSwitchCases()`, `exprKey()`, `stmtKey()`, `annotateStmt()` |
+| `merge_var.go` | `mergeVar()` — add if missing, skip if exists |
+| `merge_test.go` | Unit tests for all merge logic |
+
+**Struct field merge** (`merge.go`): Iterates generated struct fields, checks existing
+struct by field name, appends missing fields with `astx.AnnotateFieldIdents()` for import
+annotation.
+
+**Function/method merge** (`merge_func.go`):
+- `findExistingFunc()` searches both `pkg.Functions` (top-level functions) and
+  `type.Struct.Methods` (for method declarations with receivers).
+- Match is by **name only**; receiver type is used for lookup scope but variable name is
+  ignored.
+- `mergeParams()` does positional prefix matching — template params must be a prefix of
+  existing params. Missing template params are appended.
+- Body merge delegates to `mergeBody()`.
+
+**Body merge** (`merge_stmt.go`):
+- Empty existing body: all template statements inserted.
+- Non-empty: template statements must appear as an **ordered subsequence**. Each template
+  statement is matched via `statementsMatch()` (shallow key) then `deepMergeStmt()`.
+  If a template statement is not found, merge returns an error.
+
+**Statement matching keys** (`statementsMatch()`):
+- `*dst.AssignStmt` → LHS expressions via `exprKey()`
+- `*dst.ExprStmt` (call) → call target function name
+- `*dst.ReturnStmt` → always matches
+- `*dst.DeclStmt` → first variable name
+- `*dst.SwitchStmt` → tag expression via `exprKey()`
+- `*dst.IfStmt`, `*dst.ForStmt`, `*dst.RangeStmt` → same Go type
+
+**Deep merge** (`deepMergeStmt()`, `deepMergeExpr()`):
+- Recursively walks into RHS, return values, call args, composite lit fields.
+- `mergeCallArgs()`: matches args by `exprKey()`, appends missing template args.
+- `mergeCompositeLit()`: matches key-value entries by key name, deep-merges values of
+  matching entries, appends missing entries.
+- `mergeSwitchCases()`: matches case clauses by `caseClauseKey()` (expression values for
+  regular cases, `"default"` for default). Missing cases inserted after last matched
+  preceding case. Matched case bodies are deep-merged. Existing extra cases preserved.
+
+**Import annotation** (`astx.RewriteExpr()`, `annotateStmt()`):
+- The DST decorator resolves `pkg.Func()` into `*dst.Ident{Name: "Func", Path: "pkg/path"}`
+  rather than `*dst.SelectorExpr`. New statements cloned from the template need
+  `astx.RewriteExpr()` to convert `SelectorExpr` → annotated `Ident` for the restorer.
+
+**Key invariant:** the DST import map (`astx.BuildImportMap(file)`) must be built from
+the **generated** file's imports, since template code references packages via their
+import aliases in the generated output.
+
+**Acceptance test:** `TestMergeComplex` in `test/acceptance/merge_complex_test.go` exercises
+the full pipeline: struct field merge, param merge, composite lit deep merge, body
+subsequence matching, call arg augmentation, method lookup, and switch case merge.
+
 ---
 
 ## YAML config hierarchy
@@ -425,6 +494,7 @@ file, so golden files use `testrun-acceptance/` as a stable placeholder.
 |---|---|---|---|
 | `TestGenerated` | `generated/model.go`, `generated/types.go` | `mixing.model.filtrable` mixin with `annotation.has is:filtrable` filter | `generated/generated.go` matches golden |
 | `TestMerge` | `merge/model.go`, `merge/types.go`, `merge/blended.go` | No extra config (`ShapeConfig{}`) | `merge/blended.go` merged golden |
+| `TestMergeComplex` | `mergecomplex/model.go`, `mergecomplex/types.go`, `mergecomplex/blended.go` | Content template override | Full merge pipeline: struct fields, params, body subsequence, call arg augmentation, composite lit merge, method lookup, switch case merge |
 | `TestMacro` | `macro/model.go` | `@derive` macro expanding to `plumber:derive MacroDerived` + `plumber:output generated.go` | `macro/generated.go` matches golden |
 | `TestMacroTemplate` | `macrotemplate/model.go` | `@tderive` macro with `{{ index .Args 0 }}` template expanding call-site arg into derive name | `macrotemplate/generated.go` matches golden |
 | `TestQuery` | `query/providers.go`, `query/consumer.go` | No extra config | `query/consumer.go` inplace with matched provider functions |

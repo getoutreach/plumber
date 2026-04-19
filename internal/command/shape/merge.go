@@ -1,11 +1,12 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements inplace merging of generated struct fields into existing Go source files using the DST AST.
+// Description: This file implements inplace merging of generated declarations into existing Go source files using the DST AST.
 
 package shape
 
 import (
 	"fmt"
+	"go/token"
 
 	"github.com/dave/dst"
 	"github.com/getoutreach/plumber/internal/astx"
@@ -14,16 +15,19 @@ import (
 )
 
 // Merge takes a model.Package and a dst.File representing the generated code, and merges the
-// generated struct fields into the existing source file, returning the modified dst.File.
+// generated declarations into the existing source file, returning the modified dst.File.
+// It supports merging structs (fields), functions/methods (params + body statements), and
+// variables (add if missing).
 func Merge(pkg *model.Package, file *dst.File) (*dst.File, error) {
 	importMap := astx.BuildImportMap(file)
 	var currentFile *dst.File
 	for _, decl := range file.Decls {
-		if d, ok := decl.(*dst.GenDecl); ok {
+		switch d := decl.(type) {
+		case *dst.GenDecl:
 			for _, spec := range d.Specs {
-				if s, ok := spec.(*dst.TypeSpec); ok {
-					switch t := s.Type.(type) {
-					case *dst.StructType:
+				switch s := spec.(type) {
+				case *dst.TypeSpec:
+					if t, ok := s.Type.(*dst.StructType); ok {
 						currentType, found := lo.Find(pkg.Types, func(t *model.Type) bool {
 							return t.Name == s.Name.Name
 						})
@@ -35,10 +39,27 @@ func Merge(pkg *model.Package, file *dst.File) (*dst.File, error) {
 							return nil, fmt.Errorf("failed to merge struct %q: %w", s.Name.Name, err)
 						}
 						currentFile = f
-					default:
-						return nil, fmt.Errorf("unsupported type declaration for %q in file %q: %T", s.Name.Name, file.Name, s.Type)
+					}
+					// Skip non-struct type specs silently (interfaces, etc.)
+				case *dst.ValueSpec:
+					if d.Tok == token.VAR {
+						f, err := mergeVar(pkg, s, importMap)
+						if err != nil {
+							return nil, fmt.Errorf("failed to merge var: %w", err)
+						}
+						if f != nil {
+							currentFile = f
+						}
 					}
 				}
+			}
+		case *dst.FuncDecl:
+			f, err := mergeFunc(pkg, d, importMap)
+			if err != nil {
+				return nil, fmt.Errorf("failed to merge func %q: %w", d.Name.Name, err)
+			}
+			if f != nil {
+				currentFile = f
 			}
 		}
 	}

@@ -109,6 +109,39 @@ type Model struct {
 }
 ```
 
+#### Inplace merge mechanics
+
+The merge is idempotent — running twice produces the same result. It adds what is missing
+without removing anything the user has written.
+
+**Struct fields:** Matched by field name. Missing fields appended; existing fields
+preserved as-is (type, tags, comments).
+
+**Functions/methods:** Matched by name. Missing functions are added entirely. Existing
+functions with empty bodies receive all template statements. Existing functions with
+non-empty bodies require template statements as an **ordered subsequence** — if a template
+statement is missing from the existing body, the merge fails (removed statements are
+treated as intentional user changes). Parameters are merged positionally (template params
+must be a prefix; missing ones are appended).
+
+**Variables:** Matched by name. Added if missing, skipped if exists.
+
+**Statement matching (shallow key):**
+
+| Statement type | Match key |
+|---|---|
+| Assignment | LHS expression(s) |
+| Expression (call) | Call target function name |
+| Return | Keyword (always matches) |
+| Declaration | Variable name(s) |
+| Switch | Tag expression |
+| If / For / Range | Same Go type |
+
+**Deep merge of matched statements:**
+- **Call arguments:** template args must be present; extra existing args preserved; missing appended.
+- **Composite literals:** template key-value entries must be present; matched by key name; missing appended. Recursive at any AST depth.
+- **Switch cases:** cases matched by expression values; missing template cases inserted after last matched preceding case; extra existing cases preserved; matched case bodies deep-merged.
+
 ## Output filename placeholders
 
 | Placeholder | Expands to |

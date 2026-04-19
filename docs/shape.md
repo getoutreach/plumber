@@ -172,6 +172,133 @@ type ModelBlended struct {
 
 The import block is updated automatically.
 
+#### Inplace merge mechanics
+
+When `plumber:mode inplace` is set, the shape command renders the template into a
+temporary Go file, parses it with a DST decorator, and merges each declaration into the
+existing file.  The merge is **idempotent** — running the command twice produces the same
+result.  Every merge operation adds what is missing without removing anything the user
+has written.
+
+##### Struct fields
+
+Template struct fields are compared against the existing struct by **field name**.  Missing
+fields are appended; existing fields are left unchanged (type, tags, and comments are
+preserved as-is).
+
+```
+Template:                      Existing:                 Result:
+type S struct {                type S struct {           type S struct {
+    A int                          A string                  A string      ← kept
+    B string                       C bool                    C bool        ← kept
+}                              }                             B string      ← added
+                                                         }
+```
+
+##### Functions and methods
+
+Functions and methods are matched by **name only** (receiver type is used to locate
+methods on the correct struct, but the receiver variable name is ignored).
+
+| Existing state | Behaviour |
+|---|---|
+| Function does not exist | Entire declaration is added to the file |
+| Function exists with empty body | All template body statements are inserted |
+| Function exists with non-empty body | Template statements must appear as an **ordered subsequence** (see body merge below) |
+
+**Parameters** are merged positionally: template parameters must be a prefix of the
+existing parameter list.  Extra parameters in the existing function are fine.  Missing
+template parameters are appended.
+
+##### Variables
+
+Top-level `var` declarations are matched by **variable name**.  If the variable does not
+exist it is added; if it already exists it is skipped entirely.
+
+##### Body merge (statement-by-statement)
+
+When a function already has a non-empty body, the template's statements must appear as an
+**ordered subsequence** of the existing body.  This means every template statement must be
+found in the existing body in the same relative order, but the existing body may contain
+additional statements between them.
+
+If a template statement cannot be matched, the merge fails with an error — a "removed
+statement" is treated as an intentional user change that the template must not silently
+re-introduce.
+
+Statements are matched by a **shallow key** (structural identity), then **deep-merged**
+to augment nested expressions:
+
+| Statement type | Match key |
+|---|---|
+| Assignment (`x := ...`) | LHS expression(s) must match by expression key |
+| Expression statement (call) | Call target function name must match |
+| Return | Always matches any other return (keyword match) |
+| Declaration (`var x ...`) | Variable name(s) must match |
+| Switch | Tag expression must match |
+| If / For / Range | Same Go statement type (type match) |
+
+##### Deep merge of matched statements
+
+After a statement is matched, its contents are **recursively deep-merged** to ensure
+template-required arguments and fields are present:
+
+**Call arguments** — template arguments must all be present in the existing call.
+Arguments are compared structurally by expression key.  Extra existing arguments are
+preserved; missing template arguments are appended.
+
+```go
+// Template:                        Existing:
+s.Logger.Info("starting", "svc")    s.Logger.Info("starting")
+// Result:
+s.Logger.Info("starting", "svc")    // "svc" appended
+```
+
+**Composite literals** — template key-value entries must all be present.  Entries are
+matched by key name.  Extra existing entries are preserved; missing entries are appended.
+Values of matched entries are deep-merged recursively.
+
+```go
+// Template:                        Existing:
+&Config{                            &Config{
+    A: 1,                               A: 1,
+    B: 2,                               C: 3,
+}                                   }
+// Result:
+&Config{A: 1, C: 3, B: 2}          // B appended, C preserved
+```
+
+Deep merge is **recursive** — it applies at any depth in the AST.  A composite literal
+nested inside a call argument inside a return statement will still be augmented.
+
+##### Switch statement case merge
+
+Switch statements are matched by their **tag expression** (the value being switched on).
+Once matched, case clauses are merged:
+
+- Each template `case` and `default` clause must be present in the existing switch.
+- Cases are matched by their **case expression values** (e.g., `"case1"`, `"case2"`).
+  The `default` clause is matched by having an empty case expression list.
+- **Missing cases** from the template are inserted after the last matched preceding case,
+  preserving the relative order from the template.
+- **Extra existing cases** are preserved in place.
+- The **body of matched cases** is deep-merged using the same call-argument and
+  composite-literal augmentation as function bodies.
+
+```
+Template:                  Existing:                Result:
+switch s {                 switch s {               switch s {
+case "a":                  case "a":                case "a":       ← matched
+    foo()                      foo()                    foo()
+case "b":                  case "c":                case "b":       ← inserted
+    bar()                      baz()                    bar()
+default:                   default:                 case "c":       ← preserved
+    fallback()                 fallback()                baz()
+}                          }                        default:        ← matched
+                                                        fallback()
+                                                    }
+```
+
 ---
 
 ## Configuration file (`plumber.shape.yaml`)

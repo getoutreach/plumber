@@ -162,6 +162,7 @@ linters:
       - builtin$
       - examples$
       - node_modules
+      - test/acceptance/fixture
 issues:
   max-same-issues: 10
 formatters:

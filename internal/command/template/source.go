@@ -89,12 +89,9 @@ func ResolveRefs(
 	var opts []gen.RenderOptionsFunc
 	for _, ref := range refs {
 		if ref.Content != "" {
-			// Inline content — parse directly
-			t, err := template.New(ref.Name).Parse(ref.Content)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse inline template %q: %w", ref.Name, err)
-			}
-			opts = append(opts, gen.WithTemplate(t))
+			// Inline content — use WithTemplateContent so that {{define}} blocks
+			// are parsed into the root template with funcmaps already available.
+			opts = append(opts, gen.WithTemplateContent(ref.Content))
 		} else {
 			// Name reference — resolve from registry (sources + content)
 			resolved, err := LoadTemplates(sources, registry, cacheDir, []string{ref.Name}, fs)
@@ -163,11 +160,7 @@ func LoadTemplates(
 		}
 		for _, s := range content {
 			if s.Name == name {
-				t, err := template.New(s.Name).Parse(s.Content)
-				if err != nil {
-					return nil, err
-				}
-				opts = append(opts, gen.WithTemplate(t))
+				opts = append(opts, gen.WithTemplateContent(s.Content))
 			}
 		}
 	}

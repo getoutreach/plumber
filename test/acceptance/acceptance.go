@@ -100,5 +100,5 @@ func (ctx FixtureContext) AssertContent(t *testing.T, filename, expected string)
 
 	content = re.ReplaceAll(content, []byte("testrun-acceptance/"))
 
-	assert.Equal(t, string(content), string(expectedContent))
+	assert.Equal(t, string(expectedContent), string(content))
 }

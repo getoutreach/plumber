@@ -84,12 +84,12 @@ func BuildImportMap(file *dst.File) map[string]string {
 // block. Setting Path on the X ident of a SelectorExpr instead causes a
 // format.Node internal error ("expected ';', found '.'").
 func AnnotateFieldIdents(field *dst.Field, importMap map[string]string) {
-	field.Type = rewriteExpr(field.Type, importMap)
+	field.Type = RewriteExpr(field.Type, importMap)
 }
 
-// rewriteExpr recursively rewrites dst.Expr nodes, converting
+// RewriteExpr recursively rewrites dst.Expr nodes, converting
 // SelectorExpr{X: pkgIdent, Sel: name} into Ident{Name: name, Path: pkgPath}.
-func rewriteExpr(expr dst.Expr, importMap map[string]string) dst.Expr {
+func RewriteExpr(expr dst.Expr, importMap map[string]string) dst.Expr {
 	if expr == nil {
 		return nil
 	}
@@ -100,41 +100,41 @@ func rewriteExpr(expr dst.Expr, importMap map[string]string) dst.Expr {
 				return &dst.Ident{Name: e.Sel.Name, Path: fullPath}
 			}
 		}
-		e.X = rewriteExpr(e.X, importMap)
+		e.X = RewriteExpr(e.X, importMap)
 		return e
 	case *dst.StarExpr:
-		e.X = rewriteExpr(e.X, importMap)
+		e.X = RewriteExpr(e.X, importMap)
 		return e
 	case *dst.ArrayType:
-		e.Elt = rewriteExpr(e.Elt, importMap)
+		e.Elt = RewriteExpr(e.Elt, importMap)
 		return e
 	case *dst.MapType:
-		e.Key = rewriteExpr(e.Key, importMap)
-		e.Value = rewriteExpr(e.Value, importMap)
+		e.Key = RewriteExpr(e.Key, importMap)
+		e.Value = RewriteExpr(e.Value, importMap)
 		return e
 	case *dst.IndexExpr:
-		e.X = rewriteExpr(e.X, importMap)
-		e.Index = rewriteExpr(e.Index, importMap)
+		e.X = RewriteExpr(e.X, importMap)
+		e.Index = RewriteExpr(e.Index, importMap)
 		return e
 	case *dst.IndexListExpr:
-		e.X = rewriteExpr(e.X, importMap)
+		e.X = RewriteExpr(e.X, importMap)
 		for i, idx := range e.Indices {
-			e.Indices[i] = rewriteExpr(idx, importMap)
+			e.Indices[i] = RewriteExpr(idx, importMap)
 		}
 		return e
 	case *dst.ChanType:
-		e.Value = rewriteExpr(e.Value, importMap)
+		e.Value = RewriteExpr(e.Value, importMap)
 		return e
 	case *dst.Ellipsis:
-		e.Elt = rewriteExpr(e.Elt, importMap)
+		e.Elt = RewriteExpr(e.Elt, importMap)
 		return e
 	case *dst.FuncType:
 		for _, f := range e.Params.List {
-			f.Type = rewriteExpr(f.Type, importMap)
+			f.Type = RewriteExpr(f.Type, importMap)
 		}
 		if e.Results != nil {
 			for _, f := range e.Results.List {
-				f.Type = rewriteExpr(f.Type, importMap)
+				f.Type = RewriteExpr(f.Type, importMap)
 			}
 		}
 		return e
