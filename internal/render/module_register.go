@@ -1,3 +1,7 @@
+// Copyright 2024 Outreach Corporation. All Rights Reserved.
+
+// Description: Module registry for tracking imported modules during rendering.
+
 package render
 
 import (

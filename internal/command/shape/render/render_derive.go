@@ -46,7 +46,6 @@ func Derive(context *Context, tp *model.Type, scope map[string]any, output strin
 					withRenderFuncMap(context, output),
 					render.WithBaseTemplates(),
 					gen.WithFS(EmbededTemplates,
-						"templates/command/command.gtpl",
 						"templates/command/command_derive.gtpl",
 					),
 					gen.WithRenderOptions(context.GetRenderOptions()...),

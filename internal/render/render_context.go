@@ -1,3 +1,6 @@
+// Copyright 2024 Outreach Corporation. All Rights Reserved.
+
+// Description: Render context for managing rendering options and modules.
 package render
 
 import (
@@ -5,7 +8,11 @@ import (
 	"github.com/getoutreach/plumber/query/model"
 )
 
+// Context interface
 type (
+	// RenderContext is the main context struct used during rendering, containing all necessary information
+	// and options for the rendering process.
+	//nolint: revive //Why: There is already Context Interface defined
 	RenderContext struct {
 		RenderOptions []gen.RenderOptionsFunc
 		Modules       *ModuleRegister
@@ -15,6 +22,7 @@ type (
 		Templates     []string
 	}
 
+	// Context defines the interface for accessing rendering context information and options.
 	Context interface {
 		GetRenderOptions() []gen.RenderOptionsFunc
 		GetModules() *ModuleRegister
@@ -28,6 +36,7 @@ type (
 		Context() ContextCloner
 	}
 
+	// ContextCloner extends Context with a Clone method for creating copies of the context.
 	ContextCloner interface {
 		Context
 		Clone() ContextCloner

@@ -126,7 +126,6 @@ func (r *TemplateRenderer) buildContext(output string, app *Application, sourceM
 		},
 		output,
 	)
-
 }
 
 // buildContextMap creates the template context as a map for template execution

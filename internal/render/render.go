@@ -112,7 +112,7 @@ func Render(
 	}, nil
 }
 
-func RenderFile(
+func File(
 	context Context, entryTemplate string, scope map[string]any, output string,
 ) (*Output, error) {
 	o, err := Render(context, entryTemplate, scope, output, gen.NewReadOnlyFileOpener())

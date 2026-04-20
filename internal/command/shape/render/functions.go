@@ -250,5 +250,4 @@ func withRenderFuncMap(context *Context, output string) (opt gen.RenderOptionsFu
 		"ignored":   ignored(context.Ignores),
 	}
 	return gen.WithFuncMap(functions)
-
 }

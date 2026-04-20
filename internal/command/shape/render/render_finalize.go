@@ -16,7 +16,6 @@ func Finalize(
 	context.WithPriorityRenderOptions(
 		withRenderFuncMap(context, output),
 		gen.WithFS(EmbededTemplates,
-			"templates/command/command.gtpl",
 			"templates/command/command_derive.gtpl",
 		),
 	)

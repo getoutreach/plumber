@@ -43,8 +43,6 @@ func Shape(context *Context, tp *model.Type, scope map[string]any, output string
 					withRenderFuncMap(context, output),
 					render.WithBaseTemplates(),
 					gen.WithFS(EmbededTemplates,
-
-						"templates/command/command.gtpl",
 						"templates/command/command_shape.gtpl",
 						"templates/command/command_shape_interface.gtpl",
 					),

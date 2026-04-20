@@ -134,7 +134,6 @@ func processLoopPaths(plumberCfg *PlumberContainerConfig, baseDir, loopBaseDir s
 	}
 
 	if len(matches) == 0 {
-		// fmt.Errorf("application %q: no paths matched pattern %q", app.Name, path)
 		return nil, nil
 	}
 
