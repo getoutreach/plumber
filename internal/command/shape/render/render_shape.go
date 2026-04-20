@@ -26,7 +26,7 @@ func Shape(context *Context, tp *model.Type, scope map[string]any, output string
 
 	scope = render.DefaultScope(context, scope, output)
 
-	fm, dispose := render.WithRenderFuncMap(context, output)
+	fm, dispose := render.WithRenderFuncMap(context, scope, output)
 	defer dispose()
 
 	features := gen.Features{

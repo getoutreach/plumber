@@ -103,7 +103,7 @@ func managerRender(
 func (m *GeneratorManager) Render(pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error) {
 	var (
 		scope = map[string]any{
-			"Mode": "generated",
+			"Mode": baserender.ModeGenerated,
 		}
 		opener = gen.NewSystemFileOpener()
 	)
@@ -136,7 +136,7 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 	})
 	var (
 		scope = map[string]any{
-			"Mode": ModeInPlace,
+			"Mode": baserender.ModeInPlace,
 		}
 	)
 	if !found {

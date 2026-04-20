@@ -8,6 +8,7 @@ package redis
 type Client struct {
 }
 
+// is:provider
 func NewClient() (*Client, error) {
 	return &Client{}, nil
 }

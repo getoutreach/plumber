@@ -29,7 +29,7 @@ func Derive(context *Context, tp *model.Type, scope map[string]any, output strin
 
 	scope = render.DefaultScope(context, scope, output)
 
-	fm, dispose := render.WithRenderFuncMap(context, output)
+	fm, dispose := render.WithRenderFuncMap(context, scope, output)
 	defer dispose()
 
 	features := gen.Features{

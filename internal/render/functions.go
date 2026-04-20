@@ -148,12 +148,22 @@ func placeholder(name ...string) string {
 	return fmt.Sprintf("// <<plumber::Block(%s)>>\n// <</plumber::Block>>\n", strings.Join(name, "-"))
 }
 
-func fragmentStart(name ...string) string {
-	return fmt.Sprintf("// <<plumber::Fragment(%s)>>\n", strings.Join(name, "-"))
+func fragmentStart(scope map[string]any) func(name ...string) string {
+	return func(name ...string) string {
+		if scope["Mode"] == ModeInPlace {
+			return ""
+		}
+		return fmt.Sprintf("// <<plumber::Fragment(%s)>>\n", strings.Join(name, "-"))
+	}
 }
 
-func fragmentEnd() string {
-	return "// <</plumber::Fragment>>"
+func fragmentEnd(scope map[string]any) func() string {
+	return func() string {
+		if scope["Mode"] == ModeInPlace {
+			return ""
+		}
+		return "// <</plumber::Fragment>>"
+	}
 }
 
 func ignored(ignores *Ignores) func(groups ...string) bool {
@@ -226,7 +236,7 @@ func moduleInclude(context Context) func(modulePath string) (string, error) {
 	}
 }
 
-func WithRenderFuncMap(context Context, output string) (opt gen.RenderOptionsFunc, dispose func()) {
+func WithRenderFuncMap(context Context, scope map[string]any, output string) (opt gen.RenderOptionsFunc, dispose func()) {
 	var tp *model.Type
 	dispose = func() {
 		if tp != nil {
@@ -277,8 +287,8 @@ func WithRenderFuncMap(context Context, output string) (opt gen.RenderOptionsFun
 		"comment":          comment,
 		"filter_elements":  filterElements,
 		"placeholder":      placeholder,
-		"fragment_start":   fragmentStart,
-		"fragment_end":     fragmentEnd,
+		"fragment_start":   fragmentStart(scope),
+		"fragment_end":     fragmentEnd(scope),
 		"receiver":         receiver,
 		"module_include":   moduleInclude(context),
 	}

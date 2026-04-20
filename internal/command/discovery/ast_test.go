@@ -177,3 +177,107 @@ func RelativeTo(pkg *types.Package) types.Qualifier {
 		return other.Name()
 	}
 }
+
+func TestASTParserAnnotationRule(t *testing.T) {
+	dir := testFixtureDir(t, "annotation_rule")
+
+	content := `package annotation_rule
+
+// Logger is a logging service
+type Logger struct{}
+
+// plumber:provider
+//
+// NewLogger creates a new Logger
+func NewLogger() *Logger {
+	return &Logger{}
+}
+
+// Cache is a caching service
+type Cache struct{}
+
+// NewCache creates a new Cache (no annotation)
+func NewCache() *Cache {
+	return &Cache{}
+}
+`
+
+	err := os.WriteFile(filepath.Join(dir, "services.go"), []byte(content), 0o644)
+	assert.NilError(t, err)
+
+	parser, err := discovery.NewASTParser(filepath.Join(dir, "services.go"))
+	assert.NilError(t, err)
+
+	// With annotation.has rule, only NewLogger should match
+	matchers := []discovery.Matcher{
+		{
+			Constructors: []discovery.ConstructorPattern{
+				{Re: "New(?P<name>.*)", Rule: "annotation.has:plumber:provider"},
+			},
+		},
+	}
+
+	result, err := parser.Discover(matchers)
+	assert.NilError(t, err)
+	assert.Equal(t, len(result.Providers), 1, "only annotated constructor should match")
+	assert.Equal(t, result.Providers[0].Name, "Logger")
+	assert.Equal(t, result.Providers[0].Constructor.FunctionName, "NewLogger")
+}
+
+func TestASTParserAnnotationRuleMixedPatterns(t *testing.T) {
+	dir := testFixtureDir(t, "annotation_mixed")
+
+	content := `package annotation_mixed
+
+type Alpha struct{}
+
+// plumber:provider
+//
+// NewAlpha creates Alpha
+func NewAlpha() *Alpha {
+	return &Alpha{}
+}
+
+type Beta struct{}
+
+// NewBeta creates Beta (no annotation)
+func NewBeta() *Beta {
+	return &Beta{}
+}
+
+type Gamma struct{}
+
+// CreateGamma creates Gamma (different pattern, no rule)
+func CreateGamma() *Gamma {
+	return &Gamma{}
+}
+`
+
+	err := os.WriteFile(filepath.Join(dir, "mixed.go"), []byte(content), 0o644)
+	assert.NilError(t, err)
+
+	parser, err := discovery.NewASTParser(filepath.Join(dir, "mixed.go"))
+	assert.NilError(t, err)
+
+	// First pattern requires annotation, second doesn't
+	matchers := []discovery.Matcher{
+		{
+			Constructors: []discovery.ConstructorPattern{
+				{Re: "New(?P<name>.*)", Rule: "annotation.has:plumber:provider"},
+				{Re: "Create(?P<name>.*)"},
+			},
+		},
+	}
+
+	result, err := parser.Discover(matchers)
+	assert.NilError(t, err)
+	assert.Equal(t, len(result.Providers), 2, "should find Alpha (annotated) and Gamma (no rule)")
+
+	byName := make(map[string]bool)
+	for _, p := range result.Providers {
+		byName[p.Name] = true
+	}
+	assert.Assert(t, byName["Alpha"], "Alpha should be found (has annotation)")
+	assert.Assert(t, byName["Gamma"], "Gamma should be found (Create pattern has no rule)")
+	assert.Assert(t, !byName["Beta"], "Beta should NOT be found (New pattern requires annotation)")
+}

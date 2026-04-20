@@ -71,6 +71,10 @@ type SourcePathConfig struct {
 type ConstructorPattern struct {
 	// Re is a regular expression pattern with optional named capture groups
 	Re string `yaml:"re"`
+	// Rule is an optional rule that must be satisfied for the pattern to match.
+	// Supported formats:
+	//   - "annotation.has:<name>" — the function must have the specified annotation in its doc comment
+	Rule string `yaml:"rule,omitempty"`
 }
 
 // Matcher represents a matcher configuration

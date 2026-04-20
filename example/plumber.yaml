@@ -34,7 +34,9 @@ plumber.discovery:
               - constructors:
                   # Named capture group "name" extracts the provider name
                   - re: New(?P<name>.*)
+                    rule: annotation.has:is:provider
                   - re: Factory(?P<name>.*)
+                    rule: annotation.has:is:provider
           # loop allows to define multiple containers using
           loop:
             # path scans a folder structure; [\w/]+ captures nested subdirectories

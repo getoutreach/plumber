@@ -141,6 +141,7 @@ func (r *TemplateRenderer) buildScope(
 	// configType, configModule, isRemote := parseConfigType(app.Config, app.Module)
 
 	return map[string]interface{}{
+		"Mode": baserender.ModeInPlace,
 		"Container": map[string]interface{}{
 			"Name":   containerName,
 			"Module": sourceModule,

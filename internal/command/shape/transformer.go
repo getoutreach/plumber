@@ -19,17 +19,6 @@ import (
 	"github.com/samber/lo"
 )
 
-// Mode constants for transformers
-const (
-	// ModeInPlace is the mode for transformers that indicates the generated code should be merged
-	// in place with the existing source file.
-	ModeInPlace = "inplace"
-
-	// ModeGenerated is the mode for transformers that indicates the generated code should be written
-	// to a separate file.
-	ModeGenerated = "generated"
-)
-
 // defaultOptions defines the set of annotation options that are allowed for shape and derive transformers.
 var defaultOptions = []string{
 	contract.OptionTemplate,
@@ -161,7 +150,7 @@ func (t *BasicTransformer) Mode() string {
 // Output generates the output filename for the transformed code based on the transformer configuration and the
 // position of the annotated node.
 func (t *BasicTransformer) Output() string {
-	if t.Mode() == ModeInPlace {
+	if t.Mode() == baserender.ModeInPlace {
 		return "inplace.go"
 	}
 	output := "generated.go"

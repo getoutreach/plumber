@@ -21,7 +21,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/template"
-	baserender "github.com/getoutreach/plumber/internal/render"
+	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
@@ -275,9 +275,9 @@ func renderTransformations(config *Config, pkgs []*model.Package, transformation
 	}
 	for _, qo := range queryOutputs {
 		outputs = append(outputs, &ManagerOutput{
-			Output: &baserender.Output{
+			Output: &render.Output{
 				Filename: qo.Filename,
-				Dst: &baserender.DstOutput{
+				Dst: &render.DstOutput{
 					File:    qo.File,
 					Package: qo.Package.Package,
 				},
@@ -361,7 +361,7 @@ func buildPath(mode, pkgPath, filename, output string) Pathinfo {
 
 	pkg := path.Join(pkgPath, path.Dir(output))
 
-	if mode == ModeInPlace {
+	if mode == render.ModeInPlace {
 		actualFilename = pkg
 	}
 
@@ -375,9 +375,9 @@ func buildPath(mode, pkgPath, filename, output string) Pathinfo {
 
 func buildModeManager(cfg *Config, mode, pkgPath, output string) Manager {
 	switch mode {
-	case ModeInPlace:
+	case render.ModeInPlace:
 		return NewInplaceManager(cfg, pkgPath, output)
-	case ModeGenerated:
+	case render.ModeGenerated:
 		return NewGeneratorManager(cfg, pkgPath, output)
 	}
 	return nil

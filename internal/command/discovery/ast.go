@@ -15,6 +15,7 @@ import (
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
 	"github.com/getoutreach/plumber/internal/astx"
+	"github.com/getoutreach/plumber/internal/astx/inspect"
 	"github.com/getoutreach/plumber/internal/command/discovery/contract"
 )
 
@@ -107,7 +108,7 @@ func (p *ASTParser) processFuncDecl(
 	matchers []Matcher,
 ) (info *contract.ConstructorInfo, providerName string) {
 	// Check if this function matches any constructor pattern
-	providerName, matched := p.matchConstructorPattern(decl.Name.Name, matchers)
+	providerName, matched := p.matchConstructorPattern(decl.Name.Name, decl, matchers)
 	if !matched {
 		return nil, ""
 	}
@@ -189,8 +190,9 @@ func (p *ASTParser) buildProviders(constructors []*contract.ConstructorInfo, pro
 }
 
 // matchConstructorPattern checks if a function name matches any constructor pattern
+// and verifies any associated rules (e.g. annotation checks).
 // Returns (providerName, matched) where providerName is extracted from the "name" capture group
-func (p *ASTParser) matchConstructorPattern(funcName string, matchers []Matcher) (string, bool) {
+func (p *ASTParser) matchConstructorPattern(funcName string, decl *dst.FuncDecl, matchers []Matcher) (string, bool) {
 	if len(matchers) == 0 {
 		return "", true
 	}
@@ -205,6 +207,11 @@ func (p *ASTParser) matchConstructorPattern(funcName string, matchers []Matcher)
 
 			matches := re.FindStringSubmatch(funcName)
 			if matches != nil {
+				// If a rule is specified, verify it before accepting the match
+				if cp.Rule != "" && !p.checkRule(cp.Rule, decl) {
+					continue
+				}
+
 				// Extract the "name" capture group if present
 				for i, groupName := range re.SubexpNames() {
 					if groupName == "name" && i < len(matches) {
@@ -218,6 +225,29 @@ func (p *ASTParser) matchConstructorPattern(funcName string, matchers []Matcher)
 	}
 
 	return "", false
+}
+
+// checkRule evaluates a rule against a function declaration.
+// Supported rule formats:
+//   - "annotation.has:<name>" — checks if the function's doc comment contains the specified annotation
+func (p *ASTParser) checkRule(rule string, decl *dst.FuncDecl) bool {
+	const annotationHasPrefix = "annotation.has:"
+	if strings.HasPrefix(rule, annotationHasPrefix) {
+		annotationName := strings.TrimPrefix(rule, annotationHasPrefix)
+		return hasAnnotation(decl, annotationName)
+	}
+	return false
+}
+
+// hasAnnotation checks whether a function declaration's doc comment contains an annotation with the given name.
+func hasAnnotation(decl *dst.FuncDecl, name string) bool {
+	doc := extractComment(decl.Decs.Start)
+	for _, ann := range inspect.ParseAnnotations(doc) {
+		if ann.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func extractComment(decorations dst.Decorations) string {

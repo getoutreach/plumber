@@ -20,6 +20,17 @@ import (
 // PlaceholderName is the name used in templates to reference the context for rendering.
 const PlaceholderName = "plumber"
 
+// Mode constants for transformers
+const (
+	// ModeInPlace is the mode for transformers that indicates the generated code should be merged
+	// in place with the existing source file.
+	ModeInPlace = "inplace"
+
+	// ModeGenerated is the mode for transformers that indicates the generated code should be written
+	// to a separate file.
+	ModeGenerated = "generated"
+)
+
 // Vars
 var (
 	// EmbededTemplates is an embedded filesystem containing the default templates for rendering Go code.
@@ -84,7 +95,7 @@ func Render(
 
 	scope = DefaultScope(context, scope, output)
 
-	fm, dispose := WithRenderFuncMap(context, output)
+	fm, dispose := WithRenderFuncMap(context, scope, output)
 	defer dispose()
 
 	features := gen.Features{
