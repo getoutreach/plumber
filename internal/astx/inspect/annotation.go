@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/dave/dst"
 	"github.com/getoutreach/plumber/query/model"
 )
 
@@ -122,4 +123,24 @@ func ParseTags(raw string) []model.Tag {
 		raw = raw[j+1:]
 	}
 	return tags
+}
+
+// AnnotationsFromDecs extracts annotations from DST node decoration strings
+// (comments like "// plumber:shape ..." or "// generate:once").
+func AnnotationsFromDecs(decs ...dst.Decorations) model.Annotations {
+	var lines []string
+	for _, dec := range decs {
+		for _, s := range dec {
+			s = strings.TrimSpace(s)
+			if strings.HasPrefix(s, "//") {
+				line := strings.TrimPrefix(s, "//")
+				line = strings.TrimSpace(line)
+				lines = append(lines, line)
+			}
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	return ParseAnnotations(strings.Join(lines, "\n"))
 }

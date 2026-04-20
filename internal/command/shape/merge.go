@@ -10,14 +10,22 @@ import (
 
 	"github.com/dave/dst"
 	"github.com/getoutreach/plumber/internal/astx"
+	"github.com/getoutreach/plumber/internal/astx/inspect"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
+
+// annotationGenerateOnce is the annotation name that suppresses merging
+// when the entity already exists in the target code.
+const annotationGenerateOnce = "generate:once"
 
 // Merge takes a model.Package and a dst.File representing the generated code, and merges the
 // generated declarations into the existing source file, returning the modified dst.File.
 // It supports merging structs (fields), functions/methods (params + body statements), and
 // variables (add if missing).
+//
+// Declarations annotated with generate:once are skipped if the entity already exists
+// in the target package.
 func Merge(pkg *model.Package, file *dst.File) (*dst.File, error) {
 	importMap := astx.BuildImportMap(file)
 	var currentFile *dst.File
@@ -28,6 +36,16 @@ func Merge(pkg *model.Package, file *dst.File) (*dst.File, error) {
 				switch s := spec.(type) {
 				case *dst.TypeSpec:
 					if t, ok := s.Type.(*dst.StructType); ok {
+						// Check generate:once: if the struct already exists, skip merging
+						if hasGenerateOnce(d.Decs.Start) {
+							_, found := lo.Find(pkg.Types, func(t *model.Type) bool {
+								return t.Name == s.Name.Name
+							})
+							if found {
+								continue
+							}
+						}
+
 						currentType, found := lo.Find(pkg.Types, func(t *model.Type) bool {
 							return t.Name == s.Name.Name
 						})
@@ -54,6 +72,11 @@ func Merge(pkg *model.Package, file *dst.File) (*dst.File, error) {
 				}
 			}
 		case *dst.FuncDecl:
+			// Check generate:once: if the function already exists, skip merging
+			if hasGenerateOnce(d.Decs.Start) && findExistingFunc(pkg, d) != nil {
+				continue
+			}
+
 			f, err := mergeFunc(pkg, d, importMap)
 			if err != nil {
 				return nil, fmt.Errorf("failed to merge func %q: %w", d.Name.Name, err)
@@ -64,6 +87,17 @@ func Merge(pkg *model.Package, file *dst.File) (*dst.File, error) {
 		}
 	}
 	return currentFile, nil
+}
+
+// hasGenerateOnce reports whether any of the given DST decorations contain a generate:once annotation.
+func hasGenerateOnce(decs ...dst.Decorations) bool {
+	annotations := inspect.AnnotationsFromDecs(decs...)
+	for _, ann := range annotations {
+		if ann.Name == annotationGenerateOnce {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeStruct takes the current model.Type and the generated dst.StructType, and merges the fields from the generated struct

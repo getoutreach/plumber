@@ -158,21 +158,7 @@ func collectQueryTargets(pkgs model.Packages) ([]QueryTarget, error) {
 // annotationsFromDecs extracts plumber annotations from DST node decoration
 // strings (comments like "// plumber:query ...").
 func annotationsFromDecs(decs ...dst.Decorations) model.Annotations {
-	var lines []string
-	for _, dec := range decs {
-		for _, s := range dec {
-			s = strings.TrimSpace(s)
-			if strings.HasPrefix(s, "//") {
-				line := strings.TrimPrefix(s, "//")
-				line = strings.TrimSpace(line)
-				lines = append(lines, line)
-			}
-		}
-	}
-	if len(lines) == 0 {
-		return nil
-	}
-	return inspect.ParseAnnotations(strings.Join(lines, "\n"))
+	return inspect.AnnotationsFromDecs(decs...)
 }
 
 // collectLocalQueryTargets walks all DST files in each package to find

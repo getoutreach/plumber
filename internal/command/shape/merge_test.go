@@ -6,10 +6,13 @@
 package shape
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
+	"github.com/getoutreach/plumber/internal/astx/inspect"
 )
 
 func TestStatementsMatch(t *testing.T) {
@@ -234,6 +237,22 @@ func TestExprKey(t *testing.T) {
 }
 
 // --- helpers ---
+
+// mergeTestFixtureDir creates a temporary fixture directory inside the current
+// module tree so that go/packages can load it. Returns the directory path.
+func mergeTestFixtureDir(t *testing.T, name string) string {
+	t.Helper()
+	dir, err := filepath.Abs(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.MkdirAll(dir, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(filepath.Join("testdata")) })
+	return dir
+}
 
 func parseFile(t *testing.T, src string) *dst.File {
 	t.Helper()
@@ -506,4 +525,298 @@ func findFirstSwitch(file *dst.File) *dst.SwitchStmt {
 		return true
 	})
 	return result
+}
+
+func TestHasGenerateOnce(t *testing.T) {
+	tests := []struct {
+		name   string
+		src    string
+		expect bool
+	}{
+		{
+			name: "function with generate:once annotation",
+			src: `package p
+
+// generate:once
+func Define() {}
+`,
+			expect: true,
+		},
+		{
+			name: "function without annotation",
+			src: `package p
+
+// Define sets up the container
+func Define() {}
+`,
+			expect: false,
+		},
+		{
+			name: "function with mixed comments and generate:once",
+			src: `package p
+
+// Define sets up the container
+//
+// generate:once
+func Define() {}
+`,
+			expect: true,
+		},
+		{
+			name:   "empty decorations",
+			src:    "package p\nfunc f() {}\n",
+			expect: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := parseFile(t, tt.src)
+			fd := f.Decls[0].(*dst.FuncDecl)
+			got := hasGenerateOnce(fd.Decs.Start)
+			if got != tt.expect {
+				t.Errorf("hasGenerateOnce() = %v, want %v", got, tt.expect)
+			}
+		})
+	}
+}
+
+func TestHasGenerateOnce_Struct(t *testing.T) {
+	src := `package p
+
+// generate:once
+type Foo struct {
+	A int
+}
+`
+	f := parseFile(t, src)
+	gd := f.Decls[0].(*dst.GenDecl)
+	got := hasGenerateOnce(gd.Decs.Start)
+	if !got {
+		t.Error("expected hasGenerateOnce to return true for annotated struct")
+	}
+}
+
+func TestHasGenerateOnce_StructWithout(t *testing.T) {
+	src := `package p
+
+// Foo is a thing
+type Foo struct {
+	A int
+}
+`
+	f := parseFile(t, src)
+	gd := f.Decls[0].(*dst.GenDecl)
+	got := hasGenerateOnce(gd.Decs.Start)
+	if got {
+		t.Error("expected hasGenerateOnce to return false for non-annotated struct")
+	}
+}
+
+// TestMergeGenerateOnce_FuncSkipsWhenExists is an acceptance test verifying that
+// the Merge function skips a function declaration annotated with generate:once
+// when the function already exists in the target package.
+func TestMergeGenerateOnce_FuncSkipsWhenExists(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "generate_once_func_skip")
+
+	// Write existing source with a Define method that has custom user content
+	existingSrc := `package generate_once_func_skip
+
+type Container struct {
+	Name string
+}
+
+// Define sets up the container with custom logic
+func (c *Container) Define() {
+	c.Name = "custom"
+}
+`
+	err := os.WriteFile(filepath.Join(dir, "container.go"), []byte(existingSrc), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Load the package using inspect
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "container.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	if len(pkgs) == 0 {
+		t.Fatal("no packages loaded")
+	}
+	pkg := pkgs[0]
+
+	// Parse generated code WITH generate:once annotation
+	generatedSrc := `package generate_once_func_skip
+
+// generate:once
+func (c *Container) Define() {
+	c.Name = "generated"
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	// Merge should skip the function because it exists and has generate:once
+	resultFile, err := Merge(pkg, generatedFile)
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+
+	// resultFile should be nil because nothing was merged
+	if resultFile != nil {
+		t.Fatal("expected nil result (no merge performed), but got a file")
+	}
+}
+
+// TestMergeGenerateOnce_FuncAddsWhenNotExists verifies that a function annotated
+// with generate:once IS added when it doesn't exist yet.
+func TestMergeGenerateOnce_FuncAddsWhenNotExists(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "generate_once_func_add")
+
+	// Existing source — Container exists but has no Define method
+	existingSrc := `package generate_once_func_add
+
+type Container struct {
+	Name string
+}
+`
+	err := os.WriteFile(filepath.Join(dir, "container.go"), []byte(existingSrc), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "container.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	// Generated code with generate:once — function does NOT exist yet, so it should be added
+	generatedSrc := `package generate_once_func_add
+
+// generate:once
+func (c *Container) Define() {
+	c.Name = "generated"
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFile, err := Merge(pkg, generatedFile)
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+
+	// Function should have been added
+	if resultFile == nil {
+		t.Fatal("expected a file with the added function, got nil")
+	}
+
+	// Verify the function was added
+	found := findFuncDecl(resultFile, "Define")
+	if found == nil {
+		t.Fatal("expected Define function to be added to the file")
+	}
+}
+
+// TestMergeGenerateOnce_FuncMergesWithoutAnnotation verifies that without
+// generate:once, a function IS merged even when it already exists (normal behavior).
+func TestMergeGenerateOnce_FuncMergesWithoutAnnotation(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "generate_once_func_merge")
+
+	existingSrc := `package generate_once_func_merge
+
+type Container struct {
+	Name string
+}
+
+func (c *Container) Define() {
+	c.Name = "original"
+}
+`
+	err := os.WriteFile(filepath.Join(dir, "container.go"), []byte(existingSrc), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "container.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	// Generated code WITHOUT generate:once — should merge normally
+	generatedSrc := `package generate_once_func_merge
+
+func (c *Container) Define() {
+	c.Name = "original"
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFile, err := Merge(pkg, generatedFile)
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+
+	// Should have merged (returned a file)
+	if resultFile == nil {
+		t.Fatal("expected merge to proceed (no generate:once), but got nil")
+	}
+}
+
+// TestMergeGenerateOnce_StructSkipsWhenExists verifies that a struct annotated
+// with generate:once skips field merging when the struct already exists.
+func TestMergeGenerateOnce_StructSkipsWhenExists(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "generate_once_struct_skip")
+
+	// Existing source with Container that has only Name field
+	existingSrc := `package generate_once_struct_skip
+
+type Container struct {
+	Name string
+}
+`
+	err := os.WriteFile(filepath.Join(dir, "container.go"), []byte(existingSrc), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "container.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	// Generated code tries to add a new field, but has generate:once
+	generatedSrc := `package generate_once_struct_skip
+
+// generate:once
+type Container struct {
+	Name  string
+	Extra int
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFile, err := Merge(pkg, generatedFile)
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+
+	// Should be nil — struct exists and generate:once is set, so merge is skipped
+	if resultFile != nil {
+		t.Fatal("expected nil result (struct merge skipped), but got a file")
+	}
 }

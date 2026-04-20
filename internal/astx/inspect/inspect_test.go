@@ -7,6 +7,7 @@ package inspect
 import (
 	"testing"
 
+	"github.com/dave/dst"
 	"github.com/getoutreach/plumber/query/model"
 	"gotest.tools/v3/assert"
 )
@@ -71,4 +72,40 @@ func TestParseTags(t *testing.T) {
 			Value: "required",
 		},
 	}, ParseTags(tag))
+}
+
+func TestAnnotationsFromDecs(t *testing.T) {
+	decs := dst.Decorations{
+		"// generate:once",
+		"// plumber:provider",
+	}
+
+	annotations := AnnotationsFromDecs(decs)
+	assert.Equal(t, len(annotations), 2)
+	assert.Equal(t, annotations[0].Name, "generate:once")
+	assert.Equal(t, annotations[1].Name, "plumber:provider")
+}
+
+func TestAnnotationsFromDecs_Empty(t *testing.T) {
+	annotations := AnnotationsFromDecs(dst.Decorations{})
+	assert.Equal(t, len(annotations), 0)
+}
+
+func TestAnnotationsFromDecs_NonAnnotationComments(t *testing.T) {
+	decs := dst.Decorations{
+		"// This is a regular comment",
+	}
+
+	annotations := AnnotationsFromDecs(decs)
+	assert.Equal(t, len(annotations), 0)
+}
+
+func TestAnnotationsFromDecs_MultipleDecs(t *testing.T) {
+	decs1 := dst.Decorations{"// generate:once"}
+	decs2 := dst.Decorations{"// plumber:provider"}
+
+	annotations := AnnotationsFromDecs(decs1, decs2)
+	assert.Equal(t, len(annotations), 2)
+	assert.Equal(t, annotations[0].Name, "generate:once")
+	assert.Equal(t, annotations[1].Name, "plumber:provider")
 }
