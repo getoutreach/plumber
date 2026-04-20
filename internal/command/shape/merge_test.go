@@ -250,7 +250,7 @@ func mergeTestFixtureDir(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(filepath.Join("testdata")) })
+	t.Cleanup(func() { os.RemoveAll("testdata") })
 	return dir
 }
 
