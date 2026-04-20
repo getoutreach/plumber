@@ -67,18 +67,29 @@ type SourcePathConfig struct {
 	Path string `yaml:"path"`
 }
 
+// ConstructorPattern represents a single constructor matching pattern
+type ConstructorPattern struct {
+	// Re is a regular expression pattern with optional named capture groups
+	Re string `yaml:"re"`
+}
+
 // Matcher represents a matcher configuration
 type Matcher struct {
 	// Constructor patterns with optional named capture groups
-	Constructors []string `yaml:"constructors,omitempty"`
+	Constructors []ConstructorPattern `yaml:"constructors,omitempty"`
 }
 
 // LoopConfig defines how to iterate over paths to create multiple containers
 type LoopConfig struct {
-	Path string `yaml:"path"`
+	Path    string   `yaml:"path"`
+	Paths   []string `yaml:"paths,omitempty"`
+	BaseDir string   `yaml:"baseDir,omitempty"`
 }
 
 // MergeDiscovery merges another Config into this one, appending applications.
 func (c *Config) MergeDiscovery(other *Config) {
 	c.Applications = append(c.Applications, other.Applications...)
+	c.Templates.Global = append(c.Templates.Global, other.Templates.Global...)
+	c.Templates.Container = append(c.Templates.Container, other.Templates.Container...)
+	c.Templates.Application = append(c.Templates.Application, other.Templates.Application...)
 }

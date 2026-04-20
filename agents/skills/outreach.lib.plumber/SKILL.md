@@ -16,9 +16,9 @@ hand — each is self-contained.
 
 | Feature | File | Use when... |
 |---|---|---|
-| **Dependency injection** | [dependency-injection.md](dependency-injection.md) | You need to declare, wire, or resolve service dependencies using `D[T]`, `R[T]`, containers, and resolvers. |
+| **Dependency injection** | [dependency-injection.md](dependency-injection.md) | You need to understand mechanics of dependency declaration of service dependencies with the project. Details of using `D[T]`, `R[T]`, structure of the application graph,containers, and resolvers. |
+| **Discovery** | [discovery.md](discovery.md) | Container wiring is repetitive and follows constructor conventions — let the CLI auto-generate container struct fields, resolvers, and dependency wiring from a YAML config. |
 | **Task orchestration** | [task-orchestration.md](task-orchestration.md) | You need to start, sequence, and gracefully shut down long-running services using `Pipeline`, `Parallel`, runners, and lifecycle options. |
-| **Discovery** | [discovery.md](discovery.md) | Container wiring is repetitive and follows constructor conventions — let the CLI auto-generate struct fields, resolvers, and dependency wiring from a YAML config. |
 | **Shape** | [shape.md](shape.md) | You need annotation-driven code generation: deriving filtered structs, rendering Go templates, or populating slices from pattern-matched entities. |
 | **Inspect** | [inspect.md](inspect.md) | You need structured JSON/YAML output describing packages, types, functions, and annotations for external tooling or analysis. |
 

@@ -6,12 +6,15 @@ import (
 
 	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/genius/gen"
+	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 )
 
 func TestTesting(t *testing.T) {
 	context := Context{
-		Modules: NewModuleRegister(),
+		ContextCloner: &render.RenderContext{
+			Modules: render.NewModuleRegister(),
+		},
 		Ignores: NewIgnores([]string{"ID"}),
 	}
 

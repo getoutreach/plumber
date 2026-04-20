@@ -8,11 +8,8 @@ package render
 
 import (
 	"embed"
-	"path"
 
-	"github.com/dave/dst"
-	"github.com/dave/dst/decorator"
-	"github.com/getoutreach/plumber/internal/genius/gen"
+	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 )
 
@@ -37,64 +34,23 @@ type Template interface {
 
 // Context represents the context for rendering a transformation, containing information about the package, modules, output path,
 type Context struct {
-	RenderOptions []gen.RenderOptionsFunc
-	Modules       *ModuleRegister
-	Ignores       *Ignores
-	PkgPath       string
-	Package       *model.Package
-	Wrapper       TypeWrapperProvider
-	Output        string
-	Templates     []string
+	render.ContextCloner
+	Ignores *Ignores
+	Wrapper TypeWrapperProvider
 }
 
 func (c *Context) WithIgnores(ignores *Ignores) *Context {
 	return &Context{
-		RenderOptions: c.RenderOptions,
-		Modules:       c.Modules,
+		ContextCloner: c.ContextCloner.Clone(),
 		Ignores:       ignores,
-		PkgPath:       c.PkgPath,
-		Package:       c.Package,
 		Wrapper:       c.Wrapper,
-		Output:        c.Output,
-		Templates:     c.Templates,
 	}
 }
 
-func (c *Context) ContextRenderOptions() []gen.RenderOptionsFunc {
-	opts := make([]gen.RenderOptionsFunc, 0, len(c.RenderOptions)+1)
-	opts = append(opts, c.RenderOptions...)
-	if c.Templates != nil {
-		opts = append(opts, gen.WithFS(EmbededTemplates,
-			c.Templates...,
-		))
+func (c *Context) Clone() *Context {
+	return &Context{
+		ContextCloner: c.ContextCloner.Clone(),
+		Ignores:       c.Ignores,
+		Wrapper:       c.Wrapper,
 	}
-	return opts
-}
-
-// DstOutput represents the output of rendering a transformation, containing the generated dst.File and its
-// associated package information.
-type DstOutput struct {
-	File    *dst.File
-	Package *decorator.Package
-}
-
-// Output represents the result of rendering a transformation, containing the output filename, rendered content,
-// and any associated modules or DST output.
-type Output struct {
-	Filename string
-	Modules  *ModuleRegister
-	Content  []byte
-	Dst      *DstOutput
-}
-
-func DefaultScope(context *Context, scope map[string]any, output string) map[string]any {
-	scope["Package"] = map[string]any{
-		"Name": path.Base(path.Dir(output)),
-		"Path": context.PkgPath,
-	}
-	scope["Output"] = map[string]any{
-		"Path": output,
-	}
-
-	return scope
 }

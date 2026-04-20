@@ -67,8 +67,12 @@ func printContainer(w io.Writer, idx int, container *Container, indent string) {
 func printMatcher(w io.Writer, idx int, matcher *Matcher, indent string) {
 	if len(matcher.Constructors) > 0 {
 		fmt.Fprintf(w, "%s├─ Matcher %d: constructors\n", indent, idx)
+		patterns := make([]string, len(matcher.Constructors))
+		for i, cp := range matcher.Constructors {
+			patterns[i] = cp.Re
+		}
 		fmt.Fprintf(w, "%s│  └─ Patterns: %s\n", indent,
-			strings.Join(matcher.Constructors, ", "))
+			strings.Join(patterns, ", "))
 	}
 }
 
@@ -90,8 +94,12 @@ func PrintHydratedConfig(w io.Writer, hydrated []*PlumberContainerConfig) {
 			for j, matcher := range cfg.Matchers {
 				if len(matcher.Constructors) > 0 {
 					fmt.Fprintf(w, "    %d. Constructor patterns\n", j+1)
+					patterns := make([]string, len(matcher.Constructors))
+					for k, cp := range matcher.Constructors {
+						patterns[k] = cp.Re
+					}
 					fmt.Fprintf(w, "       Patterns: %s\n",
-						strings.Join(matcher.Constructors, ", "))
+						strings.Join(patterns, ", "))
 				}
 			}
 		}

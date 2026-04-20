@@ -39,6 +39,7 @@ type GitSourceConfig struct {
 	Ref        string             `yaml:"ref,omitempty"`
 	Includes   []GitIncludeConfig `yaml:"includes,omitempty"`
 	Templates  []FileRef          `yaml:"templates,omitempty"`
+	Replaced   string             `yaml:"replaced,omitempty"` // for testing, allows replacing the repo URL with a local path
 }
 
 // GitIncludeConfig represents an include path for loading additional configuration files

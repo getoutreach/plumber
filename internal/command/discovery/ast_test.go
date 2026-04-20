@@ -60,7 +60,7 @@ func TestASTParserDiscover(t *testing.T) {
 
 	matchers := []discovery.Matcher{
 		{
-			Constructors: []string{"New(?P<name>.*)"},
+			Constructors: []discovery.ConstructorPattern{{Re: "New(?P<name>.*)"}},
 		},
 	}
 
@@ -121,7 +121,7 @@ func CreateRepository(db string) (*Repository, error) {
 
 	matchers := []discovery.Matcher{
 		{
-			Constructors: []string{"New(?P<name>.*)", "Create(?P<name>.*)"},
+			Constructors: []discovery.ConstructorPattern{{Re: "New(?P<name>.*)"}, {Re: "Create(?P<name>.*)"}},
 		},
 	}
 

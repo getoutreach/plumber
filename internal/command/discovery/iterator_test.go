@@ -195,7 +195,7 @@ func TestPathIterator(t *testing.T) {
 
 	// Test pattern matching
 	pattern := `adapter/(?P<module>\w+)`
-	iterator, err := discovery.NewPathIterator(tmpDir, pattern)
+	iterator, err := discovery.NewPathIterator(tmpDir, "", pattern)
 	assert.NilError(t, err)
 
 	matches, err := iterator.Iterate()
@@ -240,7 +240,7 @@ func TestPathIteratorNestedDirectories(t *testing.T) {
 
 	// Use [\w/]+ to capture nested paths
 	pattern := `adapter/(?P<module>[\w/]+)`
-	iterator, err := discovery.NewPathIterator(tmpDir, pattern)
+	iterator, err := discovery.NewPathIterator(tmpDir, "", pattern)
 	assert.NilError(t, err)
 
 	matches, err := iterator.Iterate()
@@ -298,6 +298,6 @@ func TestHydrateConfig(t *testing.T) {
 }
 
 func TestNewPathIteratorInvalidPattern(t *testing.T) {
-	_, err := discovery.NewPathIterator("/tmp", "[invalid")
+	_, err := discovery.NewPathIterator("/tmp", "", "[invalid")
 	assert.ErrorContains(t, err, "invalid path pattern")
 }

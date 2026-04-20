@@ -96,30 +96,15 @@ func ProcessLoops(cfg *Config, baseDir string) error {
 
 			// If there's a loop configuration, expand it
 			if container.Loop != nil {
-				iterator, err := NewPathIterator(baseDir, container.Loop.Path)
-				if err != nil {
-					return fmt.Errorf("application %q: failed to create path iterator: %w", app.Name, err)
-				}
-
-				matches, err := iterator.Iterate()
-
-				if err != nil {
-					return fmt.Errorf("application %q: failed to iterate paths: %w", app.Name, err)
-				}
-
-				if len(matches) == 0 {
-					return fmt.Errorf("application %q: no paths matched pattern %q", app.Name, container.Loop.Path)
-				}
-
-				// Create hydrated configs
-				hydrated := HydrateConfig(plumberCfg, matches)
-
-				// Add each hydrated config as a separate container
-				for _, h := range hydrated {
-					newContainer := Container{
-						PlumberContainer: h,
+				loopBaseDir := container.Loop.BaseDir
+				paths := []string{container.Loop.Path}
+				paths = append(paths, container.Loop.Paths...)
+				for _, p := range paths {
+					expanded, err := processLoopPaths(plumberCfg, baseDir, loopBaseDir, app, p)
+					if err != nil {
+						return err
 					}
-					expandedContainers = append(expandedContainers, newContainer)
+					expandedContainers = append(expandedContainers, expanded...)
 				}
 			} else {
 				expandedContainers = append(expandedContainers, container)
@@ -130,4 +115,38 @@ func ProcessLoops(cfg *Config, baseDir string) error {
 	}
 
 	return nil
+}
+
+func processLoopPaths(plumberCfg *PlumberContainerConfig, baseDir, loopBaseDir string, app *Application, path string) ([]Container, error) {
+	expandedContainers := []Container{}
+	if path == "" {
+		return expandedContainers, nil
+	}
+	iterator, err := NewPathIterator(baseDir, loopBaseDir, path)
+	if err != nil {
+		return nil, fmt.Errorf("application %q: failed to create path iterator: %w", app.Name, err)
+	}
+
+	matches, err := iterator.Iterate()
+
+	if err != nil {
+		return nil, fmt.Errorf("application %q: failed to iterate paths: %w", app.Name, err)
+	}
+
+	if len(matches) == 0 {
+		// fmt.Errorf("application %q: no paths matched pattern %q", app.Name, path)
+		return nil, nil
+	}
+
+	// Create hydrated configs
+	hydrated := HydrateConfig(plumberCfg, matches)
+
+	// Add each hydrated config as a separate container
+	for _, h := range hydrated {
+		newContainer := Container{
+			PlumberContainer: h,
+		}
+		expandedContainers = append(expandedContainers, newContainer)
+	}
+	return expandedContainers, nil
 }

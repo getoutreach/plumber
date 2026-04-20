@@ -10,6 +10,7 @@ import (
 
 	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/genius/gen"
+	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 )
 
@@ -26,9 +27,9 @@ func Derive(context *Context, tp *model.Type, scope map[string]any, output strin
 
 	ctx := gen.NewContext("neco")
 
-	scope = DefaultScope(context, scope, output)
+	scope = render.DefaultScope(context, scope, output)
 
-	fm, dispose := withRenderFuncMap(context, output)
+	fm, dispose := render.WithRenderFuncMap(context, output)
 	defer dispose()
 
 	features := gen.Features{
@@ -42,11 +43,13 @@ func Derive(context *Context, tp *model.Type, scope map[string]any, output strin
 			return ctx.Write(wr, output, func(ctx *gen.Context, w io.Writer) error {
 				return gen.RenderContent(ctx, "plumber/command/derive", w, c,
 					fm,
+					withRenderFuncMap(context, output),
+					render.WithBaseTemplates(),
 					gen.WithFS(EmbededTemplates,
 						"templates/command/command.gtpl",
 						"templates/command/command_derive.gtpl",
 					),
-					gen.WithRenderOptions(context.RenderOptions...),
+					gen.WithRenderOptions(context.GetRenderOptions()...),
 				)
 			})
 		}),

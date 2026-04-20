@@ -65,9 +65,9 @@ func Helper() string {
 	// Test with constructor matcher using named capture groups
 	matchers := []discovery.Matcher{
 		{
-			Constructors: []string{
-				`New(?P<name>.*)`,     // Matches NewService
-				`Factory(?P<name>.*)`, // Matches FactoryRepository
+			Constructors: []discovery.ConstructorPattern{
+				{Re: `New(?P<name>.*)`},     // Matches NewService
+				{Re: `Factory(?P<name>.*)`}, // Matches FactoryRepository
 			},
 		},
 	}
@@ -115,8 +115,8 @@ func NewService(name string) *Service {
 	// Test with pattern without named capture group
 	matchers := []discovery.Matcher{
 		{
-			Constructors: []string{
-				`New.*`, // Matches but no capture group
+			Constructors: []discovery.ConstructorPattern{
+				{Re: `New.*`}, // Matches but no capture group
 			},
 		},
 	}

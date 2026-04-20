@@ -14,6 +14,43 @@ go run github.com/getoutreach/plumber/cmd/plumber@version shape [--config plumbe
 `./...` follows standard Go package pattern syntax.  Pass a single package path (e.g.
 `./internal/mypackage`) to restrict the scan.
 
+### Single-type mode
+
+Instead of scanning all types for annotations, you can target a specific type and apply a
+named macro programmatically:
+
+```shell
+go run github.com/getoutreach/plumber/cmd/plumber@version shape \
+  --config plumber.shape.yaml \
+  --type '"github.com/example/pkg".MyService' \
+  --macro '@derive' \
+  --macro-arg DerivedName \
+  --macro-arg AnotherArg \
+  --macro-named-arg file=generated.go \
+  --macro-named-arg mode=inplace \
+  ./...
+```
+
+| Flag | Type | Description |
+|---|---|---|
+| `--type` | string | FQN of the target type (or unqualified name if unique) |
+| `--macro` | string | Macro name to apply (must exist in config) |
+| `--macro-arg` | string (repeatable) | Positional arg passed to the macro |
+| `--macro-named-arg` | string (repeatable) | Named arg as `key=value` passed to the macro |
+
+When `--type` and `--macro` are both provided, the command operates in **exclusive mode**:
+it bypasses the annotation scan and only processes the specified type with the named macro.
+The package pattern (`./...`) is still required so that the type can be resolved.
+
+The type can be specified as:
+- A **fully-qualified name**: `"github.com/example/pkg".MyService`
+- An **unqualified name**: `MyService` (matches the first type with that name across all
+  loaded packages)
+
+The macro is expanded with the provided `--macro-arg` and `--macro-named-arg` values as
+its `.Args` and `.NamedArgs` template context, exactly as if the type had a
+`// @<macro-name> arg1 arg2 key=value` annotation in source code.
+
 ---
 
 ## Annotation reference

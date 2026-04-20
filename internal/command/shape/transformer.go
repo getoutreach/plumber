@@ -14,6 +14,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/genius/gen"
+	baserender "github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
@@ -96,7 +97,7 @@ type Pathinfo struct {
 // ManagerOutput represents the output of a Manager's Render method,
 // including the generated output, the corresponding dst.File, the Manager that produced it, and the raw content bytes.
 type ManagerOutput struct {
-	Output  *render.Output
+	Output  *baserender.Output
 	File    *dst.File
 	Manager Manager
 	Content []byte
@@ -114,7 +115,7 @@ type RenderFunc func(
 
 // Manager defines the interface for managing the rendering of transformations,
 type Manager interface {
-	Render(pkgs []*model.Package, transformations []Transformation) ([]*render.Output, error)
+	Render(pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error)
 }
 
 // BasicTransformer provides a base implementation of the Transformer interface,

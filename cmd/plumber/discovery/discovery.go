@@ -171,6 +171,12 @@ func processApplication(
 
 	// Create AST parser once for all paths (loads all packages together)
 	fmt.Printf("\n  Loading %d file(s) across %d container(s) for analysis...\n", len(allPaths), len(containers))
+
+	if len(allPaths) == 0 {
+		fmt.Printf("  No source files to analyze\n")
+		return nil
+	}
+
 	astParser, err := discovery.NewASTParser(allPaths...)
 	if err != nil {
 		return fmt.Errorf("failed to create AST parser: %w", err)

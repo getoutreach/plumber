@@ -453,7 +453,7 @@ variables and helpers.
 
 ### Variables in container config (from loop)
 
-For each named capture group in the `loop.path` regex, three variables are derived
+For each named capture group in the `loop.path` (or `loop.paths`) regex, three variables are derived
 automatically (see [Derived variables](#derived-variables) above):
 
 | Suffix | Description |

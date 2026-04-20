@@ -27,6 +27,16 @@ type Config struct {
 	Macros     []MacroConfig                `yaml:"macros,omitempty"`
 	Mixins     []MixinConfig                `yaml:"mixins,omitempty"`
 	Type       TypeConfig                   `yaml:"type,omitempty"`
+	Target     *TargetConfig                `yaml:"-"`
+}
+
+// TargetConfig holds parameters for single-type targeted mode where a specific type is
+// processed with a named macro, bypassing the full annotation scan.
+type TargetConfig struct {
+	TypeFQN   string            // fully-qualified type name
+	Macro     string            // macro name (e.g. "@derive")
+	Args      []string          // positional macro args
+	NamedArgs map[string]string // named macro args (key=value)
 }
 
 // TypeConfig represents the configuration for type transformations in the shape command,

@@ -196,9 +196,9 @@ func (p *ASTParser) matchConstructorPattern(funcName string, matchers []Matcher)
 	}
 
 	for _, matcher := range matchers {
-		for _, pattern := range matcher.Constructors {
+		for _, cp := range matcher.Constructors {
 			// Pattern uses named capture groups: New(?P<name>.*) or Factory(?P<name>.*)
-			re, err := regexp.Compile(pattern)
+			re, err := regexp.Compile(cp.Re)
 			if err != nil {
 				continue
 			}

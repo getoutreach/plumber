@@ -42,9 +42,9 @@ applications:
           container:
             path: ./test.go
           matchers:
-            - constructors:
-                - New(?P<name>.*)
-                - Create(?P<name>.*)
+             - constructors:
+                 - re: New(?P<name>.*)
+                 - re: Create(?P<name>.*)
 `
 
 	cfg, err := discovery.ParseConfigBytes([]byte(yamlContent))
@@ -53,7 +53,7 @@ applications:
 
 	matcher := cfg.Applications[0].Containers[0].PlumberContainer.Matchers[0]
 	assert.Equal(t, len(matcher.Constructors), 2)
-	assert.Equal(t, matcher.Constructors[0], "New(?P<name>.*)")
+	assert.Equal(t, matcher.Constructors[0].Re, "New(?P<name>.*)")
 }
 
 func TestParseConfigWithLoop(t *testing.T) {
@@ -112,8 +112,8 @@ applications:
             path: ./test.go
           matchers:
             - constructors:
-                - New(?P<name>.*)
-                - Factory(?P<name>.*)
+                - re: New(?P<name>.*)
+                - re: Factory(?P<name>.*)
 `
 
 	cfg, err := discovery.ParseConfigBytes([]byte(yamlContent))
@@ -122,6 +122,6 @@ applications:
 
 	matcher := cfg.Applications[0].Containers[0].PlumberContainer.Matchers[0]
 	assert.Equal(t, len(matcher.Constructors), 2)
-	assert.Equal(t, matcher.Constructors[0], "New(?P<name>.*)")
-	assert.Equal(t, matcher.Constructors[1], "Factory(?P<name>.*)")
+	assert.Equal(t, matcher.Constructors[0].Re, "New(?P<name>.*)")
+	assert.Equal(t, matcher.Constructors[1].Re, "Factory(?P<name>.*)")
 }

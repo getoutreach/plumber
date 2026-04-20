@@ -13,15 +13,44 @@ from pattern-matched entities.
 
 ## CLI
 
+### Running using mise (preferred when project is managed by mise)
+
 ```bash
-go run cmd/plumber/plumber.go shape [--config plumber.shape.yaml] ./...
+mise exec -- plumber shape [--config plumber.yaml] ./...
+```
+
+### Running using remove path
+
+```bash
+go run github.com/getoutreach/outreach/plumber@latest/cmd/plumber shape [--config plumber.yaml] ./...
 ```
 
 | Flag | Alias | Default | Description |
 |---|---|---|---|
 | `--config` | `-c` | — | Path to `plumber.shape.yaml` (optional) |
+| `--type` | — | — | FQN or unqualified name of target type (single-type mode) |
+| `--macro` | — | — | Macro name to apply (requires `--type`) |
+| `--macro-arg` | — | — | Positional arg for the macro (repeatable) |
+| `--macro-named-arg` | — | — | Named arg as `key=value` (repeatable) |
 
 Standard Go package patterns are supported: `./...`, `./internal/pkg`, etc.
+
+### Single-type mode
+
+When `--type` and `--macro` are both set, the command skips annotation scanning and
+processes only the specified type with the named macro. The macro must exist in config.
+
+```bash
+go run cmd/plumber/plumber.go shape \
+  --config plumber.shape.yaml \
+  --type Worker \
+  --macro '@derive' \
+  --macro-arg DerivedName \
+  --macro-named-arg mode=inplace \
+  ./...
+```
+
+The type can be a full FQN (`"github.com/pkg".Type`) or an unqualified name (`Type`).
 
 ## Annotations
 

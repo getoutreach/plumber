@@ -19,8 +19,9 @@ import (
 
 // PathIterator iterates over paths matching a pattern and extracts variables
 type PathIterator struct {
-	pattern *regexp.Regexp
-	baseDir string
+	pattern     *regexp.Regexp
+	baseDir     string
+	loopBaseDir string
 }
 
 // PathMatch represents a matched path with extracted variables
@@ -31,7 +32,7 @@ type PathMatch struct {
 
 // NewPathIterator creates a new PathIterator from a path pattern
 // Pattern format: ./adapter/(?P<module>[\w/]+)
-func NewPathIterator(baseDir, pattern string) (*PathIterator, error) {
+func NewPathIterator(baseDir, loopBaseDir, pattern string) (*PathIterator, error) {
 	// Convert the pattern to a regex
 	re, err := regexp.Compile(pattern)
 	if err != nil {
@@ -39,8 +40,9 @@ func NewPathIterator(baseDir, pattern string) (*PathIterator, error) {
 	}
 
 	return &PathIterator{
-		pattern: re,
-		baseDir: baseDir,
+		pattern:     re,
+		baseDir:     baseDir,
+		loopBaseDir: loopBaseDir,
 	}, nil
 }
 
@@ -48,11 +50,29 @@ func NewPathIterator(baseDir, pattern string) (*PathIterator, error) {
 // Only directories containing .go files are included — intermediate directories
 // (e.g., adapter/outbound/ when only adapter/outbound/redis/ has Go files) are skipped.
 func (pi *PathIterator) Iterate() ([]PathMatch, error) {
-	var matches []PathMatch
-	seen := make(map[string]bool) // Track unique matches to avoid duplicates
+	var (
+		matches        []PathMatch
+		seen           = make(map[string]bool) // Track unique matches to avoid duplicates
+		err            error
+		absLoopBaseDir string
+	)
+
+	if pi.loopBaseDir != "" {
+		absLoopBaseDir, err = filepath.Abs(pi.loopBaseDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get absolute path for loopBaseDir %q: %w", pi.loopBaseDir, err)
+		}
+
+		_, err = filepath.Rel(pi.baseDir, absLoopBaseDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get relative path: %w for baseDir %q and loopBaseDir %q", err, pi.baseDir, pi.loopBaseDir)
+		}
+	} else {
+		absLoopBaseDir = pi.baseDir
+	}
 
 	// Walk the base directory
-	err := filepath.Walk(pi.baseDir, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(absLoopBaseDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -71,11 +91,13 @@ func (pi *PathIterator) Iterate() ([]PathMatch, error) {
 		// Normalize path separators for matching
 		relPath = filepath.ToSlash(relPath)
 
+		fmt.Println("tryinh", relPath)
 		// Try to match the pattern
 		submatches := pi.pattern.FindStringSubmatch(relPath)
 		if submatches == nil {
 			return nil
 		}
+		fmt.Println("matched", relPath)
 
 		// Skip directories that contain no .go files
 		if !dirHasGoFiles(path) {
@@ -110,7 +132,7 @@ func (pi *PathIterator) Iterate() ([]PathMatch, error) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to iterate paths: %w", err)
+		return nil, fmt.Errorf("failed to walk paths: %w", err)
 	}
 
 	return matches, nil

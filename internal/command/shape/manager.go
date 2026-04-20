@@ -15,19 +15,17 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/internal/genius/gen"
+	baserender "github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
 
 // buildContext constructs the rendering context for a given transformation, populating it with the package path, module register,
 // type wrapper, and output path based on the provided configuration and package information.
-func buildContext(cfg *Config, modules *render.ModuleRegister, pkg *model.Package, output string) *render.Context {
+func buildContext(cfg *Config, modules *baserender.ModuleRegister, pkg *model.Package, output string) *render.Context {
 	context := &render.Context{
-		PkgPath: pkg.Path,
-		Modules: modules,
-		Wrapper: NewTypeWrapper(cfg),
-		Output:  output,
-		Package: pkg,
+		ContextCloner: baserender.NewRenderContext(modules, pkg, output),
+		Wrapper:       NewTypeWrapper(cfg),
 	}
 	return context
 }
@@ -40,7 +38,7 @@ func transformationContext(context *render.Context, cfg *Config, t *Transformati
 	if err != nil {
 		return context, err
 	}
-	context.RenderOptions = append(context.RenderOptions, opts...)
+	context.WithPriorityRenderOptions(opts...)
 
 	return context, nil
 }
@@ -72,7 +70,7 @@ func managerRender(
 	transformations []Transformation,
 	scope map[string]any,
 	output string,
-) ([]*render.Output, error) {
+) ([]*baserender.Output, error) {
 	pkg, ok := lo.Find(pkgs, func(p *model.Package) bool {
 		return p.Path == pkgPath
 	})
@@ -82,7 +80,7 @@ func managerRender(
 		}
 	}
 
-	context := buildContext(cfg, render.NewModuleRegister(), pkg, output)
+	context := buildContext(cfg, baserender.NewModuleRegister(), pkg, output)
 
 	var contents []string
 
@@ -97,12 +95,12 @@ func managerRender(
 	if err != nil {
 		return nil, fmt.Errorf("error during finalization: %w", err)
 	}
-	return []*render.Output{o}, nil
+	return []*baserender.Output{o}, nil
 }
 
 // Render implements the Manager interface for GeneratorManager, orchestrating the rendering of transformations and generating
 // new output files based on the specified output package path.
-func (m *GeneratorManager) Render(pkgs []*model.Package, transformations []Transformation) ([]*render.Output, error) {
+func (m *GeneratorManager) Render(pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error) {
 	var (
 		scope = map[string]any{
 			"Mode": "generated",
@@ -132,7 +130,7 @@ func NewInplaceManager(cfg *Config, pkgPath, output string) *InplaceManager {
 
 // Render implements the Manager interface for InplaceManager, orchestrating the rendering of transformations and merging
 // the generated content into existing source files based on the specified output package path.
-func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transformation) ([]*render.Output, error) {
+func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error) {
 	pkg, found := lo.Find(pkgs, func(p *model.Package) bool {
 		return p.Path == m.output
 	})
@@ -147,9 +145,9 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 
 	fmt.Printf("Found package %q for output %q\n", pkg.Path, m.output)
 
-	outputs := make([]*render.Output, 0)
+	outputs := make([]*baserender.Output, 0)
 
-	modules := render.NewModuleRegister()
+	modules := baserender.NewModuleRegister()
 
 	for _, t := range transformations {
 		var (
@@ -185,10 +183,10 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 
 		filename = pkg.Package.Decorator.Filenames[existingFile]
 
-		outputs = append(outputs, &render.Output{
+		outputs = append(outputs, &baserender.Output{
 			Filename: filename,
 			Modules:  modules,
-			Dst: &render.DstOutput{
+			Dst: &baserender.DstOutput{
 				File:    existingFile,
 				Package: pkg.Package,
 			},

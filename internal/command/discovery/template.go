@@ -8,11 +8,14 @@ package discovery
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/getoutreach/plumber/internal/command/discovery/render"
 	"github.com/getoutreach/plumber/internal/genius/gen"
+	baserender "github.com/getoutreach/plumber/internal/render"
+	"github.com/getoutreach/plumber/query/model"
 )
 
 // TemplateContext contains the data passed to container templates
@@ -59,8 +62,9 @@ func (r *TemplateRenderer) RenderContainer(
 	sourceModule string,
 ) error {
 	var (
+		ctx = r.buildContext(containerPath, app, sourceModule)
 		// Build template context as a map for easy template access
-		ctx = r.buildContextMap(containerName, app, sourceModule)
+		scope = r.buildScope(containerName, app, sourceModule)
 	)
 
 	// Ensure directory exists
@@ -71,8 +75,9 @@ func (r *TemplateRenderer) RenderContainer(
 
 	// Rendered content
 	if err := render.Render(
+		ctx,
 		containerPath, "plumber/command/discovery/container",
-		ctx, gen.NewSystemFileOpener(), r.containerOpts...,
+		scope, gen.NewSystemFileOpener(), r.containerOpts...,
 	); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
@@ -91,7 +96,8 @@ func (r *TemplateRenderer) RenderApplication(
 	sourceModule string,
 ) error {
 	var (
-		ctx = r.buildContextMap(containerName, app, sourceModule)
+		ctx   = r.buildContext(applicationPath, app, sourceModule)
+		scope = r.buildScope(containerName, app, sourceModule)
 	)
 
 	// Ensure directory exists
@@ -101,8 +107,9 @@ func (r *TemplateRenderer) RenderApplication(
 	}
 
 	if err := render.Render(
+		ctx,
 		applicationPath, "plumber/command/discovery/application",
-		ctx, gen.NewSystemFileOpener(), r.applicationOpts...,
+		scope, gen.NewSystemFileOpener(), r.applicationOpts...,
 	); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
@@ -110,8 +117,20 @@ func (r *TemplateRenderer) RenderApplication(
 	return nil
 }
 
+func (r *TemplateRenderer) buildContext(output string, app *Application, sourceModule string) baserender.Context {
+	return baserender.NewRenderContext(
+		baserender.NewModuleRegister(),
+		&model.Package{
+			Name: path.Base(sourceModule),
+			Path: sourceModule,
+		},
+		output,
+	)
+
+}
+
 // buildContextMap creates the template context as a map for template execution
-func (r *TemplateRenderer) buildContextMap(
+func (r *TemplateRenderer) buildScope(
 	containerName string,
 	app *Application,
 	sourceModule string,
@@ -120,20 +139,16 @@ func (r *TemplateRenderer) buildContextMap(
 	packageName := extractPackageName(app.Module)
 
 	// Parse config type and module
-	configType, configModule, isRemote := parseConfigType(app.Config, app.Module)
+	// configType, configModule, isRemote := parseConfigType(app.Config, app.Module)
 
 	return map[string]interface{}{
+		"Container": map[string]interface{}{
+			"Name":   containerName,
+			"Module": sourceModule,
+		},
+		"Config":       model.TypeSpec{FQN: app.Config},
 		"package_name": packageName,
 		"package_fqn":  app.Module,
-		"container": map[string]interface{}{
-			"name":   containerName,
-			"module": sourceModule,
-		},
-		"config": map[string]interface{}{
-			"type":   configType,
-			"module": configModule,
-			"remote": isRemote,
-		},
 	}
 }
 

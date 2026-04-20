@@ -89,6 +89,22 @@ func main() {
 					Aliases: []string{"c"},
 					Usage:   "Path to plumber.yaml configuration file",
 				},
+				&cli.StringFlag{
+					Name:  "type",
+					Usage: "FQN of the target type (single-type mode, requires --macro)",
+				},
+				&cli.StringFlag{
+					Name:  "macro",
+					Usage: "Macro name to apply in single-type mode (requires --type)",
+				},
+				&cli.StringSliceFlag{
+					Name:  "macro-arg",
+					Usage: "Positional arg for the macro (repeatable, requires --macro)",
+				},
+				&cli.StringSliceFlag{
+					Name:  "macro-named-arg",
+					Usage: "Named arg as key=value for the macro (repeatable, requires --macro)",
+				},
 			},
 		},
 		{

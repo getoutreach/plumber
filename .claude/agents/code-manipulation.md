@@ -79,6 +79,7 @@ test/acceptance/
     ├── mergecomplex/           — complex inplace merge: struct fields, functions, methods, switch cases
     ├── macro/model.go          — annotated with @derive macro
     ├── macrotemplate/model.go  — annotated with @tderive (template macro)
+    ├── targeted/model.go       — plain struct for single-type targeted mode test
     ├── query/                  — package-level query fixture
     ├── querytypescope/         — type-scoped query fixture
     ├── querycross/             — cross-package query fixture
@@ -443,6 +444,12 @@ inspect.ScanFiles() → filenames
 inspect.Inspect()   → []*model.Package   (AST → model)
         │
         ▼
+[if config.Target != nil] → runTargeted():
+        │   resolve type by FQN or name → inject macro annotation → expandMacros
+        │   → buildTransformers → renderTransformations → restoreOutputs
+        │   (skips full annotation scan, queries, and other types)
+        │
+        ▼ [else: normal mode]
 expandMacros()       — replace @<name> annotations with macro-defined annotation lists;
                         template expressions ({{ .Args }}, {{ .NamedArgs }}) in the
                         macro's args/namedArgs are expanded against the call-site arguments
@@ -497,6 +504,7 @@ file, so golden files use `testrun-acceptance/` as a stable placeholder.
 | `TestMergeComplex` | `mergecomplex/model.go`, `mergecomplex/types.go`, `mergecomplex/blended.go` | Content template override | Full merge pipeline: struct fields, params, body subsequence, call arg augmentation, composite lit merge, method lookup, switch case merge |
 | `TestMacro` | `macro/model.go` | `@derive` macro expanding to `plumber:derive MacroDerived` + `plumber:output generated.go` | `macro/generated.go` matches golden |
 | `TestMacroTemplate` | `macrotemplate/model.go` | `@tderive` macro with `{{ index .Args 0 }}` template expanding call-site arg into derive name | `macrotemplate/generated.go` matches golden |
+| `TestShapeTargeted` | `targeted/model.go` | `@derive` macro with template arg; `TargetConfig` set (single-type mode) | `targeted/generated.go` matches golden; also tests macro-not-found and type-not-found errors |
 | `TestQuery` | `query/providers.go`, `query/consumer.go` | No extra config | `query/consumer.go` inplace with matched provider functions |
 | `TestQueryTypeScope` | `querytypescope/types.go`, `querytypescope/consumer.go` | No extra config | `querytypescope/consumer.go` inplace with matched type methods |
 | `TestQueryCrossPackage` | `querycross/providers/providers.go`, `querycross/consumer.go` | No extra config | `querycross/consumer.go` inplace with cross-package matches |

@@ -1,0 +1,102 @@
+package render
+
+import (
+	"github.com/getoutreach/plumber/internal/genius/gen"
+	"github.com/getoutreach/plumber/query/model"
+)
+
+type (
+	RenderContext struct {
+		RenderOptions []gen.RenderOptionsFunc
+		Modules       *ModuleRegister
+		PkgPath       string
+		Package       *model.Package
+		Output        string
+		Templates     []string
+	}
+
+	Context interface {
+		GetRenderOptions() []gen.RenderOptionsFunc
+		GetModules() *ModuleRegister
+		GetPkgPath() string
+		GetPackage() *model.Package
+		GetOutput() string
+		GetTemplates() []string
+		ContextRenderOptions() []gen.RenderOptionsFunc
+		WithPriorityRenderOptions(opts ...gen.RenderOptionsFunc)
+		WithRenderOptions(opts ...gen.RenderOptionsFunc)
+		Context() ContextCloner
+	}
+
+	ContextCloner interface {
+		Context
+		Clone() ContextCloner
+	}
+)
+
+func NewRenderContext(modules *ModuleRegister, pkg *model.Package, output string) *RenderContext {
+	return &RenderContext{
+		Modules: modules,
+		Package: pkg,
+		Output:  output,
+		PkgPath: pkg.Path,
+	}
+}
+
+func (c *RenderContext) GetRenderOptions() []gen.RenderOptionsFunc {
+	return c.RenderOptions
+}
+
+func (c *RenderContext) WithPriorityRenderOptions(opts ...gen.RenderOptionsFunc) {
+	c.RenderOptions = append(append([]gen.RenderOptionsFunc{}, opts...), c.RenderOptions...)
+}
+
+func (c *RenderContext) WithRenderOptions(opts ...gen.RenderOptionsFunc) {
+	c.RenderOptions = append(c.RenderOptions, opts...)
+}
+
+func (c *RenderContext) GetModules() *ModuleRegister {
+	return c.Modules
+}
+
+func (c *RenderContext) GetPkgPath() string {
+	return c.PkgPath
+}
+
+func (c *RenderContext) GetPackage() *model.Package {
+	return c.Package
+}
+
+func (c *RenderContext) GetOutput() string {
+	return c.Output
+}
+
+func (c *RenderContext) GetTemplates() []string {
+	return c.Templates
+}
+
+func (c *RenderContext) Context() ContextCloner {
+	return c
+}
+
+func (c *RenderContext) ContextRenderOptions() []gen.RenderOptionsFunc {
+	opts := make([]gen.RenderOptionsFunc, 0, len(c.RenderOptions)+1)
+	opts = append(opts, c.RenderOptions...)
+	if c.Templates != nil {
+		opts = append(opts, gen.WithFS(EmbededTemplates,
+			c.Templates...,
+		))
+	}
+	return opts
+}
+
+func (c *RenderContext) Clone() ContextCloner {
+	return &RenderContext{
+		RenderOptions: append([]gen.RenderOptionsFunc{}, c.RenderOptions...),
+		Modules:       c.Modules,
+		PkgPath:       c.PkgPath,
+		Package:       c.Package,
+		Output:        c.Output,
+		Templates:     append([]string{}, c.Templates...),
+	}
+}

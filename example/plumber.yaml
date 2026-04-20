@@ -31,10 +31,10 @@ plumber.discovery:
               path: ./adapter/{{ .module_path }}/
             # matchers define constructor patterns to discover
             matchers:
-              - constructors:
-                  # Named capture group "name" extracts the provider name
-                  - New(?P<name>.*)
-                  - Factory(?P<name>.*)
+               - constructors:
+                   # Named capture group "name" extracts the provider name
+                   - re: New(?P<name>.*)
+                   - re: Factory(?P<name>.*)
           # loop allows to define multiple containers using
           loop:
             # path scans a folder structure; [\w/]+ captures nested subdirectories
@@ -46,5 +46,5 @@ plumber.discovery:
             source:
               path: ./scenario/
             matchers:
-              - constructors:
-                  - New(?P<name>.*)
+               - constructors:
+                   - re: New(?P<name>.*)

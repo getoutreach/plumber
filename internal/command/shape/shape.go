@@ -20,8 +20,8 @@ import (
 	"github.com/getoutreach/plumber/internal/astx/inspect"
 	"github.com/getoutreach/plumber/internal/command"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
-	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/command/template"
+	baserender "github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
@@ -40,6 +40,11 @@ func Run(config *Config, args []string) error {
 	pkgs, err := inspect.Inspect(filenames, "./")
 	if err != nil {
 		return fmt.Errorf("failed to inspect files: %w", err)
+	}
+
+	// Single-type targeted mode: process only the specified type with the named macro.
+	if config.Target != nil {
+		return runTargeted(config, pkgs)
 	}
 
 	// Expand macros in all annotations before walking and building transformers.
@@ -64,6 +69,85 @@ func Run(config *Config, args []string) error {
 	}
 
 	return nil
+}
+
+// runTargeted processes a single type with a named macro, bypassing the full annotation scan.
+// The macro is injected as a synthetic annotation onto the type, expanded, and then the
+// standard transformer building and rendering pipeline runs for that single type.
+func runTargeted(config *Config, pkgs model.Packages) error {
+	typ, err := resolveTargetType(config.Target.TypeFQN, pkgs)
+	if err != nil {
+		return err
+	}
+
+	// Validate macro exists in config
+	macroExists := lo.ContainsBy(config.Macros, func(m MacroConfig) bool {
+		return m.PlumberMacro != nil && m.PlumberMacro.Name == config.Target.Macro
+	})
+	if !macroExists {
+		return fmt.Errorf("macro %q not found in config", config.Target.Macro)
+	}
+
+	// Inject synthetic macro annotation onto the type
+	ann := model.NewAnnotation(config.Target.Macro, config.Target.Args, model.WithNamedArgs(config.Target.NamedArgs))
+	typ.TypeNode.Annotations = append(typ.TypeNode.Annotations, ann)
+
+	// Expand macros (only targeted type has the injected macro)
+	if err := expandMacros(pkgs, config.Macros); err != nil {
+		return err
+	}
+
+	// Build transformers for the single type
+	ts, err := buildTransformers(config, typ.TypeNode)
+	if err != nil {
+		return fmt.Errorf("failed to build transformers for %q: %w", config.Target.TypeFQN, err)
+	}
+
+	// Build transformations
+	var transformations []Transformation
+	for _, t := range ts {
+		transformations = append(transformations, Transformation{
+			Node:        typ,
+			Transformer: t,
+			Path:        buildPath(t.Mode(), typ.GetPackage().Path, typ.GetNode().GetPosition().Filename, t.Output()),
+		})
+	}
+
+	// Render and restore
+	outputs, err := renderTransformations(config, pkgs, transformations)
+	if err != nil {
+		return err
+	}
+	if len(outputs) > 0 {
+		return restoreOutputs(outputs)
+	}
+	return nil
+}
+
+// resolveTargetType resolves the target type from the given FQN string.
+// If the FQN contains a quoted package path (e.g. "github.com/pkg".Type), it uses
+// full FQN resolution. Otherwise, it searches all packages by unqualified type name.
+func resolveTargetType(typeFQN string, pkgs model.Packages) (*model.Type, error) {
+	fqn, err := astx.ParseFQN(typeFQN)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse target type FQN: %w", err)
+	}
+
+	// If the FQN has a package path, use exact FQN matching
+	if !fqn.IsPackageLess() {
+		typ := pkgs.TypeByFQN(fqn)
+		if typ == nil {
+			return nil, fmt.Errorf("target type %q not found in inspected packages", typeFQN)
+		}
+		return typ, nil
+	}
+
+	// Package-less name: search by type name across all packages
+	typ := pkgs.TypeByName(typeFQN)
+	if typ == nil {
+		return nil, fmt.Errorf("target type %q not found in inspected packages", typeFQN)
+	}
+	return typ, nil
 }
 
 // checkoutAndMergeIncludes checks out template sources from git and merges
@@ -191,9 +275,9 @@ func renderTransformations(config *Config, pkgs []*model.Package, transformation
 	}
 	for _, qo := range queryOutputs {
 		outputs = append(outputs, &ManagerOutput{
-			Output: &render.Output{
+			Output: &baserender.Output{
 				Filename: qo.Filename,
-				Dst: &render.DstOutput{
+				Dst: &baserender.DstOutput{
 					File:    qo.File,
 					Package: qo.Package.Package,
 				},

@@ -208,6 +208,19 @@ func (p Packages) TypeByFQN(fqn *astx.FQN) *Type {
 	return nil
 }
 
+// TypeByName searches all packages for a type matching the given unqualified name.
+// If multiple types share the same name across packages, the first match is returned.
+func (p Packages) TypeByName(name string) *Type {
+	for _, pkg := range p {
+		for _, t := range pkg.Types {
+			if t.Name == name {
+				return t
+			}
+		}
+	}
+	return nil
+}
+
 func (p *Package) File(filename string) *dst.File {
 	for _, f := range p.Package.Syntax {
 		if p.Package.Decorator.Filenames[f] == filename {

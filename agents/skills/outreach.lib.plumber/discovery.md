@@ -18,8 +18,16 @@ adds missing ones), but the auto-fix for `Require()` will rewrite those argument
 
 ## CLI
 
+### Running using mise (preferred when project is managed by mise)
+
 ```bash
-go run cmd/plumber/plumber.go discovery --config plumber.yaml
+mise exec -- plumber discovery --config plumber.yaml
+```
+
+### Running using remove path
+
+```bash
+go run github.com/getoutreach/outreach/plumber@latest/cmd/plumber discovery --config plumber.yaml
 ```
 
 | Flag | Alias | Required | Description |
@@ -99,6 +107,7 @@ plumber.discovery:
 | `plumber.discovery.…containers[].plumber.container.source.path` | Source directory to scan for constructors |
 | `plumber.discovery.…containers[].plumber.container.matchers[].constructors` | Regex patterns with `(?P<name>...)` capture group |
 | `plumber.discovery.…containers[].loop.path` | Regex with named capture groups for directory iteration |
+| `plumber.discovery.…containers[].loop.paths` | Regexes with named capture groups for directory iteration |
 
 ### Loop expansion
 

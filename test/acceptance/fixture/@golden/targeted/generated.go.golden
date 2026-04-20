@@ -1,0 +1,17 @@
+// Generated file by plumber shape function. DON'T edit manually.
+package targeted
+
+// <<plumber::Block(header)>>
+// <</plumber::Block>>
+
+// WorkerDerived is derived from "github.com/getoutreach/plumber/test/acceptance/testrun-acceptance/fixture/targeted".Worker.
+type WorkerDerived struct {
+	Name        string
+	Concurrency int
+	// <<plumber::Block(extra-WorkerDerived)>>
+	// <</plumber::Block>>
+
+}
+
+// <<plumber::Block(footer)>>
+// <</plumber::Block>>

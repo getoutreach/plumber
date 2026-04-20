@@ -15,7 +15,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/genius/gen"
-	"github.com/getoutreach/plumber/internal/render"
+
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
@@ -76,7 +76,7 @@ func (i *Ignores) Ignored(groups ...string) bool {
 	return exists
 }
 
-func typesRenderer(currentPkgPath string, register *render.ModuleRegister) func(spec model.TypeSpec) (string, error) {
+func typesRenderer(currentPkgPath string, register *ModuleRegister) func(spec model.TypeSpec) (string, error) {
 	return func(spec model.TypeSpec) (string, error) {
 		fqn, err := astx.ParseFQN(spec.FQN)
 		if err != nil {
@@ -96,32 +96,6 @@ func typesRenderer(currentPkgPath string, register *render.ModuleRegister) func(
 			return fqn.Unquote(), nil
 		}
 		return fqn.String(), nil
-	}
-}
-
-func typesRendererWithWrapper(
-	currentPkgPath string,
-	register *render.ModuleRegister,
-	wrapper TypeWrapperProvider,
-) func(o any, spec model.TypeSpec) (string, error) {
-	c := typesRenderer(currentPkgPath, register)
-	return func(o any, spec model.TypeSpec) (string, error) {
-		if n, ok := o.(model.AnnotationProvider); ok {
-			wn := n.GetAnnotations().Find(contract.OptionFieldWrapper)
-			if wn != nil {
-				wrapperType := wn.Value()
-				wrapped, err := wrapper.WrapType(wrapperType, &spec)
-				if err != nil {
-					return "", fmt.Errorf("failed to wrap type with wrapper %q: %w", wrapperType, err)
-				}
-				if wrapped != nil {
-					return c(*wrapped)
-				}
-				return "", fmt.Errorf("wrapper %q returned nil", wrapperType)
-			}
-			return c(spec)
-		}
-		return "", fmt.Errorf("%T does not implement model.AnnotationProvider", o)
 	}
 }
 
@@ -244,11 +218,69 @@ func filterElement(element any, a model.Annotation) (bool, error) {
 	return false, nil
 }
 
-func withRenderFuncMap(context *Context, output string) (opt gen.RenderOptionsFunc) {
-	functions := template.FuncMap{
-		"type_wrap": typesRendererWithWrapper(context.GetPkgPath(), context.GetModules(), context.Wrapper),
-		"ignored":   ignored(context.Ignores),
+func moduleInclude(context Context) func(modulePath string) (string, error) {
+	modules := context.GetModules()
+	return func(modulePath string) (string, error) {
+		modules.Register(modulePath, strings.Contains(modulePath, "/"))
+		return "", nil
 	}
-	return gen.WithFuncMap(functions)
+}
 
+func WithRenderFuncMap(context Context, output string) (opt gen.RenderOptionsFunc, dispose func()) {
+	var tp *model.Type
+	dispose = func() {
+		if tp != nil {
+			tp = nil
+		}
+	}
+	functions := template.FuncMap{
+		"extend":      extend,
+		"expand_name": expandName,
+		"type":        typesRenderer(context.GetPkgPath(), context.GetModules()),
+		"type_set": func(name string) (string, error) {
+			fqn, err := astx.CraftFQN(context.GetPkgPath(), name)
+			if err != nil {
+				return "", fmt.Errorf("failed to craft FQN for type %q: %w", name, err)
+			}
+			tp = &model.Type{
+				Spec: model.TypeSpec{
+					FQN: fqn.String(),
+				},
+				TypeNode: &model.TypeNode{
+					Position: model.Position{
+						Filename: context.GetOutput(),
+					},
+				},
+			}
+			return "", nil
+		},
+		"type_method_undefined": func(methodName string) (bool, error) {
+			if tp == nil {
+				return false, fmt.Errorf("type not set by type_set function")
+			}
+			_, ok := lo.Find(context.GetPackage().Types, func(t *model.Type) bool {
+				if t.Spec.FQN == tp.Spec.FQN {
+					for _, m := range t.Struct.Methods {
+						if m.Name == methodName {
+							if m.Position.Filename != context.GetOutput() {
+								return true
+							}
+						}
+					}
+				}
+				return false
+			})
+			return !ok, nil
+		},
+		"annotation":       annotation,
+		"annotation_value": annotationValue,
+		"comment":          comment,
+		"filter_elements":  filterElements,
+		"placeholder":      placeholder,
+		"fragment_start":   fragmentStart,
+		"fragment_end":     fragmentEnd,
+		"receiver":         receiver,
+		"module_include":   moduleInclude(context),
+	}
+	return gen.WithFuncMap(functions), dispose
 }
