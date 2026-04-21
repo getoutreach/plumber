@@ -71,11 +71,13 @@ test/acceptance/
 ├── acceptance.go               — withFixture() helper + AssertContent() golden-file comparison
 ├── generated_test.go           — TestGenerated: generated mode + mixin filter
 ├── merge_test.go               — TestMerge: inplace derive into existing struct
+├── merge_missing_test.go       — TestMergeMissingType: inplace derive when target type does not exist (file is created from `plumber:output`)
 ├── macro_test.go               — TestMacro, TestMacroTemplate
 ├── query_test.go               — TestQuery, TestQueryTypeScope, TestQueryCrossPackage, TestQueryLocal
 └── fixture/
     ├── generated/model.go      — annotated with plumber:derive + plumber:mixin
     ├── merge/model.go          — annotated with plumber:derive + plumber:mode inplace
+    ├── mergemissing/           — inplace merge with no pre-existing target type (file is created via plumber:output)
     ├── mergecomplex/           — complex inplace merge: struct fields, functions, methods, switch cases
     ├── macro/model.go          — annotated with @derive macro
     ├── macrotemplate/model.go  — annotated with @tderive (template macro)
@@ -306,17 +308,27 @@ delegates to `inspect.ParseAnnotations`. Type resolution uses the DST→AST node
 - Adds only fields not already present (idempotent).
 - Uses `Merge()` in `merge.go` which walks the DST and appends to the target `StructType`.
 - Managed by `InplaceManager`.
+- If the target type does **not** exist in the package, the generated declaration is
+  appended to the file named by `plumber:output` (defaults to `generated.go`). The file
+  is created on demand via `findOrCreateOutputFile()` and registered with the package
+  decorator so the restorer writes it like any other file.
+- `BasicTransformer.Output()` resolves to `plumber:output` (or the default `generated.go`)
+  for **both** generated and inplace modes — there is no longer a hardcoded `inplace.go`.
+  The intermediate fragment used during template rendering uses its own internal name
+  (`plumber_inplace_helper.go`) and is unrelated to the user-facing output.
 
 #### Inplace merge implementation
 
-The merge pipeline is: render template → `decorator.Parse()` → `Merge(pkg, generatedFile)`
-→ returns modified `*dst.File` → `decorator.NewRestorerWithImports` → write file.
+The merge pipeline is: render template → `decorator.Parse()` → `Merge(pkg, generatedFile, output)`
+→ returns modified `*dst.File` → `decorator.NewRestorerWithImports` → write file. The
+`output` argument is the per-transformer `Output()` value and is used by `Merge()` to
+choose the destination file when a missing type must be appended.
 
 **Source files:**
 
 | File | Contents |
 |---|---|
-| `merge.go` | `Merge()` dispatcher — routes `*dst.TypeSpec`, `*dst.FuncDecl`, `*dst.ValueSpec` to sub-mergers |
+| `merge.go` | `Merge(pkg, file, output)` dispatcher — routes `*dst.TypeSpec`, `*dst.FuncDecl`, `*dst.ValueSpec` to sub-mergers; `addTypeDecl()`/`findOrCreateOutputFile()` append/create files for missing types |
 | `merge_func.go` | `mergeFunc()`, `addFunc()`, `mergeParams()`, `findFuncDecl()`, `annotateFuncDecl()`, `findExistingFunc()` |
 | `merge_stmt.go` | `mergeBody()`, `statementsMatch()`, `deepMergeStmt()`, `deepMergeExpr()`, `mergeCallArgs()`, `mergeCompositeLit()`, `mergeSwitchCases()`, `exprKey()`, `stmtKey()`, `annotateStmt()` |
 | `merge_var.go` | `mergeVar()` — add if missing, skip if exists |
@@ -501,6 +513,7 @@ file, so golden files use `testrun-acceptance/` as a stable placeholder.
 |---|---|---|---|
 | `TestGenerated` | `generated/model.go`, `generated/types.go` | `mixing.model.filtrable` mixin with `annotation.has is:filtrable` filter | `generated/generated.go` matches golden |
 | `TestMerge` | `merge/model.go`, `merge/types.go`, `merge/blended.go` | No extra config (`ShapeConfig{}`) | `merge/blended.go` merged golden |
+| `TestMergeMissingType` | `mergemissing/model.go`, `mergemissing/types.go` (no pre-existing target type) | No extra config | `mergemissing/merged.go` is created from scratch — verifies inplace mode appends a synthesized type to the file named by `plumber:output` when the target type is absent |
 | `TestMergeComplex` | `mergecomplex/model.go`, `mergecomplex/types.go`, `mergecomplex/blended.go` | Content template override | Full merge pipeline: struct fields, params, body subsequence, call arg augmentation, composite lit merge, method lookup, switch case merge |
 | `TestMacro` | `macro/model.go` | `@derive` macro expanding to `plumber:derive MacroDerived` + `plumber:output generated.go` | `macro/generated.go` matches golden |
 | `TestMacroTemplate` | `macrotemplate/model.go` | `@tderive` macro with `{{ index .Args 0 }}` template expanding call-site arg into derive name | `macrotemplate/generated.go` matches golden |

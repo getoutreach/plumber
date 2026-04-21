@@ -9,6 +9,7 @@ package model
 
 import (
 	"go/types"
+	"path/filepath"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
@@ -62,7 +63,10 @@ type (
 	Package struct {
 		Package *decorator.Package `json:"-" yaml:"-"`
 		Name    string             `json:"name" yaml:"name"`
-		Path    string             `json:"path" yaml:"path"`
+		// Path represents the import path of the package, such as "github.com/getoutreach/plumber/query/model".
+		Path string `json:"path" yaml:"path"`
+		// Dir represents the directory of the package, such as "/home/user/go/src/github.com/getoutreach/plumber/query/model".
+		Dir string `json:"dir" yaml:"dir"`
 
 		Types     []*Type         `json:"types" yaml:"types"`
 		Functions []*Function     `json:"functions" yaml:"functions"`
@@ -228,6 +232,39 @@ func (p *Package) File(filename string) *dst.File {
 		}
 	}
 	return nil
+}
+
+// EnsureDir populates Dir when it is empty by inspecting the underlying decorator.Package.
+// The first available file path in GoFiles, CompiledGoFiles, or the syntax/Fset positions
+// is used to derive the absolute filesystem directory of the package. Returns the resulting
+// Dir value (which is "" when no source-of-truth could be found).
+func (p *Package) EnsureDir() string {
+	if p == nil {
+		return ""
+	}
+	if p.Dir != "" {
+		return p.Dir
+	}
+	if p.Package == nil {
+		return ""
+	}
+	if len(p.Package.GoFiles) > 0 {
+		p.Dir = filepath.Dir(p.Package.GoFiles[0])
+		return p.Dir
+	}
+	if len(p.Package.CompiledGoFiles) > 0 {
+		p.Dir = filepath.Dir(p.Package.CompiledGoFiles[0])
+		return p.Dir
+	}
+	if p.Package.Decorator != nil {
+		for _, f := range p.Package.Syntax {
+			if filename := p.Package.Decorator.Filenames[f]; filename != "" {
+				p.Dir = filepath.Dir(filename)
+				return p.Dir
+			}
+		}
+	}
+	return ""
 }
 
 // AnnotationOption is a functional option for configuring an Annotation.

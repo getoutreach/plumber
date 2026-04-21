@@ -63,7 +63,7 @@ type Transformer interface {
 	Output() string
 	GetName() string
 	Mode() string
-	Render(context *render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error)
+	Render(context *render.Context, tp *model.Type, scope baserender.Scope, output string, opener gen.MemoryFileOpener) (string, error)
 }
 
 // Transformation represents a single transformation to be applied to a node,
@@ -149,10 +149,11 @@ func (t *BasicTransformer) Mode() string {
 
 // Output generates the output filename for the transformed code based on the transformer configuration and the
 // position of the annotated node.
+//
+// The returned filename is used as the final destination for the generated/derived code.
+// In inplace mode this is the file the synthesized declarations are merged or appended into;
+// the intermediate fragment used during template rendering is independent of this value.
 func (t *BasicTransformer) Output() string {
-	if t.Mode() == baserender.ModeInPlace {
-		return "inplace.go"
-	}
 	output := "generated.go"
 	a := t.Annotations.Find(contract.OptionOutput)
 	if a != nil {

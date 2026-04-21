@@ -172,9 +172,16 @@ type DerivedModel struct {
 
 ### `inplace`
 
-Merges the derived fields into an **existing struct** in the same package.  The target
-struct must already exist; the command adds only fields that are not already present
-(idempotent).
+Merges the derived fields into an **existing struct** in the same package.  The command
+adds only fields that are not already present (idempotent).
+
+If the target type **does not yet exist** in the package, the synthesized declaration is
+appended to the file named by `plumber:output` (or `generated.go` when the annotation is
+omitted).  The file is created on demand.  This means inplace mode can be used for the
+initial generation as well as subsequent merges — re-running `shape` is always safe.
+
+The intermediate template fragment used during rendering is independent of `plumber:output`
+— only the final merge target honours the annotation.
 
 ```go
 // plumber:derive
@@ -216,6 +223,14 @@ temporary Go file, parses it with a DST decorator, and merges each declaration i
 existing file.  The merge is **idempotent** — running the command twice produces the same
 result.  Every merge operation adds what is missing without removing anything the user
 has written.
+
+##### Missing target type
+
+If the target type referenced by the merge does not exist in the destination file, the
+generated declaration is added to the file named by `plumber:output` (defaulting to
+`generated.go`).  When that file does not yet exist in the package it is created with the
+correct `package` clause; subsequent runs find the now-existing type and merge into it
+normally.
 
 ##### Struct fields
 

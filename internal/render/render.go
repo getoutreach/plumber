@@ -55,12 +55,12 @@ type Output struct {
 	Dst      *DstOutput
 }
 
-func DefaultScope(context Context, scope map[string]any, output string) map[string]any {
-	scope["Package"] = map[string]any{
+func DefaultScope(context Context, scope Scope, output string) Scope {
+	scope["Package"] = Scope{
 		"Name": path.Base(path.Dir(output)),
 		"Path": context.GetPkgPath(),
 	}
-	scope["Output"] = map[string]any{
+	scope["Output"] = Scope{
 		"Path": output,
 	}
 	return scope
@@ -81,7 +81,7 @@ func WithBaseTemplates(extra ...string) gen.RenderOptionsFunc {
 }
 
 func Render(
-	context Context, template string, scope map[string]any, output string, opener gen.FileOpener, opts ...gen.WriterOption,
+	context Context, template string, scope Scope, output string, opener gen.FileOpener, opts ...gen.WriterOption,
 ) (*Output, error) {
 	writer := gen.NewWriter(append([]gen.WriterOption{gen.WithFileOpener(opener), func(wc *gen.WriterConfig) {
 		wc.Overwrite = true
@@ -124,7 +124,7 @@ func Render(
 }
 
 func File(
-	context Context, entryTemplate string, scope map[string]any, output string,
+	context Context, entryTemplate string, scope Scope, output string,
 ) (*Output, error) {
 	o, err := Render(context, entryTemplate, scope, output, gen.NewReadOnlyFileOpener())
 	if err != nil {

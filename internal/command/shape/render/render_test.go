@@ -71,7 +71,7 @@ func TestTesting(t *testing.T) {
 		},
 	}
 
-	content, err := Derive(&context, tp, map[string]any{
+	content, err := Derive(&context, tp, render.Scope{
 		"Derive": view.Annotable{
 			Annotations: []model.Annotation{
 				model.NewAnnotation("plumber:name", []string{"MyDerivedStruct"}),

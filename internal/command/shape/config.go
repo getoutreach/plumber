@@ -22,7 +22,7 @@ type FileConfig struct {
 type Config struct {
 	WorkingDir string                       `yaml:"workingDir,omitempty"`
 	CacheDir   string                       `yaml:"cacheDir,omitempty"`
-	Sources    []template.SourceConfig      `yaml:"sources,omitempty"`
+	Sources    []*template.SourceConfig     `yaml:"sources,omitempty"`
 	Templates  template.TemplatesFileConfig `yaml:"templates,omitempty"`
 	Macros     []MacroConfig                `yaml:"macros,omitempty"`
 	Mixins     []MixinConfig                `yaml:"mixins,omitempty"`

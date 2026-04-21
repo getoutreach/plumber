@@ -10,7 +10,7 @@ import (
 )
 
 func Finalize(
-	context *Context, scope map[string]any, parts []string, output string, opener gen.FileOpener, opts ...gen.WriterOption,
+	context *Context, scope render.Scope, parts []string, output string, opener gen.FileOpener, opts ...gen.WriterOption,
 ) (*render.Output, error) {
 	context = context.Clone()
 	context.WithPriorityRenderOptions(

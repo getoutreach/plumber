@@ -128,6 +128,11 @@ re-generation.
 Merges derived fields into an existing struct. Only adds fields that are not already
 present (idempotent). Imports are managed automatically.
 
+If the target type does not yet exist in the package, the generated declaration is
+appended to the file named by `plumber:output` (defaults to `generated.go`). The file
+is created on demand, so inplace mode is safe to use for both initial generation and
+subsequent merges.
+
 ```go
 // plumber:derive
 // plumber:mode  inplace

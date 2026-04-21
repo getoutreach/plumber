@@ -74,8 +74,22 @@
       "buildFlags": "-tags=or_dev",
       "cwd": "${workspaceFolder}/example",
       "args": ["discovery", "--config", "plumber.yaml"]
+    },
+    {
+      "name": "Attach to :2345",
+      "type": "go",
+      "debugAdapter": "dlv-dap",
+      "request": "attach",
+      "mode": "remote",
+      "host": "127.0.0.1",
+      "port": 2345
+      // "substitutePath": [
+      //   {
+      //     "from": "/home/p16s/outreach/plumber",
+      //     "to": "../plumber"
+      //   }
+      //]
     }
-
     // <</Stencil::Block>>
   ]
 }

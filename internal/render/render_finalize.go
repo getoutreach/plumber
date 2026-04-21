@@ -11,7 +11,7 @@ import (
 )
 
 func Finalize(
-	context Context, scope map[string]any, parts []string, output string, opener gen.FileOpener, opts ...gen.WriterOption,
+	context Context, scope Scope, parts []string, output string, opener gen.FileOpener, opts ...gen.WriterOption,
 ) (*Output, error) {
 	context = context.Context().Clone()
 	context.WithPriorityRenderOptions(

@@ -41,6 +41,9 @@ type (
 		Context
 		Clone() ContextCloner
 	}
+
+	// Scope is a simple type alias for a map used to hold arbitrary key-value pairs during rendering
+	Scope = map[any]any
 )
 
 func NewRenderContext(modules *ModuleRegister, pkg *model.Package, output string) *RenderContext {

@@ -22,7 +22,7 @@ const DefaultCacheDir = "~/.outreach/.plumber"
 // Checkout performs Git checkouts for all Git-based template sources, using sparse clones
 // to efficiently retrieve only the necessary template files. It returns include paths
 // found within git repos (for merging additional config).
-func Checkout(sources []SourceConfig, cacheDir string) ([]string, error) {
+func Checkout(sources []*SourceConfig, cacheDir string) ([]string, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -81,7 +81,7 @@ func LoadAllContent(content []ContentConfig) ([]gen.RenderOptionsFunc, error) {
 //     via LoadTemplates.
 func ResolveRefs(
 	refs []ContentConfig,
-	sources []SourceConfig,
+	sources []*SourceConfig,
 	registry []ContentConfig,
 	cacheDir string,
 	fs embed.FS,
@@ -107,7 +107,7 @@ func ResolveRefs(
 // LoadTemplates resolves template names to render option functions by searching through
 // sources in priority order: embedded (plumber: prefix), git/local sources, inline content.
 func LoadTemplates(
-	sources []SourceConfig,
+	sources []*SourceConfig,
 	content []ContentConfig,
 	cacheDir string,
 	names []string,
@@ -126,17 +126,22 @@ func LoadTemplates(
 			opts = append(opts, gen.WithFS(fs, name))
 			continue
 		}
+		found := false
 		for _, s := range sources {
 			switch {
 			case s.Git != nil:
-				repoPath := gitRepoPath(cacheDir, s.Git.Repository, s.Git.Ref)
+				fmt.Println("GIT templates", s.Git.Templates)
+				repoPath := gitRepoPath(cacheDir, s.Git)
 				for _, tpl := range s.Git.Templates {
+					fmt.Println(tpl.Name, name)
 					if tpl.Name == name {
-						t, err := template.New(tpl.Name).ParseFiles(path.Join(repoPath, tpl.Path))
+						found = true
+						filename := path.Join(repoPath, tpl.Path)
+						data, err := os.ReadFile(filename)
 						if err != nil {
-							return nil, fmt.Errorf("Can't load git template: %w", err)
+							return nil, fmt.Errorf("failed to read git template file %q: %w", filename, err)
 						}
-						opts = append(opts, gen.WithTemplate(t))
+						opts = append(opts, gen.WithTemplateContent(string(data)))
 					}
 				}
 			case s.Local != nil:
@@ -144,6 +149,7 @@ func LoadTemplates(
 					if tpl.Name != name {
 						continue
 					}
+					found = true
 					tplPath := tpl.Path
 					if tplPath == "" {
 						tplPath = name + ".gtpl"
@@ -160,8 +166,12 @@ func LoadTemplates(
 		}
 		for _, s := range content {
 			if s.Name == name {
+				found = true
 				opts = append(opts, gen.WithTemplateContent(s.Content))
 			}
+		}
+		if !found {
+			return nil, fmt.Errorf("template %q not found", name)
 		}
 	}
 

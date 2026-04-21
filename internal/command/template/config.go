@@ -8,7 +8,7 @@ package template
 // TemplatesFileConfig represents the root-level template configuration in a plumber config file.
 // It holds both source definitions (local/git) and inline content templates.
 type TemplatesFileConfig struct {
-	Sources []SourceConfig  `yaml:"sources,omitempty"`
+	Sources []*SourceConfig `yaml:"sources,omitempty"`
 	Content []ContentConfig `yaml:"content,omitempty"`
 }
 

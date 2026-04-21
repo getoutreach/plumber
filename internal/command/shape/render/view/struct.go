@@ -5,11 +5,13 @@
 // Package view provides view types used to pass structured data into the plumber render templates.
 package view
 
-import "github.com/getoutreach/plumber/query/model"
+import (
+	"github.com/getoutreach/plumber/query/model"
+)
 
 // Base represents the base view containing a scope for variables that can be used in templates.
 type Base struct {
-	Scope map[string]interface{}
+	Scope map[any]any
 }
 
 // Struct represents a view for rendering a struct type, containing the base scope and the specific type information

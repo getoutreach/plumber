@@ -8,6 +8,7 @@ package render
 import (
 	"fmt"
 	"html/template"
+	"maps"
 	"reflect"
 	"strings"
 
@@ -24,28 +25,28 @@ import (
 // rendered along with a scope for additional variables.
 type typeScope struct {
 	Type  *model.Type
-	Scope map[any]any
+	Scope Scope
 }
 
 func extend(v any, kv ...any) (any, error) {
 	if len(kv)%2 != 0 {
 		return nil, fmt.Errorf("invalid number of parameters: %d", len(kv))
 	}
-	scope := make(map[any]any, len(kv)/2)
+	scope := make(Scope, len(kv)/2)
 	for i := 0; i < len(kv); i += 2 {
 		scope[kv[i]] = kv[i+1]
 	}
 	switch v := v.(type) {
 	case *view.Struct:
-		for k := range v.Scope {
-			scope[k] = v.Scope[k]
-		}
-		return &typeScope{Type: v.Type, Scope: scope}, nil
+		n := make(Scope)
+		maps.Copy(n, v.Scope)
+		maps.Copy(n, scope)
+		return &typeScope{Type: v.Type, Scope: n}, nil
 	case *typeScope:
-		for k := range v.Scope {
-			scope[k] = v.Scope[k]
-		}
-		return &typeScope{Type: v.Type, Scope: scope}, nil
+		n := make(Scope)
+		maps.Copy(n, v.Scope)
+		maps.Copy(n, scope)
+		return &typeScope{Type: v.Type, Scope: n}, nil
 	default:
 		return nil, fmt.Errorf("invalid type for extend: %T", v)
 	}
@@ -148,7 +149,7 @@ func placeholder(name ...string) string {
 	return fmt.Sprintf("// <<plumber::Block(%s)>>\n// <</plumber::Block>>\n", strings.Join(name, "-"))
 }
 
-func fragmentStart(scope map[string]any) func(name ...string) string {
+func fragmentStart(scope Scope) func(name ...string) string {
 	return func(name ...string) string {
 		if scope["Mode"] == ModeInPlace {
 			return ""
@@ -157,7 +158,7 @@ func fragmentStart(scope map[string]any) func(name ...string) string {
 	}
 }
 
-func fragmentEnd(scope map[string]any) func() string {
+func fragmentEnd(scope Scope) func() string {
 	return func() string {
 		if scope["Mode"] == ModeInPlace {
 			return ""
@@ -236,7 +237,7 @@ func moduleInclude(context Context) func(modulePath string) (string, error) {
 	}
 }
 
-func WithRenderFuncMap(context Context, scope map[string]any, output string) (opt gen.RenderOptionsFunc, dispose func()) {
+func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.RenderOptionsFunc, dispose func()) {
 	var tp *model.Type
 	dispose = func() {
 		if tp != nil {

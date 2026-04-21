@@ -9,6 +9,7 @@ import (
 
 	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/genius/gen"
+	baserender "github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 )
 
@@ -31,7 +32,7 @@ func NewShaper(pos model.Position, a model.Annotation) *Shaper {
 }
 
 func (t *Shaper) Render(
-	context *render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener,
+	context *render.Context, tp *model.Type, scope baserender.Scope, output string, opener gen.MemoryFileOpener,
 ) (string, error) {
 	if tp.Interface == nil && tp.Struct == nil {
 		return "", fmt.Errorf("shape transformer can only be applied to interface or struct types, got %s", tp.Spec.Kind)

@@ -34,6 +34,7 @@ func buildContext(cfg *Config, modules *baserender.ModuleRegister, pkg *model.Pa
 // loading any necessary templates based on the transformer's annotations and the provided configuration.
 func transformationContext(context *render.Context, cfg *Config, t *Transformation) (*render.Context, error) {
 	names := t.Transformer.GetAnnotations().FindAll(contract.OptionTemplate).FlatArgs()
+	fmt.Println("Loading templates", names)
 	opts, err := template.LoadTemplates(cfg.Sources, cfg.Templates.Content, cfg.CacheDir, names, render.EmbededTemplates)
 	if err != nil {
 		return context, err
@@ -68,7 +69,7 @@ func managerRender(
 	pkgPath string,
 	opener gen.MemoryFileOpener,
 	transformations []Transformation,
-	scope map[string]any,
+	scope baserender.Scope,
 	output string,
 ) ([]*baserender.Output, error) {
 	pkg, ok := lo.Find(pkgs, func(p *model.Package) bool {
@@ -79,6 +80,11 @@ func managerRender(
 			Path: pkgPath,
 		}
 	}
+	// Defensive: ensure Dir is set so downstream consumers (e.g. Merge ->
+	// findOrCreateOutputFile) can reconstruct an absolute filesystem path even when
+	// the package was synthesised on-the-fly or pulled from a list that wasn't
+	// previously inflated.
+	pkg.EnsureDir()
 
 	context := buildContext(cfg, baserender.NewModuleRegister(), pkg, output)
 
@@ -102,7 +108,7 @@ func managerRender(
 // new output files based on the specified output package path.
 func (m *GeneratorManager) Render(pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error) {
 	var (
-		scope = map[string]any{
+		scope = baserender.Scope{
 			"Mode": baserender.ModeGenerated,
 		}
 		opener = gen.NewSystemFileOpener()
@@ -135,13 +141,16 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 		return p.Path == m.output
 	})
 	var (
-		scope = map[string]any{
+		scope = baserender.Scope{
 			"Mode": baserender.ModeInPlace,
 		}
 	)
 	if !found {
 		return nil, fmt.Errorf("package not found for output %q", m.output)
 	}
+	// Make sure the package's filesystem directory has been resolved before any
+	// downstream consumer (e.g. Merge -> findOrCreateOutputFile) needs it.
+	pkg.EnsureDir()
 
 	fmt.Printf("Found package %q for output %q\n", pkg.Path, m.output)
 
@@ -171,26 +180,37 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 			return nil, fmt.Errorf("error during finalization: %w", err)
 		}
 
+		// fmt.Println("-----------------------")
+		// fmt.Println(string(o.Content))
+		// fmt.Println("-----------------------")
+
 		f, err := decorator.Parse(o.Content)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse generated content for transformation %q: %w", t.Transformer.GetName(), err)
 		}
 
-		existingFile, err := Merge(pkg, f)
+		fmt.Printf("Default output: %q\n", t.Transformer.Output())
+
+		mergedFiles, err := Merge(pkg, f, t.Transformer.Output())
 		if err != nil {
 			return nil, fmt.Errorf("failed to merge generated content for transformation %q: %w", t.Transformer.GetName(), err)
 		}
 
-		filename = pkg.Package.Decorator.Filenames[existingFile]
-
-		outputs = append(outputs, &baserender.Output{
-			Filename: filename,
-			Modules:  modules,
-			Dst: &baserender.DstOutput{
-				File:    existingFile,
-				Package: pkg.Package,
-			},
-		})
+		// A single transformation may touch multiple files (struct in one file,
+		// method in another, missing entity creating a new file, ...). Emit one
+		// output per modified file so each is restored independently.
+		for _, existingFile := range mergedFiles {
+			filename = pkg.Package.Decorator.Filenames[existingFile]
+			fmt.Printf("Output: %q => %v\n", filename, existingFile)
+			outputs = append(outputs, &baserender.Output{
+				Filename: filename,
+				Modules:  modules,
+				Dst: &baserender.DstOutput{
+					File:    existingFile,
+					Package: pkg.Package,
+				},
+			})
+		}
 	}
 	//
 	return outputs, nil
@@ -203,7 +223,7 @@ func runTransformations(
 	pkgs []*model.Package,
 	state *render.Context,
 	opener gen.MemoryFileOpener,
-	scope map[string]any,
+	scope baserender.Scope,
 	transformations []Transformation, contentFunc func(string),
 ) (err error) {
 	for _, t := range transformations {
@@ -242,7 +262,7 @@ func runTransformations(
 
 // inflateCustomScope resolves all plumber:scope annotations on the transformer
 // and populates scope["Custom"] with the resolved *model.Type values keyed by name.
-func inflateCustomScope(transformer Transformer, pkgs []*model.Package, scope map[string]any) error {
+func inflateCustomScope(transformer Transformer, pkgs []*model.Package, scope baserender.Scope) error {
 	scopeAnnotations := transformer.GetAnnotations().FindAll(contract.OptionScope)
 	if len(scopeAnnotations) == 0 {
 		return nil

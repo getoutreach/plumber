@@ -22,7 +22,7 @@ func checkoutGit(cfg *GitSourceConfig, cacheDir string) ([]string, error) {
 	}
 	repoPath := cfg.Replaced
 	if cfg.Replaced == "" {
-		repoPath = gitRepoPath(cacheDir, cfg.Repository, cfg.Ref)
+		repoPath = gitRepoPath(cacheDir, cfg)
 
 		err := os.MkdirAll(repoPath, os.ModePerm)
 		if err != nil {
@@ -77,31 +77,35 @@ func checkoutGit(cfg *GitSourceConfig, cacheDir string) ([]string, error) {
 			return nil, err
 		}
 		fmt.Println(string(stdout))
+	}
 
-		var expandError []error
-		// Expand templates with globs into individual file paths.
-		cfg.Templates = lo.FlatMap(cfg.Templates, func(f FileRef, _ int) []FileRef {
-			if !strings.Contains(f.Path, "*") {
-				return []FileRef{f}
-			}
-			matches, err := filepath.Glob(filepath.Join(repoPath, f.Path))
-			if err != nil {
-				expandError = append(expandError, fmt.Errorf("failed to glob template path %q in repo %s: %w", f.Path, cfg.Repository, err))
-				return nil
-			}
-			return lo.Map(matches, func(m string, _ int) FileRef {
-				rel, err := filepath.Rel(repoPath, m)
-				if err != nil {
-					expandError = append(expandError, fmt.Errorf("failed to get relative path for glob match %q in repo %s: %w", m, cfg.Repository, err))
-					return FileRef{}
-				}
-				f.Name = strings.TrimSuffix(f.Name, path.Ext(f.Name))
-				return FileRef{Name: f.Name, Path: rel}
-			})
-		})
-		if expandError != nil {
-			return nil, errors.Join(expandError...)
+	var expandError []error
+	// Expand templates with globs into individual file paths.
+	cfg.Templates = lo.FlatMap(cfg.Templates, func(f FileRef, _ int) []FileRef {
+		fmt.Println(f.Path)
+		if !strings.Contains(f.Path, "*") {
+			return []FileRef{f}
 		}
+		matches, err := filepath.Glob(filepath.Join(repoPath, f.Path))
+		fmt.Println("!!!!", matches, filepath.Join(repoPath, f.Path))
+		if err != nil {
+			expandError = append(expandError, fmt.Errorf("failed to glob template path %q in repo %s: %w", f.Path, cfg.Repository, err))
+			return nil
+		}
+		return lo.Map(matches, func(m string, _ int) FileRef {
+			rel, err := filepath.Rel(repoPath, m)
+			if err != nil {
+				fmt.Println(err)
+				expandError = append(expandError, fmt.Errorf("failed to get relative path for glob match %q in repo %s: %w", m, cfg.Repository, err))
+				return FileRef{}
+			}
+			name := path.Base(rel)
+			name = strings.TrimSuffix(name, path.Ext(name))
+			return FileRef{Name: name, Path: m}
+		})
+	})
+	if expandError != nil {
+		return nil, errors.Join(expandError...)
 	}
 
 	// Resolve include globs within the checked-out repo.
@@ -117,14 +121,17 @@ func checkoutGit(cfg *GitSourceConfig, cacheDir string) ([]string, error) {
 	return includePaths, nil
 }
 
-func gitRepoPath(cacheDir, repository, ref string) string {
-	if ref == "" {
-		ref = "main"
+func gitRepoPath(cacheDir string, cfg *GitSourceConfig) string {
+	if cfg.Replaced != "" {
+		return cfg.Replaced
 	}
-	repository = strings.TrimPrefix(repository, "https://")
+	if cfg.Ref == "" {
+		cfg.Ref = "main"
+	}
+	repository := strings.TrimPrefix(cfg.Repository, "https://")
 	repository = strings.TrimPrefix(repository, "git@")
 	repository = strings.ReplaceAll(repository, "/", "-")
-	return path.Join(cacheDir, repository, ref)
+	return path.Join(cacheDir, repository, cfg.Ref)
 }
 
 func exists(filePath string) (bool, error) {

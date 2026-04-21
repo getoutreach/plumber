@@ -8,6 +8,7 @@ package shape
 import (
 	"fmt"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/getoutreach/plumber/internal/command/config"
@@ -17,6 +18,12 @@ import (
 
 // Run executes the shape command
 func Run(c *cli.Context) error {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Shape command panicked: %v\n", r)
+			debug.PrintStack()
+		}
+	}()
 	args := c.Args().Slice()
 
 	configPath := c.String("config")

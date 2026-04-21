@@ -294,6 +294,7 @@ func restoreOutputs(output []*ManagerOutput) error {
 
 	// restore generated files out of rendered output
 	for _, o := range output {
+		// Dst files are processed in a separate loop below
 		if o.Output.Dst != nil {
 			continue
 		}

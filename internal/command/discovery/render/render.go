@@ -21,7 +21,7 @@ var (
 )
 
 func Render(
-	context render.Context, output string, entryTemplate string, c map[string]any, opener gen.FileOpener, opts ...gen.RenderOptionsFunc,
+	context render.Context, output string, entryTemplate string, scope render.Scope, opener gen.FileOpener, opts ...gen.RenderOptionsFunc,
 ) error {
 	context.WithPriorityRenderOptions(
 		gen.WithFS(EmbededTemplates,
@@ -32,6 +32,6 @@ func Render(
 	)
 	context.WithRenderOptions(opts...)
 
-	_, err := render.File(context, entryTemplate, c, output)
+	_, err := render.File(context, entryTemplate, scope, output)
 	return err
 }

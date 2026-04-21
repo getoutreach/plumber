@@ -41,6 +41,27 @@ func TestOutput(t *testing.T) {
 				model.NewAnnotation(contract.OptionOutput, []string{"{suffix:generated}"}),
 			},
 		},
+		{
+			name: "inplace mode honors output annotation",
+			position: model.Position{
+				Filename: "example.go",
+			},
+			expected: "merged.go",
+			annotations: []model.Annotation{
+				model.NewAnnotation(contract.OptionMode, []string{"inplace"}),
+				model.NewAnnotation(contract.OptionOutput, []string{"merged.go"}),
+			},
+		},
+		{
+			name: "inplace mode falls back to default output",
+			position: model.Position{
+				Filename: "example.go",
+			},
+			expected: "generated.go",
+			annotations: []model.Annotation{
+				model.NewAnnotation(contract.OptionMode, []string{"inplace"}),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

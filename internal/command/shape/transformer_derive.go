@@ -9,6 +9,7 @@ import (
 
 	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/genius/gen"
+	baserender "github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 )
 
@@ -30,7 +31,7 @@ func NewDeriveTransformer(pos model.Position, a model.Annotation) *DeriveTransfo
 }
 
 func (t *DeriveTransformer) Render(
-	context *render.Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener,
+	context *render.Context, tp *model.Type, scope baserender.Scope, output string, opener gen.MemoryFileOpener,
 ) (string, error) {
 	if tp.Struct == nil {
 		return "", fmt.Errorf("derive transformer can only be applied to struct types, got %s", tp.Spec.Kind)

@@ -660,14 +660,14 @@ func (c *Container) Define() {
 	}
 
 	// Merge should skip the function because it exists and has generate:once
-	resultFile, err := Merge(pkg, generatedFile)
+	resultFiles, err := Merge(pkg, generatedFile, "")
 	if err != nil {
 		t.Fatalf("Merge() error = %v", err)
 	}
 
-	// resultFile should be nil because nothing was merged
-	if resultFile != nil {
-		t.Fatal("expected nil result (no merge performed), but got a file")
+	// resultFiles should be empty because nothing was merged
+	if len(resultFiles) != 0 {
+		t.Fatalf("expected no merged files (no merge performed), but got %d", len(resultFiles))
 	}
 }
 
@@ -707,20 +707,26 @@ func (c *Container) Define() {
 		t.Fatalf("failed to parse generated src: %v", err)
 	}
 
-	resultFile, err := Merge(pkg, generatedFile)
+	resultFiles, err := Merge(pkg, generatedFile, "")
 	if err != nil {
 		t.Fatalf("Merge() error = %v", err)
 	}
 
-	// Function should have been added
-	if resultFile == nil {
-		t.Fatal("expected a file with the added function, got nil")
+	// Function should have been added — exactly one file should be touched.
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a file with the added function, got none")
 	}
 
-	// Verify the function was added
-	found := findFuncDecl(resultFile, "Define")
+	// Verify the function was added to (one of) the returned files.
+	var found *dst.FuncDecl
+	for _, f := range resultFiles {
+		if fd := findFuncDecl(f, "Define"); fd != nil {
+			found = fd
+			break
+		}
+	}
 	if found == nil {
-		t.Fatal("expected Define function to be added to the file")
+		t.Fatal("expected Define function to be added to one of the returned files")
 	}
 }
 
@@ -762,14 +768,14 @@ func (c *Container) Define() {
 		t.Fatalf("failed to parse generated src: %v", err)
 	}
 
-	resultFile, err := Merge(pkg, generatedFile)
+	resultFiles, err := Merge(pkg, generatedFile, "")
 	if err != nil {
 		t.Fatalf("Merge() error = %v", err)
 	}
 
-	// Should have merged (returned a file)
-	if resultFile == nil {
-		t.Fatal("expected merge to proceed (no generate:once), but got nil")
+	// Should have merged (returned at least one file).
+	if len(resultFiles) == 0 {
+		t.Fatal("expected merge to proceed (no generate:once), but got no files")
 	}
 }
 
@@ -810,13 +816,13 @@ type Container struct {
 		t.Fatalf("failed to parse generated src: %v", err)
 	}
 
-	resultFile, err := Merge(pkg, generatedFile)
+	resultFiles, err := Merge(pkg, generatedFile, "")
 	if err != nil {
 		t.Fatalf("Merge() error = %v", err)
 	}
 
-	// Should be nil — struct exists and generate:once is set, so merge is skipped
-	if resultFile != nil {
-		t.Fatal("expected nil result (struct merge skipped), but got a file")
+	// Should be empty — struct exists and generate:once is set, so merge is skipped.
+	if len(resultFiles) != 0 {
+		t.Fatalf("expected no merged files (struct merge skipped), but got %d", len(resultFiles))
 	}
 }

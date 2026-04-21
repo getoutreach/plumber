@@ -123,6 +123,7 @@ func (r *TemplateRenderer) buildContext(output string, app *Application, sourceM
 		&model.Package{
 			Name: path.Base(sourceModule),
 			Path: sourceModule,
+			Dir:  filepath.Dir(output),
 		},
 		output,
 	)
@@ -133,14 +134,14 @@ func (r *TemplateRenderer) buildScope(
 	containerName string,
 	app *Application,
 	sourceModule string,
-) map[string]interface{} {
+) baserender.Scope {
 	// Extract package name from application module
 	packageName := extractPackageName(app.Module)
 
 	// Parse config type and module
 	// configType, configModule, isRemote := parseConfigType(app.Config, app.Module)
 
-	return map[string]interface{}{
+	return baserender.Scope{
 		"Mode": baserender.ModeInPlace,
 		"Container": map[string]interface{}{
 			"Name":   containerName,

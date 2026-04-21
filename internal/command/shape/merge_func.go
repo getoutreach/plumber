@@ -17,15 +17,19 @@ import (
 // mergeFunc merges a generated function declaration into the existing package.
 // If the function does not exist, it is added entirely. If it exists, its parameters
 // are augmented (template params must be present) and its body is merged statement-by-statement.
-func mergeFunc(pkg *model.Package, generated *dst.FuncDecl, importMap map[string]string) (*dst.File, error) {
+func mergeFunc(
+	pkg *model.Package, generated *dst.FuncDecl, output string, importMap map[string]string,
+) (*dst.File, error) {
 	// Find the existing function by name in the package.
 	// For methods (functions with receivers), search the receiver type's methods.
 	// For top-level functions, search pkg.Functions.
 	existing := findExistingFunc(pkg, generated)
 
 	if existing == nil {
-		// Function not found — add it entirely to the first file in the package
-		return addFunc(pkg, generated, importMap)
+		// Function not found — add it to the file selected by output (creating
+		// that file when necessary), with sensible fallbacks for callers that
+		// have not configured an explicit output.
+		return addFunc(pkg, generated, output, importMap)
 	}
 
 	// Function exists — find it in the DST and merge
@@ -60,12 +64,17 @@ func mergeFunc(pkg *model.Package, generated *dst.FuncDecl, importMap map[string
 	return file, nil
 }
 
-// addFunc appends a generated function declaration to the package. It picks the
-// file where the receiver type is declared (for methods) or the first file.
-func addFunc(pkg *model.Package, generated *dst.FuncDecl, importMap map[string]string) (*dst.File, error) {
+// addFunc appends a generated function declaration to the package. The destination
+// file is chosen with the following preference order:
+//  1. The file where the receiver type is declared (for methods).
+//  2. The file selected by the output annotation, creating it on demand.
+//  3. The first existing file in the package (legacy fallback).
+func addFunc(
+	pkg *model.Package, generated *dst.FuncDecl, output string, importMap map[string]string,
+) (*dst.File, error) {
 	var targetFile *dst.File
 
-	// For methods, try to find the file where the receiver type is declared
+	// For methods, try to find the file where the receiver type is declared.
 	if generated.Recv != nil && len(generated.Recv.List) > 0 {
 		recvTypeName := receiverTypeName(generated.Recv.List[0])
 		if recvTypeName != "" {
@@ -78,7 +87,13 @@ func addFunc(pkg *model.Package, generated *dst.FuncDecl, importMap map[string]s
 		}
 	}
 
-	// Fallback: use the first file in the package
+	// Prefer the configured output file for plain (non-method) functions or when
+	// the receiver type's file could not be located.
+	if targetFile == nil {
+		targetFile = findOrCreateOutputFile(pkg, output)
+	}
+
+	// Last-resort fallback: use the first existing file in the package.
 	if targetFile == nil && len(pkg.Package.Syntax) > 0 {
 		targetFile = pkg.Package.Syntax[0]
 	}

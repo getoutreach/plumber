@@ -10,6 +10,7 @@ package inspect
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"go/types"
 	"io/fs"
 	"iter"
@@ -17,9 +18,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
 	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/query/model"
+	"github.com/samber/lo"
 )
 
 func ScanFiles(baseDir string, args []string) (filenames []string, err error) {
@@ -73,6 +76,9 @@ func Inspect(filenames []string, workingDir string) (pkgs model.Packages, err er
 			Name:    pkg.Name,
 			Path:    pkg.PkgPath,
 		}
+		// Resolve and cache the absolute filesystem directory now so downstream
+		// consumers can rely on pm.Dir being populated.
+		pm.EnsureDir()
 
 		for _, file := range pkg.Package.Syntax {
 			pm.Comments = append(pm.Comments, processComments(pkg, file)...)
@@ -82,6 +88,162 @@ func Inspect(filenames []string, workingDir string) (pkgs model.Packages, err er
 		pkgs = append(pkgs, pm)
 	}
 	return pkgs, nil
+}
+
+// HydrateFile walks the supplied dst.File and appends minimal model entries (Type, PackageVar,
+// Function/method) to the package model for every top-level declaration that isn't already
+// present. It is meant to be called after Merge() injects new declarations into a file (or
+// creates a new file via findOrCreateOutputFile) so that subsequent transformers in the same
+// run see the newly-added entities and don't try to create them again.
+//
+// Hydration is intentionally lightweight: only the fields needed by the merge-side lookups
+// (Name, Position.Filename, Struct/Interface presence, methods) are populated. Re-running
+// the full type-checker would be required to populate go/types information; that is out of
+// scope and not needed for the current call sites.
+func HydrateFile(pkg *model.Package, file *dst.File) {
+	if pkg == nil || file == nil {
+		return
+	}
+
+	// Resolve the on-disk filename for this file (used to populate Position so the
+	// receiver-type → file lookup in addFunc can find this file via pkg.File()).
+	var filename string
+	if pkg.Package != nil && pkg.Package.Decorator != nil {
+		filename = pkg.Package.Decorator.Filenames[file]
+	}
+
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+		case *dst.GenDecl:
+			for _, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *dst.TypeSpec:
+					hydrateTypeSpec(pkg, s, filename)
+				case *dst.ValueSpec:
+					if d.Tok == token.VAR {
+						hydrateValueSpec(pkg, s, filename)
+					}
+				}
+			}
+		case *dst.FuncDecl:
+			hydrateFuncDecl(pkg, d, filename)
+		}
+	}
+}
+
+// hydrateTypeSpec appends a model.Type for a struct/interface declaration if it is not
+// already present in pkg.Types.
+func hydrateTypeSpec(pkg *model.Package, spec *dst.TypeSpec, filename string) {
+	if spec == nil || spec.Name == nil {
+		return
+	}
+	name := spec.Name.Name
+	if _, found := lo.Find(pkg.Types, func(t *model.Type) bool {
+		return t.Name == name
+	}); found {
+		return
+	}
+
+	tp := &model.Type{
+		TypeNode: &model.TypeNode{
+			Package:  pkg,
+			Position: model.Position{Filename: filename},
+		},
+		Name: name,
+	}
+	switch spec.Type.(type) {
+	case *dst.StructType:
+		tp.Struct = &model.Struct{}
+	case *dst.InterfaceType:
+		tp.Interface = &model.Interface{}
+	}
+	pkg.Types = append(pkg.Types, tp)
+}
+
+// hydrateValueSpec appends a model.PackageVar for each name declared in the value spec
+// if the variable is not already present in pkg.Vars.
+func hydrateValueSpec(pkg *model.Package, spec *dst.ValueSpec, filename string) {
+	for _, ident := range spec.Names {
+		if ident == nil || ident.Name == "" {
+			continue
+		}
+		name := ident.Name
+		if _, found := lo.Find(pkg.Vars, func(v *model.PackageVar) bool {
+			return v.Name == name
+		}); found {
+			continue
+		}
+		pkg.Vars = append(pkg.Vars, &model.PackageVar{
+			TypeNode: model.TypeNode{
+				Package:  pkg,
+				Position: model.Position{Filename: filename},
+			},
+			Name: name,
+		})
+	}
+}
+
+// hydrateFuncDecl appends a model.Function for a top-level function or attaches a method
+// to the receiver type's Struct.Methods. Existing entries (matched by name) are skipped.
+func hydrateFuncDecl(pkg *model.Package, decl *dst.FuncDecl, filename string) {
+	if decl == nil || decl.Name == nil {
+		return
+	}
+	name := decl.Name.Name
+
+	fn := &model.Function{
+		TypeNode: model.TypeNode{
+			Package:  pkg,
+			Position: model.Position{Filename: filename},
+		},
+		Name: name,
+	}
+
+	// Method: attach to the receiver type's Struct.Methods.
+	if decl.Recv != nil && len(decl.Recv.List) > 0 {
+		recvName := dstReceiverTypeName(decl.Recv.List[0])
+		if recvName == "" {
+			return
+		}
+		recvType, found := lo.Find(pkg.Types, func(t *model.Type) bool {
+			return t.Name == recvName
+		})
+		if !found {
+			return
+		}
+		if recvType.Struct == nil {
+			recvType.Struct = &model.Struct{}
+		}
+		if _, found := lo.Find(recvType.Struct.Methods, func(m *model.Function) bool {
+			return m.Name == name
+		}); found {
+			return
+		}
+		recvType.Struct.Methods = append(recvType.Struct.Methods, fn)
+		return
+	}
+
+	// Top-level function: skip duplicates, then append.
+	if _, found := lo.Find(pkg.Functions, func(f *model.Function) bool {
+		return f.Name == name
+	}); found {
+		return
+	}
+	pkg.Functions = append(pkg.Functions, fn)
+}
+
+// dstReceiverTypeName extracts the receiver type's bare name from a dst method receiver
+// field. Mirrors merge_func.receiverTypeName (kept private to avoid a circular dep).
+func dstReceiverTypeName(recv *dst.Field) string {
+	switch t := recv.Type.(type) {
+	case *dst.Ident:
+		return t.Name
+	case *dst.StarExpr:
+		if ident, ok := t.X.(*dst.Ident); ok {
+			return ident.Name
+		}
+	}
+	return ""
 }
 
 func processComments(pkg *decorator.Package, f *ast.File) []*model.CommentGroup {

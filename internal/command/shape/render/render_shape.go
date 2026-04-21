@@ -14,7 +14,7 @@ import (
 	"github.com/getoutreach/plumber/query/model"
 )
 
-func Shape(context *Context, tp *model.Type, scope map[string]any, output string, opener gen.MemoryFileOpener) (string, error) {
+func Shape(context *Context, tp *model.Type, scope render.Scope, output string, opener gen.MemoryFileOpener) (string, error) {
 	writer := gen.NewWriter(gen.WithFileOpener(opener), func(wc *gen.WriterConfig) {
 		wc.Overwrite = true
 		wc.WriterOptions = append(wc.WriterOptions, func(s *gen.BlockWriterSettings) {
