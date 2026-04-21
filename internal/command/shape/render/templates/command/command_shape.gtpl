@@ -1,3 +1,7 @@
+{{define "plumber/command/shape/comment/shaped"}}
+// {{ $.Scope.Name }} is shaped from {{ $.Type.Spec.FQN }}.
+{{ end }}
+{{ $name := .Name }}
 {{define "plumber/command/shape"}}
 {{ $name := or (expand_name (annotation_value $.Scope.Subject "plumber:name") .Type) .Type.Name }}
 {{ with $scope := extend $ "Name" $name -}}

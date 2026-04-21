@@ -71,10 +71,11 @@ func main() {
 			Action: discovery.Run,
 			Flags: []cli.Flag{
 				&cli.StringFlag{
-					Name:     "config",
-					Aliases:  []string{"c"},
-					Usage:    "Path to plumber.yaml configuration file",
-					Required: true,
+					Name:        "config",
+					Aliases:     []string{"c"},
+					Usage:       "Path to plumber.yaml configuration file",
+					DefaultText: "plumber.yml",
+					Value:       "plumber.yml",
 				},
 			},
 		},
@@ -85,9 +86,11 @@ func main() {
 			Flags: []cli.Flag{
 
 				&cli.StringFlag{
-					Name:    "config",
-					Aliases: []string{"c"},
-					Usage:   "Path to plumber.yaml configuration file",
+					Name:        "config",
+					Aliases:     []string{"c"},
+					Usage:       "Path to plumber.yaml configuration file",
+					DefaultText: "plumber.yml",
+					Value:       "plumber.yml",
 				},
 				&cli.StringFlag{
 					Name:  "type",

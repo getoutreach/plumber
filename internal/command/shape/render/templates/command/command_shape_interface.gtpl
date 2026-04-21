@@ -36,7 +36,7 @@
 {{end}}
 
 {{ define "plumber/command/shape/interface" }}
-// {{ $.Scope.Name }} is shaped from {{ $.Type.Spec.FQN }}.
+{{ template "plumber/command/shape/comment/shaped" $ -}}
 {{ comment $.Scope.Subject -}}
 {{ fragment_start "struct" ($.Scope.Name) -}}
 {{ type_set $.Scope.Name -}}

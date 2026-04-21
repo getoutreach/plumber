@@ -45,6 +45,7 @@ func Shape(context *Context, tp *model.Type, scope map[string]any, output string
 					gen.WithFS(EmbededTemplates,
 						"templates/command/command_shape.gtpl",
 						"templates/command/command_shape_interface.gtpl",
+						"templates/command/command_shape_struct.gtpl",
 					),
 					gen.WithRenderOptions(context.GetRenderOptions()...),
 				)
