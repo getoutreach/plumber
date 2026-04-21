@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/getoutreach/plumber/internal/command/shape"
+	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"gotest.tools/v3/assert"
 )
 
@@ -11,11 +12,11 @@ func TestGenerated(t *testing.T) {
 	err := withFixture(
 		func(ctx FixtureContext) error {
 			err := shape.Run(&shape.Config{
-				Mixins: []shape.MixinConfig{
+				Mixins: []config.MixinConfig{
 					{
-						PlumberMixin: &shape.PlumberMixinConfig{
+						PlumberMixin: &config.PlumberMixinConfig{
 							Name: "mixing.model.filtrable",
-							Annotations: []shape.AnnotationConfig{
+							Annotations: []config.AnnotationConfig{
 								{
 									Name: "plumber:filter",
 									Args: []string{"annotation.has", "is:filtrable"},

@@ -48,7 +48,7 @@ The type can be specified as:
   loaded packages)
 
 The macro is expanded with the provided `--macro-arg` and `--macro-named-arg` values as
-its `.Args` and `.NamedArgs` template context, exactly as if the type had a
+its `.Macro.Args` and `.Macro.NamedArgs` template context, exactly as if the type had a
 `// @<macro-name> arg1 arg2 key=value` annotation in source code.
 
 ---
@@ -89,6 +89,29 @@ These refine the behaviour of the active transformation.
 | `plumber:comment` | `<text>` | Append a comment to the generated declaration. |
 | `plumber:context` | `<pkg/Type>` | Used in **package-level comments** to point the transformation at a specific model type (fully qualified). |
 | `plumber:scope` | `"<Name>" type="<FQN>"` | Inject a resolved type into the template scope under `.Scope.Custom.<Name>`. Can be specified multiple times. |
+| `plumber:depends.on` | `<FQN>` | Skip the entire transformation when the referenced type cannot be resolved in the inspected packages. Can be specified multiple times — every dependency must resolve. |
+
+---
+
+### Conditional execution (`plumber:depends.on`)
+
+`plumber:depends.on` declares a hard dependency on another type. When the referenced type
+cannot be resolved within the inspected packages, the transformation is silently skipped
+(no error, no output). This is useful when a transformer should only run if an optional
+collaborator (an adapter, a derived model, …) is present.
+
+```go
+// plumber:shape
+// plumber:template grpc-handler
+// plumber:depends.on "github.com/example/proto".Service
+// plumber:depends.on "github.com/example/store".Repository
+type GrpcServer struct { ... }
+```
+
+The annotation accepts a single FQN value and may appear multiple times on the same
+transformation. Resolution uses the same FQN parser as `plumber:scope`. Malformed FQNs
+produce a build error; an FQN that simply does not resolve is treated as a normal "skip"
+signal.
 
 ---
 
@@ -599,12 +622,15 @@ building occurs.  The result is a `generated` mode derive that produces
 ### Template expansion
 
 Macro annotation values support Go `text/template` syntax, giving macros access to the
-arguments passed at the call site. The template data context exposes:
+arguments passed at the call site **and** to the package the annotation is being expanded
+in. The template data context exposes:
 
-| Field       | Type                | Description                                           |
-|-------------|---------------------|-------------------------------------------------------|
-| `.Args`     | `[]string`          | Positional arguments from the triggering annotation   |
-| `.NamedArgs`| `map[string]string` | Named arguments (`key=value`) from the triggering annotation |
+| Field               | Type                | Description                                                                |
+|---------------------|---------------------|----------------------------------------------------------------------------|
+| `.Macro.Args`       | `[]string`          | Positional arguments from the triggering annotation                        |
+| `.Macro.NamedArgs`  | `map[string]string` | Named arguments (`key=value`) from the triggering annotation               |
+| `.Package.Name`     | `string`            | Name of the Go package the annotation is being expanded in                 |
+| `.Package.Path`     | `string`            | Import path of the Go package the annotation is being expanded in          |
 
 #### Defining a macro with templates
 
@@ -613,8 +639,9 @@ macros:
   - plumber.macro:
       name: "@tderive"
       annotations:
-        - { name: plumber:derive, args: ["{{ index .Args 0 }}"] }
-        - { name: plumber:output, args: ["{{ .NamedArgs.file }}"] }
+        - { name: plumber:derive, args: ["{{ index .Macro.Args 0 }}"] }
+        - { name: plumber:output, args: ["{{ .Macro.NamedArgs.file }}"] }
+        - { name: plumber:comment, args: ["from {{ .Package.Path }}"] }
 ```
 
 #### Using a macro with arguments

@@ -12,6 +12,7 @@ import (
 
 	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/command/shape/expand"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
@@ -95,8 +96,9 @@ func ignored(ignores *Ignores) func(groups ...string) bool {
 
 func withRenderFuncMap(context *Context, output string) (opt gen.RenderOptionsFunc) {
 	functions := template.FuncMap{
-		"type_wrap": typesRendererWithWrapper(context.GetPkgPath(), context.GetModules(), context.Wrapper),
-		"ignored":   ignored(context.Ignores),
+		"type_wrap":   typesRendererWithWrapper(context.GetPkgPath(), context.GetModules(), context.Wrapper),
+		"ignored":     ignored(context.Ignores),
+		"expand_name": expand.Name,
 	}
 	return gen.WithFuncMap(functions)
 }

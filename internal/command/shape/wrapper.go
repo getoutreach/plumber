@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/getoutreach/plumber/internal/astx"
+	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
@@ -26,7 +27,7 @@ func (w *TypeWrapper) WrapType(name string, t *model.TypeSpec) (*model.TypeSpec,
 	if w.cfg == nil || w.cfg.Type.Wrappers == nil {
 		return nil, nil
 	}
-	wr, ok := lo.Find(w.cfg.Type.Wrappers, func(wrapper WrapperConfig) bool {
+	wr, ok := lo.Find(w.cfg.Type.Wrappers, func(wrapper config.WrapperConfig) bool {
 		if wrapper.PlumberWrapper != nil && wrapper.PlumberWrapper.Name == name {
 			return true
 		}

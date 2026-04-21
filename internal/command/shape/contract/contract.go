@@ -41,4 +41,10 @@ const (
 	// allowing templates to access additional type information beyond the subject type.
 	// Usage: plumber:scope "MyType" type="pkg/path".TypeName
 	OptionScope = "plumber:scope"
+	// OptionDependsOn declares a hard dependency on another type by FQN. The
+	// transformation is silently skipped (no error) when the referenced type cannot be
+	// resolved within the inspected packages. The annotation may be specified multiple
+	// times; every dependency must resolve for the transformation to run.
+	// Usage: plumber:depends.on "pkg/path".TypeName
+	OptionDependsOn = "plumber:depends.on"
 )

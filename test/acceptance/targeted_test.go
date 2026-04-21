@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/getoutreach/plumber/internal/command/shape"
+	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"gotest.tools/v3/assert"
 )
 
@@ -11,18 +12,18 @@ func TestShapeTargeted(t *testing.T) {
 	err := withFixture(
 		func(ctx FixtureContext) error {
 			err := shape.Run(&shape.Config{
-				Macros: []shape.MacroConfig{
+				Macros: []config.MacroConfig{
 					{
-						PlumberMacro: &shape.PlumberMacroConfig{
+						PlumberMacro: &config.PlumberMacroConfig{
 							Name: "@derive",
-							Annotations: []shape.AnnotationConfig{
-								{Name: "plumber:derive", Args: []string{`{{ index .Args 0 }}`}},
+							Annotations: []config.AnnotationConfig{
+								{Name: "plumber:derive", Args: []string{`{{ index .Macro.Args 0 }}`}},
 								{Name: "plumber:output", Args: []string{"generated.go"}},
 							},
 						},
 					},
 				},
-				Target: &shape.TargetConfig{
+				Target: &config.TargetConfig{
 					TypeFQN: "Worker",
 					Macro:   "@derive",
 					Args:    []string{"WorkerDerived"},
@@ -41,7 +42,7 @@ func TestShapeTargetedMacroNotFound(t *testing.T) {
 	err := withFixture(
 		func(_ FixtureContext) error {
 			return shape.Run(&shape.Config{
-				Target: &shape.TargetConfig{
+				Target: &config.TargetConfig{
 					TypeFQN: "Worker",
 					Macro:   "@nonexistent",
 					Args:    []string{"Derived"},
@@ -57,18 +58,18 @@ func TestShapeTargetedTypeNotFound(t *testing.T) {
 	err := withFixture(
 		func(_ FixtureContext) error {
 			return shape.Run(&shape.Config{
-				Macros: []shape.MacroConfig{
+				Macros: []config.MacroConfig{
 					{
-						PlumberMacro: &shape.PlumberMacroConfig{
+						PlumberMacro: &config.PlumberMacroConfig{
 							Name: "@derive",
-							Annotations: []shape.AnnotationConfig{
+							Annotations: []config.AnnotationConfig{
 								{Name: "plumber:derive", Args: []string{"Derived"}},
 								{Name: "plumber:output", Args: []string{"generated.go"}},
 							},
 						},
 					},
 				},
-				Target: &shape.TargetConfig{
+				Target: &config.TargetConfig{
 					TypeFQN: "NonExistent",
 					Macro:   "@derive",
 					Args:    []string{"Derived"},

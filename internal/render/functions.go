@@ -52,10 +52,6 @@ func extend(v any, kv ...any) (any, error) {
 	}
 }
 
-func expandName(v string, t *model.Type) any {
-	return strings.ReplaceAll(v, "{name}", t.Name)
-}
-
 // Ignores provides functionality to track and check for ignored groups during rendering,
 // allowing for conditional rendering based on group membership.
 type Ignores struct {
@@ -245,9 +241,9 @@ func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.Ren
 		}
 	}
 	functions := template.FuncMap{
-		"extend":      extend,
-		"expand_name": expandName,
-		"type":        typesRenderer(context.GetPkgPath(), context.GetModules()),
+		"extend": extend,
+
+		"type": typesRenderer(context.GetPkgPath(), context.GetModules()),
 		"type_set": func(name string) (string, error) {
 			fqn, err := astx.CraftFQN(context.GetPkgPath(), name)
 			if err != nil {

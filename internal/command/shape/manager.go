@@ -180,9 +180,11 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 			return nil, fmt.Errorf("error during finalization: %w", err)
 		}
 
-		// fmt.Println("-----------------------")
-		// fmt.Println(string(o.Content))
-		// fmt.Println("-----------------------")
+		if false {
+			fmt.Println("-----------------------")
+			fmt.Println(string(o.Content))
+			fmt.Println("-----------------------")
+		}
 
 		f, err := decorator.Parse(o.Content)
 		if err != nil {
@@ -227,6 +229,19 @@ func runTransformations(
 	transformations []Transformation, contentFunc func(string),
 ) (err error) {
 	for _, t := range transformations {
+		// Skip the entire transformation when any plumber:depends.on dependency cannot
+		// be resolved in the inspected packages. This allows transformers to opt out
+		// gracefully when their required collaborators are absent (e.g. an optional
+		// adapter package that hasn't been generated yet).
+		satisfied, err := dependsOnSatisfied(t.Transformer, pkgs)
+		if err != nil {
+			return fmt.Errorf("error evaluating plumber:depends.on for transformer %q: %w", t.Transformer.GetName(), err)
+		}
+		if !satisfied {
+			fmt.Printf("  > Transformer[%s] skipped: unmet plumber:depends.on dependency\n", t.Transformer.GetName())
+			continue
+		}
+
 		ignores := state.Ignores
 		if ignores == nil {
 			ignores = render.NewIgnores(t.Transformer.GetAnnotations().FindAll(contract.OptionIgnore).Values())
@@ -258,6 +273,33 @@ func runTransformations(
 		contentFunc(content)
 	}
 	return nil
+}
+
+// dependsOnSatisfied evaluates every plumber:depends.on annotation on the transformer
+// and reports whether all referenced FQNs resolve to a type within the inspected
+// packages. The boolean result is true when every dependency resolves (or when no
+// dependency annotations are present); it is false as soon as a single dependency
+// cannot be resolved. An error is returned only when an annotation is malformed
+// (missing argument or invalid FQN), mirroring the behavior of inflateCustomScope.
+func dependsOnSatisfied(transformer Transformer, pkgs []*model.Package) (bool, error) {
+	dependsOn := transformer.GetAnnotations().FindAll(contract.OptionDependsOn)
+	if len(dependsOn) == 0 {
+		return true, nil
+	}
+	for _, da := range dependsOn {
+		fqnStr := da.Value()
+		if fqnStr == "" {
+			return false, fmt.Errorf("plumber:depends.on annotation requires a type FQN argument")
+		}
+		fqn, err := astx.ParseFQN(fqnStr)
+		if err != nil {
+			return false, fmt.Errorf("failed to parse FQN %q for plumber:depends.on: %w", fqnStr, err)
+		}
+		if model.Packages(pkgs).TypeByFQN(fqn) == nil {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // inflateCustomScope resolves all plumber:scope annotations on the transformer

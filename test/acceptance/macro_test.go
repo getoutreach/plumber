@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/getoutreach/plumber/internal/command/shape"
+	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"gotest.tools/v3/assert"
 )
 
@@ -11,11 +12,11 @@ func TestMacro(t *testing.T) {
 	err := withFixture(
 		func(ctx FixtureContext) error {
 			err := shape.Run(&shape.Config{
-				Macros: []shape.MacroConfig{
+				Macros: []config.MacroConfig{
 					{
-						PlumberMacro: &shape.PlumberMacroConfig{
+						PlumberMacro: &config.PlumberMacroConfig{
 							Name: "@derive",
-							Annotations: []shape.AnnotationConfig{
+							Annotations: []config.AnnotationConfig{
 								{Name: "plumber:derive", Args: []string{"{name}Macro"}},
 								{Name: "plumber:output", Args: []string{"generated.go"}},
 							},
@@ -36,12 +37,12 @@ func TestMacroTemplate(t *testing.T) {
 	err := withFixture(
 		func(ctx FixtureContext) error {
 			err := shape.Run(&shape.Config{
-				Macros: []shape.MacroConfig{
+				Macros: []config.MacroConfig{
 					{
-						PlumberMacro: &shape.PlumberMacroConfig{
+						PlumberMacro: &config.PlumberMacroConfig{
 							Name: "@tderive",
-							Annotations: []shape.AnnotationConfig{
-								{Name: "plumber:derive", Args: []string{`{{ index .Args 0 }}`}},
+							Annotations: []config.AnnotationConfig{
+								{Name: "plumber:derive", Args: []string{`{{ index .Macro.Args 0 }}`}},
 								{Name: "plumber:output", Args: []string{"generated.go"}},
 							},
 						},

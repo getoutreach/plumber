@@ -11,8 +11,9 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/getoutreach/plumber/internal/command/config"
+	configs "github.com/getoutreach/plumber/internal/command/config"
 	"github.com/getoutreach/plumber/internal/command/shape"
+	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/urfave/cli/v2"
 )
 
@@ -38,7 +39,7 @@ func Run(c *cli.Context) error {
 		}
 
 		// Parse and merge configuration (includes resolved automatically)
-		cfg, err := config.Load(absConfigPath)
+		cfg, err := configs.Load(absConfigPath)
 		if err != nil {
 			return fmt.Errorf("failed to parse config: %w", err)
 		}
@@ -90,7 +91,7 @@ func parseTargetFlags(c *cli.Context, shapeConfig *shape.Config) error {
 		namedArgs[parts[0]] = parts[1]
 	}
 
-	shapeConfig.Target = &shape.TargetConfig{
+	shapeConfig.Target = &config.TargetConfig{
 		TypeFQN:   typeFQN,
 		Macro:     macro,
 		Args:      macroArgs,

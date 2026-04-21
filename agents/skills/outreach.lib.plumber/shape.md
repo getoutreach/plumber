@@ -87,6 +87,7 @@ These refine the active transformation:
 | `plumber:comment` | `<text>` | Append comment to the generated declaration. |
 | `plumber:context` | `<pkg/Type>` | Package-level: point transformation at a specific model type. |
 | `plumber:scope` | `"<Name>" type="<FQN>"` | Inject a resolved type into template scope as `.Scope.Custom.<Name>`. |
+| `plumber:depends.on` | `<FQN>` | Silently skip the transformation when the FQN cannot be resolved in the inspected packages. May appear multiple times — all dependencies must resolve. |
 
 ## Modes
 
@@ -261,7 +262,7 @@ and `plumber.shape.templates.content` are automatically promoted to the root lev
 Referenced with `@<name>` in source comments. Expand **before** transformers are built,
 so they can inject any annotation including `plumber:derive` and `plumber:shape`.
 
-Macro annotation values support Go `text/template` with `.Args` and `.NamedArgs`:
+Macro annotation values support Go `text/template` with `.Macro.Args`, `.Macro.NamedArgs`, `.Package.Name`, and `.Package.Path`:
 
 ```go
 // @tderive Widget file=generated.go
@@ -273,8 +274,8 @@ With macro config:
 - plumber.macro:
     name: "@tderive"
     annotations:
-      - { name: plumber:derive, args: ["{{ index .Args 0 }}"] }
-      - { name: plumber:output, args: ["{{ .NamedArgs.file }}"] }
+      - { name: plumber:derive, args: ["{{ index .Macro.Args 0 }}"] }
+      - { name: plumber:output, args: ["{{ .Macro.NamedArgs.file }}"] }
 ```
 
 ### Mixins

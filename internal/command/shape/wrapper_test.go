@@ -4,20 +4,21 @@ import (
 	"testing"
 
 	"github.com/getoutreach/plumber/internal/command/shape"
+	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/query/model"
 	"gotest.tools/v3/assert"
 )
 
-func wrapper(name, t string, matches []shape.MatchRuleConfig) *shape.TypeWrapper {
+func wrapper(name, t string, matches []config.MatchRuleConfig) *shape.TypeWrapper {
 	return shape.NewTypeWrapper(&shape.Config{
-		Type: shape.TypeConfig{
-			Wrappers: []shape.WrapperConfig{
+		Type: config.TypeConfig{
+			Wrappers: []config.WrapperConfig{
 				{
-					PlumberWrapper: &shape.PlumberWrapperConfig{
+					PlumberWrapper: &config.PlumberWrapperConfig{
 						Name: name,
-						Expressions: []shape.WrapperExpressionConfig{
+						Expressions: []config.WrapperExpressionConfig{
 							{
-								PlumberWrapperExpression: &shape.PlumberWrapperExpressionConfig{
+								PlumberWrapperExpression: &config.PlumberWrapperExpressionConfig{
 									Type:    t,
 									Matches: matches,
 								},
@@ -31,7 +32,7 @@ func wrapper(name, t string, matches []shape.MatchRuleConfig) *shape.TypeWrapper
 }
 
 func TestWrapper(t *testing.T) {
-	w := wrapper("wrapper", `"github.com/getoutreach/plumber".type`, []shape.MatchRuleConfig{
+	w := wrapper("wrapper", `"github.com/getoutreach/plumber".type`, []config.MatchRuleConfig{
 		{
 			Rule: "kind:int",
 		},

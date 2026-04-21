@@ -19,7 +19,9 @@ import (
 	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/astx/inspect"
 	"github.com/getoutreach/plumber/internal/command"
+	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/command/shape/expand"
 	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
@@ -27,8 +29,8 @@ import (
 )
 
 // Run is the main entry point for the shape command, orchestrating the entire transformation process.
-func Run(config *Config, args []string) error {
-	if err := checkoutAndMergeIncludes(config); err != nil {
+func Run(cfg *Config, args []string) error {
+	if err := checkoutAndMergeIncludes(cfg); err != nil {
 		return err
 	}
 
@@ -43,23 +45,23 @@ func Run(config *Config, args []string) error {
 	}
 
 	// Single-type targeted mode: process only the specified type with the named macro.
-	if config.Target != nil {
-		return runTargeted(config, pkgs)
+	if cfg.Target != nil {
+		return runTargeted(cfg, pkgs)
 	}
 
 	// Expand macros in all annotations before walking and building transformers.
 	// This allows macros to inject entry-point annotations like plumber:derive
 	// that create new transformers, which mixins cannot do.
-	if err := expandMacros(pkgs, config.Macros); err != nil {
+	if err := expand.Macros(pkgs, cfg.Macros); err != nil {
 		return err
 	}
 
-	transformations, err := collectTransformations(config, pkgs)
+	transformations, err := collectTransformations(cfg, pkgs)
 	if err != nil {
 		return err
 	}
 
-	outputs, err := renderTransformations(config, pkgs, transformations)
+	outputs, err := renderTransformations(cfg, pkgs, transformations)
 	if err != nil {
 		return err
 	}
@@ -74,33 +76,33 @@ func Run(config *Config, args []string) error {
 // runTargeted processes a single type with a named macro, bypassing the full annotation scan.
 // The macro is injected as a synthetic annotation onto the type, expanded, and then the
 // standard transformer building and rendering pipeline runs for that single type.
-func runTargeted(config *Config, pkgs model.Packages) error {
-	typ, err := resolveTargetType(config.Target.TypeFQN, pkgs)
+func runTargeted(cfg *Config, pkgs model.Packages) error {
+	typ, err := resolveTargetType(cfg.Target.TypeFQN, pkgs)
 	if err != nil {
 		return err
 	}
 
 	// Validate macro exists in config
-	macroExists := lo.ContainsBy(config.Macros, func(m MacroConfig) bool {
-		return m.PlumberMacro != nil && m.PlumberMacro.Name == config.Target.Macro
+	macroExists := lo.ContainsBy(cfg.Macros, func(m config.MacroConfig) bool {
+		return m.PlumberMacro != nil && m.PlumberMacro.Name == cfg.Target.Macro
 	})
 	if !macroExists {
-		return fmt.Errorf("macro %q not found in config", config.Target.Macro)
+		return fmt.Errorf("macro %q not found in config", cfg.Target.Macro)
 	}
 
 	// Inject synthetic macro annotation onto the type
-	ann := model.NewAnnotation(config.Target.Macro, config.Target.Args, model.WithNamedArgs(config.Target.NamedArgs))
+	ann := model.NewAnnotation(cfg.Target.Macro, cfg.Target.Args, model.WithNamedArgs(cfg.Target.NamedArgs))
 	typ.TypeNode.Annotations = append(typ.TypeNode.Annotations, ann)
 
 	// Expand macros (only targeted type has the injected macro)
-	if err := expandMacros(pkgs, config.Macros); err != nil {
+	if err := expand.Macros(pkgs, cfg.Macros); err != nil {
 		return err
 	}
 
 	// Build transformers for the single type
-	ts, err := buildTransformers(config, typ.TypeNode)
+	ts, err := buildTransformers(cfg, typ.TypeNode)
 	if err != nil {
-		return fmt.Errorf("failed to build transformers for %q: %w", config.Target.TypeFQN, err)
+		return fmt.Errorf("failed to build transformers for %q: %w", cfg.Target.TypeFQN, err)
 	}
 
 	// Build transformations
@@ -114,7 +116,7 @@ func runTargeted(config *Config, pkgs model.Packages) error {
 	}
 
 	// Render and restore
-	outputs, err := renderTransformations(config, pkgs, transformations)
+	outputs, err := renderTransformations(cfg, pkgs, transformations)
 	if err != nil {
 		return err
 	}
@@ -152,8 +154,8 @@ func resolveTargetType(typeFQN string, pkgs model.Packages) (*model.Type, error)
 
 // checkoutAndMergeIncludes checks out template sources from git and merges
 // any config files found via git source includes into the shape config.
-func checkoutAndMergeIncludes(config *Config) error {
-	includePaths, err := template.Checkout(config.Sources, config.CacheDir)
+func checkoutAndMergeIncludes(cfg *Config) error {
+	includePaths, err := template.Checkout(cfg.Sources, cfg.CacheDir)
 	if err != nil {
 		return fmt.Errorf("failed to checkout templates: %w", err)
 	}
@@ -163,14 +165,14 @@ func checkoutAndMergeIncludes(config *Config) error {
 		if err != nil {
 			return fmt.Errorf("failed to parse git include config %q: %w", p, err)
 		}
-		config.MergeShape(&inc.Shape)
+		cfg.MergeShape(&inc.Shape)
 	}
 	return nil
 }
 
 // collectTransformations walks all annotated nodes and package-level comments
 // to build the full list of transformations to execute.
-func collectTransformations(config *Config, pkgs model.Packages) ([]Transformation, error) {
+func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation, error) {
 	var transformingNodes []model.Node
 
 	err := inspect.Walk(pkgs, inspect.WithAnnotations(
@@ -196,7 +198,7 @@ func collectTransformations(config *Config, pkgs model.Packages) ([]Transformati
 	}
 
 	for _, node := range transformingNodes {
-		ts, err := buildTransformers(config, node.GetNode())
+		ts, err := buildTransformers(cfg, node.GetNode())
 		if err != nil {
 			return nil, fmt.Errorf("failed to build transformers for node %q: %w", node.GetNode().GetPosition(), err)
 		}
@@ -218,7 +220,7 @@ func collectTransformations(config *Config, pkgs model.Packages) ([]Transformati
 			if t == nil {
 				return nil, fmt.Errorf("model type %q not found in packages", fqn)
 			}
-			ts, err := buildTransformers(config, comment.FilterAnnotations(func(a model.Annotation) bool {
+			ts, err := buildTransformers(cfg, comment.FilterAnnotations(func(a model.Annotation) bool {
 				return a.Name != contract.OptionContext
 			}))
 			if err != nil {
@@ -233,7 +235,7 @@ func collectTransformations(config *Config, pkgs model.Packages) ([]Transformati
 
 // renderTransformations groups transformations by mode and output filename,
 // renders each group via the appropriate manager, and appends query outputs.
-func renderTransformations(config *Config, pkgs []*model.Package, transformations []Transformation) ([]*ManagerOutput, error) {
+func renderTransformations(cfg *Config, pkgs []*model.Package, transformations []Transformation) ([]*ManagerOutput, error) {
 	byMode := lo.GroupBy(transformations, func(t Transformation) string {
 		return t.Transformer.Mode()
 	})
@@ -248,7 +250,7 @@ func renderTransformations(config *Config, pkgs []*model.Package, transformation
 		})
 
 		for filename, transformations := range byOutput {
-			manager := buildModeManager(config, mode, transformations[0].Path.Package, filename)
+			manager := buildModeManager(cfg, mode, transformations[0].Path.Package, filename)
 
 			fmt.Printf("Found %d transformations for output %q\n", len(transformations), filename)
 
@@ -385,7 +387,7 @@ func buildModeManager(cfg *Config, mode, pkgPath, output string) Manager {
 }
 
 // buildTransformers constructs the list of transformers to apply to a given node based on its annotations and the provided configuration.
-func buildTransformers(config *Config, node Node) (transformers []Transformer, err error) {
+func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err error) {
 	var (
 		lastTransformer Transformer
 	)
@@ -425,7 +427,7 @@ func buildTransformers(config *Config, node Node) (transformers []Transformer, e
 			lastTransformer.Add(annotation)
 			if annotation.Name == "plumber:mixin" {
 				mixinName := annotation.Value()
-				mixinConfig, ok := lo.Find(config.Mixins, func(mixin MixinConfig) bool {
+				mixinConfig, ok := lo.Find(cfg.Mixins, func(mixin config.MixinConfig) bool {
 					return mixin.PlumberMixin != nil && mixin.PlumberMixin.Name == mixinName
 				})
 				if !ok {
