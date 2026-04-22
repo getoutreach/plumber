@@ -87,7 +87,7 @@ These refine the active transformation:
 | `plumber:comment` | `<text>` | Append comment to the generated declaration. |
 | `plumber:context` | `<pkg/Type>` | Package-level: point transformation at a specific model type. |
 | `plumber:scope` | `"<Name>" type="<FQN>"` | Inject a resolved type into template scope as `.Scope.Custom.<Name>`. |
-| `plumber:depends.on` | `<FQN>` | Silently skip the transformation when the FQN cannot be resolved in the inspected packages. May appear multiple times — all dependencies must resolve. |
+| `plumber:depends_on` | `<FQN>` | Silently skip the transformation when the FQN cannot be resolved in the inspected packages. May appear multiple times — all dependencies must resolve. |
 
 ## Modes
 

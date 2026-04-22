@@ -40,6 +40,8 @@ type (
 		Name      string            `json:"name" yaml:"name"`
 		Args      []string          `json:"args,omitempty" yaml:"args,omitempty"`
 		NamedArgs map[string]string `json:"namedArgs,omitempty" yaml:"namedArgs,omitempty"`
+		// ImpliedBy is a reference to the annotation that implied this annotation (macro, mixin), if any.
+		ImpliedBy *Annotation `json:"-" yaml:"-"`
 	}
 
 	// Annotations is a slice of Annotation, providing utility methods for searching and filtering annotations.
@@ -274,6 +276,15 @@ type AnnotationOption func(*Annotation)
 func WithNamedArgs(namedArgs map[string]string) AnnotationOption {
 	return func(a *Annotation) {
 		a.NamedArgs = namedArgs
+	}
+}
+
+// WithImpliedBy returns an AnnotationOption that records the annotation that
+// caused this annotation to be created (e.g., the @macro or plumber:mixin
+// annotation it was expanded from). When implied is nil the option is a no-op.
+func WithImpliedBy(implied *Annotation) AnnotationOption {
+	return func(a *Annotation) {
+		a.ImpliedBy = implied
 	}
 }
 

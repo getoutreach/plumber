@@ -127,7 +127,7 @@ There are also **macro annotations** in the form `// @<name>` (see below).
 | `plumber:comment`      | `<text>` | Append comment to generated declaration |
 | `plumber:context`      | `<pkg/Type>` | Package-level annotation: point at a specific model type |
 | `plumber:scope`        | `"<Name>" type="<FQN>"` | Inject a resolved `*model.Type` into `.Scope.Custom.<Name>` |
-| `plumber:depends.on`   | `<FQN>` | Skip transformation when FQN does not resolve in inspected packages (silent, no error). May repeat. |
+| `plumber:depends_on`   | `<FQN>` | Skip transformation when FQN does not resolve in inspected packages (silent, no error). May repeat. |
 | `plumber:query`        | `"<regex>" scope="<scope>" [receiver="<var>"]` | Populate annotated slice variable with matching entities |
 
 ### Custom scope (`plumber:scope`)
@@ -145,16 +145,16 @@ all `plumber:scope` annotations on the transformer are collected. For each:
 Templates access it as `.Scope.Custom.<Name>` (e.g. `.Scope.Custom.Target.Struct.Fields`).
 Multiple `plumber:scope` annotations can appear on the same transformation.
 
-### Conditional execution (`plumber:depends.on`)
+### Conditional execution (`plumber:depends_on`)
 
-`plumber:depends.on` declares a hard dependency by FQN. The transformation is silently
+`plumber:depends_on` declares a hard dependency by FQN. The transformation is silently
 skipped (no error, no output, no `contentFunc` call) when **any** referenced type cannot
 be resolved in the inspected packages. Multiple annotations may appear on the same
 transformation; every dependency must resolve for the transformer to run.
 
 **Implementation:** In `runTransformations()` (`manager.go`), before building the
 transformation context, `dependsOnSatisfied(transformer, pkgs)` collects every
-`plumber:depends.on` annotation, parses each value with `astx.ParseFQN`, and resolves
+`plumber:depends_on` annotation, parses each value with `astx.ParseFQN`, and resolves
 it via `model.Packages(pkgs).TypeByFQN`. Returns `false` (skip) on the first unresolved
 dependency, `true` when all resolve. Malformed FQNs produce an error.
 

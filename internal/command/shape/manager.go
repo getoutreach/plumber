@@ -229,16 +229,16 @@ func runTransformations(
 	transformations []Transformation, contentFunc func(string),
 ) (err error) {
 	for _, t := range transformations {
-		// Skip the entire transformation when any plumber:depends.on dependency cannot
+		// Skip the entire transformation when any plumber:depends_on dependency cannot
 		// be resolved in the inspected packages. This allows transformers to opt out
 		// gracefully when their required collaborators are absent (e.g. an optional
 		// adapter package that hasn't been generated yet).
 		satisfied, err := dependsOnSatisfied(t.Transformer, pkgs)
 		if err != nil {
-			return fmt.Errorf("error evaluating plumber:depends.on for transformer %q: %w", t.Transformer.GetName(), err)
+			return fmt.Errorf("error evaluating plumber:depends_on for transformer %q: %w", t.Transformer.GetName(), err)
 		}
 		if !satisfied {
-			fmt.Printf("  > Transformer[%s] skipped: unmet plumber:depends.on dependency\n", t.Transformer.GetName())
+			fmt.Printf("  > Transformer[%s] skipped: unmet plumber:depends_on dependency\n", t.Transformer.GetName())
 			continue
 		}
 
@@ -275,7 +275,7 @@ func runTransformations(
 	return nil
 }
 
-// dependsOnSatisfied evaluates every plumber:depends.on annotation on the transformer
+// dependsOnSatisfied evaluates every plumber:depends_on annotation on the transformer
 // and reports whether all referenced FQNs resolve to a type within the inspected
 // packages. The boolean result is true when every dependency resolves (or when no
 // dependency annotations are present); it is false as soon as a single dependency
@@ -289,11 +289,11 @@ func dependsOnSatisfied(transformer Transformer, pkgs []*model.Package) (bool, e
 	for _, da := range dependsOn {
 		fqnStr := da.Value()
 		if fqnStr == "" {
-			return false, fmt.Errorf("plumber:depends.on annotation requires a type FQN argument")
+			return false, fmt.Errorf("plumber:depends_on annotation requires a type FQN argument")
 		}
 		fqn, err := astx.ParseFQN(fqnStr)
 		if err != nil {
-			return false, fmt.Errorf("failed to parse FQN %q for plumber:depends.on: %w", fqnStr, err)
+			return false, fmt.Errorf("failed to parse FQN %q for plumber:depends_on: %w", fqnStr, err)
 		}
 		if model.Packages(pkgs).TypeByFQN(fqn) == nil {
 			return false, nil

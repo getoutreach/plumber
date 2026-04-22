@@ -45,6 +45,6 @@ const (
 	// transformation is silently skipped (no error) when the referenced type cannot be
 	// resolved within the inspected packages. The annotation may be specified multiple
 	// times; every dependency must resolve for the transformation to run.
-	// Usage: plumber:depends.on "pkg/path".TypeName
-	OptionDependsOn = "plumber:depends.on"
+	// Usage: plumber:depends_on "pkg/path".TypeName
+	OptionDependsOn = "plumber:depends_on"
 )

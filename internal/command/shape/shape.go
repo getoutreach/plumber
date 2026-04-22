@@ -433,6 +433,9 @@ func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err 
 				if !ok {
 					return nil, fmt.Errorf("mixin %q not found in config", mixinName)
 				}
+				// Stable copy of the triggering plumber:mixin annotation so each
+				// expanded child annotation can record its provenance via ImpliedBy.
+				trigger := annotation
 				for _, mixinAnnotation := range mixinConfig.PlumberMixin.Annotations {
 					if !lastTransformer.Accepts(mixinAnnotation.Name) {
 						return nil, fmt.Errorf(
@@ -440,7 +443,11 @@ func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err 
 							lastTransformer.GetName(), mixinAnnotation.Name, mixinName,
 						)
 					}
-					a := model.NewAnnotation(mixinAnnotation.Name, mixinAnnotation.Args, model.WithNamedArgs(mixinAnnotation.NamedArgs))
+					a := model.NewAnnotation(
+						mixinAnnotation.Name, mixinAnnotation.Args,
+						model.WithNamedArgs(mixinAnnotation.NamedArgs),
+						model.WithImpliedBy(&trigger),
+					)
 					lastTransformer.Add(a)
 				}
 			}
