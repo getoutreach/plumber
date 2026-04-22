@@ -33,6 +33,8 @@ var defaultOptions = []string{
 	contract.OptionDependsOn,
 }
 
+// Transformer defines the interface for transforming annotated nodes in the AST, such as struct types,
+// into generated code based on specified annotations and options.
 type Transformer interface {
 	contract.Annotable
 	Accepts(annotation string) bool
@@ -145,36 +147,6 @@ func (t *BasicTransformer) Mode() string {
 // the intermediate fragment used during template rendering is independent of this value.
 func (t *BasicTransformer) Output() string {
 	return expand.TransformerOutput(t.Annotations, t.Position.Filename)
-
-	// output := "generated.go"
-
-	// a := t.Annotations.Find(contract.OptionOutput)
-
-	// if a != nil {
-	// 	output = a.Value()
-	// }
-	// baseFilename := path.Base(t.Position.Filename)
-	// ext := path.Ext(baseFilename)
-
-	// name := strings.TrimSuffix(baseFilename, ext)
-
-	// output = strings.NewReplacer(
-	// 	"{filename}", baseFilename,
-	// 	"{name}", name,
-	// 	"{ext}", ext,
-	// ).Replace(output)
-
-	// output = reSuffixed.ReplaceAllStringFunc(output, func(s string) string {
-	// 	// Extract the suffix value from the match
-	// 	matches := reSuffixed.FindStringSubmatch(s)
-	// 	if len(matches) > 1 {
-	// 		suffix := matches[1]
-	// 		return name + "_" + suffix + ext
-	// 	}
-	// 	return s
-	// })
-
-	// return output
 }
 
 func (t *BasicTransformer) Accepts(annotation string) bool {

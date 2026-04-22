@@ -61,6 +61,8 @@ func Run(cfg *Config, args []string) error {
 		return err
 	}
 
+	expandTransformations(transformations)
+
 	outputs, err := renderTransformations(cfg, pkgs, transformations)
 	if err != nil {
 		return err
@@ -426,7 +428,7 @@ func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err 
 			}
 			lastTransformer.Add(annotation)
 			if annotation.Name == "plumber:mixin" {
-				if err = expand.Mixin(annotation, lastTransformer, cfg.Mixins); err != nil {
+				if err := expand.Mixin(annotation, lastTransformer, cfg.Mixins); err != nil {
 					return nil, err
 				}
 			}
@@ -436,4 +438,10 @@ func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err 
 		return nil, err
 	}
 	return transformers, nil
+}
+
+func expandTransformations(transformations []Transformation) {
+	for _, t := range transformations {
+		t.Transformer.Expand(t.Node)
+	}
 }
