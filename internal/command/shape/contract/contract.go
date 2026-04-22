@@ -5,6 +5,10 @@
 // Package contract defines the annotation constants for the plumber shape command.
 package contract
 
+import (
+	"github.com/getoutreach/plumber/query/model"
+)
+
 // Option constants for annotations used in plumber templates and code generation.
 const (
 	// OptionTemplate specifies the template to use for code generation.
@@ -48,3 +52,19 @@ const (
 	// Usage: plumber:depends_on "pkg/path".TypeName
 	OptionDependsOn = "plumber:depends_on"
 )
+
+// Transformer defines the interface for all transformers that can be applied to annotated nodes in the shape command.
+type Transformer interface {
+	Annotable
+	Accepts(annotation string) bool
+	Add(annotation model.Annotation)
+	Validate() error
+	Output() string
+	GetName() string
+	Mode() string
+}
+
+// Annotable represents an entity that can have annotations, such as a struct or interface type in the AST.
+type Annotable interface {
+	GetAnnotations() model.Annotations
+}

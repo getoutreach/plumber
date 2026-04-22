@@ -426,29 +426,8 @@ func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err 
 			}
 			lastTransformer.Add(annotation)
 			if annotation.Name == "plumber:mixin" {
-				mixinName := annotation.Value()
-				mixinConfig, ok := lo.Find(cfg.Mixins, func(mixin config.MixinConfig) bool {
-					return mixin.PlumberMixin != nil && mixin.PlumberMixin.Name == mixinName
-				})
-				if !ok {
-					return nil, fmt.Errorf("mixin %q not found in config", mixinName)
-				}
-				// Stable copy of the triggering plumber:mixin annotation so each
-				// expanded child annotation can record its provenance via ImpliedBy.
-				trigger := annotation
-				for _, mixinAnnotation := range mixinConfig.PlumberMixin.Annotations {
-					if !lastTransformer.Accepts(mixinAnnotation.Name) {
-						return nil, fmt.Errorf(
-							"transformer %s does not accept annotation %q from mixin %q",
-							lastTransformer.GetName(), mixinAnnotation.Name, mixinName,
-						)
-					}
-					a := model.NewAnnotation(
-						mixinAnnotation.Name, mixinAnnotation.Args,
-						model.WithNamedArgs(mixinAnnotation.NamedArgs),
-						model.WithImpliedBy(&trigger),
-					)
-					lastTransformer.Add(a)
+				if err = expand.Mixin(annotation, lastTransformer, cfg.Mixins); err != nil {
+					return nil, err
 				}
 			}
 		}

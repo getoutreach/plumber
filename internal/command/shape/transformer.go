@@ -6,12 +6,9 @@
 package shape
 
 import (
-	"path"
-	"regexp"
-	"strings"
-
 	"github.com/dave/dst"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/command/shape/expand"
 	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	baserender "github.com/getoutreach/plumber/internal/render"
@@ -36,35 +33,27 @@ var defaultOptions = []string{
 	contract.OptionDependsOn,
 }
 
-// defaultValues defines the default values for certain annotation options when they are not explicitly provided.
-var defaultValues = map[string]string{
-	contract.OptionMode: "generated",
-}
-
-// reSuffixed is a regular expression used to identify and replace {suffix:...} patterns in output filenames for generated code.
-var reSuffixed = regexp.MustCompile(`{suffix:([^}]+)}`)
-
-// Annotable represents an entity that can have annotations, such as a struct or interface type in the AST.
-type Annotable interface {
-	GetAnnotations() model.Annotations
-}
-
-// Node represents a node in the AST that can be transformed by a Transformer, such as a struct or interface type.
-type Node interface {
-	Annotable
-	GetPosition() model.Position
-}
-
-// Transformer defines the interface for all transformers that can be applied to annotated nodes in the shape command.
 type Transformer interface {
-	Annotable
+	contract.Annotable
 	Accepts(annotation string) bool
 	Add(annotation model.Annotation)
 	Validate() error
 	Output() string
 	GetName() string
 	Mode() string
+	Expand(node model.Node)
 	Render(context *render.Context, tp *model.Type, scope baserender.Scope, output string, opener gen.MemoryFileOpener) (string, error)
+}
+
+// defaultValues defines the default values for certain annotation options when they are not explicitly provided.
+var defaultValues = map[string]string{
+	contract.OptionMode: "generated",
+}
+
+// Node represents a node in the AST that can be transformed by a Transformer, such as a struct or interface type.
+type Node interface {
+	contract.Annotable
+	GetPosition() model.Position
 }
 
 // Transformation represents a single transformation to be applied to a node,
@@ -155,33 +144,37 @@ func (t *BasicTransformer) Mode() string {
 // In inplace mode this is the file the synthesized declarations are merged or appended into;
 // the intermediate fragment used during template rendering is independent of this value.
 func (t *BasicTransformer) Output() string {
-	output := "generated.go"
-	a := t.Annotations.Find(contract.OptionOutput)
-	if a != nil {
-		output = a.Value()
-	}
-	baseFilename := path.Base(t.Position.Filename)
-	ext := path.Ext(baseFilename)
+	return expand.TransformerOutput(t.Annotations, t.Position.Filename)
 
-	name := strings.TrimSuffix(baseFilename, ext)
+	// output := "generated.go"
 
-	output = strings.NewReplacer(
-		"{filename}", baseFilename,
-		"{name}", name,
-		"{ext}", ext,
-	).Replace(output)
+	// a := t.Annotations.Find(contract.OptionOutput)
 
-	output = reSuffixed.ReplaceAllStringFunc(output, func(s string) string {
-		// Extract the suffix value from the match
-		matches := reSuffixed.FindStringSubmatch(s)
-		if len(matches) > 1 {
-			suffix := matches[1]
-			return name + "_" + suffix + ext
-		}
-		return s
-	})
+	// if a != nil {
+	// 	output = a.Value()
+	// }
+	// baseFilename := path.Base(t.Position.Filename)
+	// ext := path.Ext(baseFilename)
 
-	return output
+	// name := strings.TrimSuffix(baseFilename, ext)
+
+	// output = strings.NewReplacer(
+	// 	"{filename}", baseFilename,
+	// 	"{name}", name,
+	// 	"{ext}", ext,
+	// ).Replace(output)
+
+	// output = reSuffixed.ReplaceAllStringFunc(output, func(s string) string {
+	// 	// Extract the suffix value from the match
+	// 	matches := reSuffixed.FindStringSubmatch(s)
+	// 	if len(matches) > 1 {
+	// 		suffix := matches[1]
+	// 		return name + "_" + suffix + ext
+	// 	}
+	// 	return s
+	// })
+
+	// return output
 }
 
 func (t *BasicTransformer) Accepts(annotation string) bool {
@@ -190,4 +183,8 @@ func (t *BasicTransformer) Accepts(annotation string) bool {
 
 func (t *BasicTransformer) Add(annotation model.Annotation) {
 	t.Annotations = append(t.Annotations, annotation)
+}
+
+func (t *BasicTransformer) Expand(node model.Node) {
+	t.Annotations = expand.TransformerAnnotations(t.Annotations)
 }

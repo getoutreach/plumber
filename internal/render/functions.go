@@ -9,11 +9,9 @@ import (
 	"fmt"
 	"html/template"
 	"maps"
-	"reflect"
 	"strings"
 
 	"github.com/getoutreach/plumber/internal/astx"
-	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 
@@ -107,38 +105,11 @@ func annotation(o any, name string) *model.Annotation {
 	return nil
 }
 
-func annotationValue(o any, name string) string {
+func AnnotationValue(o any, name string) string {
 	if ann := annotation(o, name); ann != nil && len(ann.Args) > 0 {
 		return ann.Args[0]
 	}
 	return ""
-}
-
-func comment(o any) string {
-	if n, ok := o.(model.AnnotationProvider); ok {
-		if a, ok := lo.Find(n.GetAnnotations(), func(a model.Annotation) bool { return a.Name == contract.OptionComment }); ok {
-			return "// " + a.Value() + "\n"
-		}
-	} else {
-		fmt.Printf("%T does not implement model.AnnotationProvider\n", o)
-	}
-	return ""
-}
-
-func receiver(o any) string {
-	if n, ok := o.(model.AnnotationProvider); ok {
-		if a, ok := lo.Find(n.GetAnnotations(), func(a model.Annotation) bool { return a.Name == contract.OptionReceiver }); ok {
-			return a.Value()
-		}
-	} else {
-		fmt.Printf("%T does not implement model.AnnotationProvider\n", o)
-	}
-	name := annotationValue(o, contract.OptionName)
-	name = strings.ToLower(name)
-	if name == "" {
-		return "r"
-	}
-	return name[:1]
 }
 
 func placeholder(name ...string) string {
@@ -167,62 +138,6 @@ func ignored(ignores *Ignores) func(groups ...string) bool {
 	return func(groups ...string) bool {
 		return ignores.Ignored(groups...)
 	}
-}
-
-func filterElements(provider, elements any, groups ...string) (any, error) {
-	array := reflect.ValueOf(elements)
-	annotations, ok := provider.(model.AnnotationProvider)
-
-	if !ok {
-		return nil, fmt.Errorf("filterElements:%T does not implement model.AnnotationProvider", provider)
-	}
-
-	filters := annotations.GetAnnotations().FindAll(contract.OptionFilter)
-
-	// find filters that match the groups or have no subject
-	filters = lo.Filter(filters, func(f model.Annotation, _ int) bool {
-		subject, ok := f.NamedArgs["subject"]
-		return !ok || lo.Contains(groups, subject)
-	})
-
-	if array.Kind() != reflect.Slice && array.Kind() != reflect.Array {
-		return nil, fmt.Errorf("expected slice or array, got %s", array.Kind())
-	}
-
-	arrLen := array.Len()
-
-	filtered := reflect.MakeSlice(array.Type(), 0, arrLen)
-
-	for i := 0; i < arrLen; i++ {
-		elem := array.Index(i).Interface()
-		matches := true
-		for _, f := range filters {
-			ok, err := filterElement(elem, f)
-			if err != nil {
-				return nil, fmt.Errorf("failed to apply filter %q: %w", f.Name, err)
-			}
-			if !ok {
-				matches = false
-				break
-			}
-		}
-		if matches {
-			filtered = reflect.Append(filtered, array.Index(i))
-		}
-	}
-	return filtered.Interface(), nil
-}
-
-func filterElement(element any, a model.Annotation) (bool, error) {
-	val := a.Value()
-	if val == "annotation.has" && len(a.Args) > 1 {
-		annName := a.Args[1]
-		if n, ok := element.(model.AnnotationProvider); ok {
-			return n.GetAnnotations().Find(annName) != nil, nil
-		}
-		return false, fmt.Errorf("filterElement: %T does not implement model.AnnotationProvider", element)
-	}
-	return false, nil
 }
 
 func moduleInclude(context Context) func(modulePath string) (string, error) {
@@ -280,13 +195,10 @@ func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.Ren
 			return !ok, nil
 		},
 		"annotation":       annotation,
-		"annotation_value": annotationValue,
-		"comment":          comment,
-		"filter_elements":  filterElements,
+		"annotation_value": AnnotationValue,
 		"placeholder":      placeholder,
 		"fragment_start":   fragmentStart(scope),
 		"fragment_end":     fragmentEnd(scope),
-		"receiver":         receiver,
 		"module_include":   moduleInclude(context),
 	}
 	return gen.WithFuncMap(functions), dispose
