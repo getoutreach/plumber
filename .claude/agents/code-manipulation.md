@@ -116,7 +116,7 @@ There are also **macro annotations** in the form `// @<name>` (see below).
 | Annotation | Key arg(s) | Effect |
 |---|---|---|
 | `plumber:name`         | `<Name>` | Override generated type name |
-| `plumber:output`       | `<file>` | Output path (supports `{filename}`, `{name}`, `{ext}`, `{suffix:str}`) |
+| `plumber:output`       | `<file>` | Output path. Rendered as a Go `text/template` exposing `.Filename`, `.Name`, `.Ext`, and the `suffixed` function (e.g. `{{ suffixed "filter" }}`). |
 | `plumber:mode`         | `generated`\|`inplace` | Generation mode (default: `generated`) |
 | `plumber:template`     | `<name>` | Template to render |
 | `plumber:mixin`        | `<mixin-name>` | Expand a named mixin from config |
@@ -172,7 +172,7 @@ Example Go source:
 // plumber:derive
 // plumber:name WorkerFilter
 // plumber:mixin mixing.model.filtrable
-// plumber:output {suffix:generated}
+// plumber:output {{ suffixed "generated" }}
 type Worker struct { ... }
 ```
 
@@ -220,27 +220,35 @@ macros:
       name: "@derive"
       annotations:
         - { name: plumber:derive, args: ["MacroDerived"] }
-        - { name: plumber:output, args: ["{suffix:generated}"] }
+        - { name: plumber:output, args: ['{{ suffixed "generated" }}'] }
 ```
 
 At runtime, `expand.Macros()` in `expand.go` replaces the `@derive` annotation with
-`plumber:derive MacroDerived` + `plumber:output {suffix:generated}` on the node's
-annotation list.  The rest of the pipeline then processes them normally.
+`plumber:derive MacroDerived` + `plumber:output {{ suffixed "generated" }}` on the
+node's annotation list. The rest of the pipeline then processes them normally.
 
-#### Template expansion in macros
+#### Template expansion in macros and mixins
 
-Macro annotation `args` and `namedArgs` values support Go `text/template` syntax,
-allowing macros to forward arguments from the call site into the expanded annotations.
+Annotations produced by macros (in `expand.go`) and mixins (in `expand_mixing.go`)
+support Go `text/template` syntax in their `args` and `namedArgs` values, allowing
+the bundle to forward arguments from the call site into the expanded annotations.
 
-The template context (`macroTemplateData` in `expand.go`) exposes:
+Template expansion is **deferred** to the transformer stage and runs
+**per-annotation** in `TransformerAnnotations` (in `expand_transformer.go`). An
+annotation is only template-expanded when it has a non-nil `ImpliedBy` reference
+— which is the case for every annotation produced by a macro or mixin. This
+unifies template support across both bundling mechanisms.
 
-- `.Macro.Args` (`[]string`) — positional arguments from the triggering annotation.
-- `.Macro.NamedArgs` (`map[string]string`) — named `key=value` arguments from the triggering annotation.
+The template context (`sourceTemplateData` in `expand.go`) exposes:
+
+- `.Source.Args` (`[]string`) — positional arguments from the triggering annotation.
+- `.Source.NamedArgs` (`map[string]string`) — named `key=value` arguments from the triggering annotation.
 - `.Package.Name` (`string`) — name of the package whose annotation is being expanded.
 - `.Package.Path` (`string`) — import path of that package.
 
-The package fields are sourced from the `*model.Package` argument now threaded through
-`expandAnnotations(pkg, anns, macroMap)` from `expand.Macros`. A nil package yields empty
+`.Source.*` is populated from the annotation referenced by `ImpliedBy` (the macro
+or mixin invocation site). The `*model.Package` is threaded through
+`TransformerAnnotations(pkg, annotations)`; a nil package yields empty
 `.Package.Name` / `.Package.Path` strings (no panic).
 
 Example config with templates:
@@ -249,8 +257,8 @@ macros:
   - plumber.macro:
       name: "@tderive"
       annotations:
-        - { name: plumber:derive, args: ["{{ index .Macro.Args 0 }}"] }
-        - { name: plumber:output, args: ["{{ .Macro.NamedArgs.file }}"] }
+        - { name: plumber:derive, args: ["{{ index .Source.Args 0 }}"] }
+        - { name: plumber:output, args: ["{{ .Source.NamedArgs.file }}"] }
         - { name: plumber:comment, args: ["from {{ .Package.Path }}"] }
 ```
 
@@ -263,10 +271,14 @@ type Order struct { ... }
 This expands to `plumber:derive Widget` + `plumber:output generated.go`.
 
 Implementation details:
-- `expandTemplateStr()` short-circuits when the string has no `{{`, so the existing
-  `{name}` / `{suffix:...}` transformer placeholders pass through unaffected.
-- Template errors (bad syntax, missing keys) cause a hard failure — `expand.Macros()`
-  returns an error that aborts the pipeline.
+- `expandAnnotations()` (macro stage) appends macro children verbatim and sets
+  `ImpliedBy` on each one; it does **not** evaluate templates.
+- `TransformerAnnotations()` walks the final annotation list one-by-one and
+  evaluates templates on entries whose `ImpliedBy` is set.
+- `expandTemplateStr()` short-circuits when the string has no `{{`, so plain literal
+  annotation values incur no template overhead.
+- Template errors (bad syntax, missing keys) cause a hard failure — the pipeline
+  surfaces the error from `TransformerAnnotations` upwards.
 - Only `args` and `namedArgs` values are templated; annotation names are not.
 
 ### Query annotations (`plumber:query`)
@@ -483,11 +495,12 @@ inspect.Inspect()   → []*model.Package   (AST → model)
         │   (skips full annotation scan, queries, and other types)
         │
         ▼ [else: normal mode]
-expand.Macros()       — replace @<name> annotations with macro-defined annotation lists;
-                        template expressions ({{ .Macro.Args }}, {{ .Macro.NamedArgs }},
-                        {{ .Package.Name }}, {{ .Package.Path }}) in the macro's
-                        args/namedArgs are expanded against the call-site arguments and
-                        the enclosing package metadata
+expand.Macros()       — replace @<name> annotations with macro-defined annotation lists.
+                        The macro's children are appended verbatim with ImpliedBy set to
+                        the triggering annotation; their template expressions
+                        ({{ .Source.Args }}, {{ .Source.NamedArgs }}, {{ .Package.Name }},
+                        {{ .Package.Path }}) are evaluated later in TransformerAnnotations()
+                        on a per-annotation basis (also applies to mixin-implied annotations)
         │
         ▼
 inspect.Walk()       — filter nodes with plumber:shape or plumber:derive annotations
@@ -539,7 +552,7 @@ file, so golden files use `testrun-acceptance/` as a stable placeholder.
 | `TestMergeMissingType` | `mergemissing/model.go`, `mergemissing/types.go` (no pre-existing target type) | No extra config | `mergemissing/merged.go` is created from scratch — verifies inplace mode appends a synthesized type to the file named by `plumber:output` when the target type is absent |
 | `TestMergeComplex` | `mergecomplex/model.go`, `mergecomplex/types.go`, `mergecomplex/blended.go` | Content template override | Full merge pipeline: struct fields, params, body subsequence, call arg augmentation, composite lit merge, method lookup, switch case merge |
 | `TestMacro` | `macro/model.go` | `@derive` macro expanding to `plumber:derive MacroDerived` + `plumber:output generated.go` | `macro/generated.go` matches golden |
-| `TestMacroTemplate` | `macrotemplate/model.go` | `@tderive` macro with `{{ index .Macro.Args 0 }}` template expanding call-site arg into derive name | `macrotemplate/generated.go` matches golden |
+| `TestMacroTemplate` | `macrotemplate/model.go` | `@tderive` macro with `{{ index .Source.Args 0 }}` template expanding call-site arg into derive name | `macrotemplate/generated.go` matches golden |
 | `TestShapeTargeted` | `targeted/model.go` | `@derive` macro with template arg; `TargetConfig` set (single-type mode) | `targeted/generated.go` matches golden; also tests macro-not-found and type-not-found errors |
 | `TestQuery` | `query/providers.go`, `query/consumer.go` | No extra config | `query/consumer.go` inplace with matched provider functions |
 | `TestQueryTypeScope` | `querytypescope/types.go`, `querytypescope/consumer.go` | No extra config | `querytypescope/consumer.go` inplace with matched type methods |
@@ -564,7 +577,7 @@ file, so golden files use `testrun-acceptance/` as a stable placeholder.
 |---|---|
 | Add a new annotation option | `contract/contract.go` (add constant) + `transformer.go` (`defaultOptions` slice + `BasicTransformer.Add`) |
 | Add a new config field | `config.go` (add field + yaml tag) + `ShapeConfig.MergeShape()` if it needs include-merging |
-| Add a new macro | `config.go` (`MacroConfig`) + `plumber.shape.yaml` or included YAML (`macros` section); expansion is automatic via `expand.Macros()` in `expand.go`. Macro args/namedArgs values support `text/template` syntax (see `macroTemplateData` in `expand.go`) |
+| Add a new macro | `config.go` (`MacroConfig`) + `plumber.shape.yaml` or included YAML (`macros` section); expansion is automatic via `expand.Macros()` in `expand.go`. Macro args/namedArgs values support `text/template` syntax, evaluated per-annotation by `TransformerAnnotations()` in `expand_transformer.go` (see `sourceTemplateData` in `expand.go`); the same template support applies to mixin-injected annotations |
 | Add a new filter function | `internal/astx/inspect/` filter predicates |
 | Add a new template | `internal/render/templates/` (embedded) or via `plumber.shape.yaml` template sources |
 | Add a new template source | `contract/contract.go` (`PlumberTemplateSourceConfig`) + `templates/templates.go` (`Load`/`Checkout`) |

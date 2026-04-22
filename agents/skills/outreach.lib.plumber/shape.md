@@ -76,7 +76,7 @@ These refine the active transformation:
 | Annotation | Args | Description |
 |---|---|---|
 | `plumber:name` | `<Name>` | Name of the generated type/function. |
-| `plumber:output` | `<file>` | Output filename. Supports placeholders: `{filename}`, `{name}`, `{ext}`, `{suffix:<str>}`. |
+| `plumber:output` | `<file>` | Output filename. Rendered as a Go `text/template` exposing `.Filename`, `.Name`, `.Ext`, and the `suffixed` helper. |
 | `plumber:mode` | `generated` \| `inplace` | Generation mode. |
 | `plumber:template` | `<name>` | Go template to apply. Can be repeated. |
 | `plumber:mixin` | `<name>` | Expand a named mixin (modifier annotation bundle from config). |
@@ -177,14 +177,17 @@ must be a prefix; missing ones are appended).
 - **Composite literals:** template key-value entries must be present; matched by key name; missing appended. Recursive at any AST depth.
 - **Switch cases:** cases matched by expression values; missing template cases inserted after last matched preceding case; extra existing cases preserved; matched case bodies deep-merged.
 
-## Output filename placeholders
+## Output filename templates
 
-| Placeholder | Expands to |
-|---|---|
-| `{filename}` | Full base filename, e.g., `model.go` |
-| `{name}` | Filename without extension, e.g., `model` |
-| `{ext}` | Extension including dot, e.g., `.go` |
-| `{suffix:str}` | `{name}_str{ext}`, e.g., `{suffix:filter}` -> `model_filter.go` |
+`plumber:output` is rendered as a Go `text/template`. Plain values without `{{` are
+returned verbatim.
+
+| Expression                | Expands to |
+|---------------------------|---|
+| `{{ .Filename }}`         | Full base filename, e.g., `model.go` |
+| `{{ .Name }}`             | Filename without extension, e.g., `model` |
+| `{{ .Ext }}`              | Extension including dot, e.g., `.go` |
+| `{{ suffixed "str" }}`    | `<.Name>_str<.Ext>`, e.g., `{{ suffixed "filter" }}` -> `model_filter.go` |
 
 ## Configuration (`plumber.shape.yaml`)
 
@@ -218,7 +221,7 @@ plumber.shape:
         name: "@derive"
         annotations:
           - { name: plumber:derive, args: ["MacroDerived"] }
-          - { name: plumber:output, args: ["{suffix:generated}"] }
+          - { name: plumber:output, args: ['{{ suffixed "generated" }}'] }
 
   mixins:
     - plumber.mixin:
@@ -262,7 +265,12 @@ and `plumber.shape.templates.content` are automatically promoted to the root lev
 Referenced with `@<name>` in source comments. Expand **before** transformers are built,
 so they can inject any annotation including `plumber:derive` and `plumber:shape`.
 
-Macro annotation values support Go `text/template` with `.Macro.Args`, `.Macro.NamedArgs`, `.Package.Name`, and `.Package.Path`:
+Annotations produced by macros (and mixins) support Go `text/template` with
+`.Source.Args`, `.Source.NamedArgs`, `.Package.Name`, and `.Package.Path`.
+Templates are evaluated lazily in the transformer stage on a per-annotation
+basis: only annotations carrying an `ImpliedBy` reference (i.e. those produced
+by a macro or mixin) are template-expanded, which means the same template
+context works uniformly for both macros and mixins.
 
 ```go
 // @tderive Widget file=generated.go
@@ -274,8 +282,8 @@ With macro config:
 - plumber.macro:
     name: "@tderive"
     annotations:
-      - { name: plumber:derive, args: ["{{ index .Macro.Args 0 }}"] }
-      - { name: plumber:output, args: ["{{ .Macro.NamedArgs.file }}"] }
+      - { name: plumber:derive, args: ["{{ index .Source.Args 0 }}"] }
+      - { name: plumber:output, args: ["{{ .Source.NamedArgs.file }}"] }
 ```
 
 ### Mixins
@@ -343,7 +351,7 @@ Populates with `r.GetAlpha`, `r.GetBeta`, etc.
 ## Key rules for agents
 
 - **Do not edit outside `plumber::Block` fences** in generated files — changes will be lost.
-- **Use `{suffix:...}` for output filenames** to avoid overwriting source files.
+- **Use `{{ suffixed "..." }}` for output filenames** to avoid overwriting source files.
 - **Macros for entry-point injection**, mixins for modifier bundles — do not confuse them.
 - **Queries require explicit `var` with composite literal** — short declarations (`:=`) are not supported.
 - **Re-run shape after adding/modifying annotations** to regenerate output.

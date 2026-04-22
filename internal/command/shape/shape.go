@@ -61,7 +61,9 @@ func Run(cfg *Config, args []string) error {
 		return err
 	}
 
-	expandTransformations(transformations)
+	if err := expandTransformations(transformations); err != nil {
+		return err
+	}
 
 	outputs, err := renderTransformations(cfg, pkgs, transformations)
 	if err != nil {
@@ -407,7 +409,19 @@ func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err 
 	}
 
 	transformers = []Transformer{}
-	for _, annotation := range node.GetAnnotations() {
+	// Per-annotation template expansion: any annotation that was implied by a
+	// macro (or mixin) carries an ImpliedBy reference. We expand its templated
+	// args/namedArgs eagerly, before the transformer consumes it, so that
+	// downstream stages (Validate, Render) observe fully-resolved values.
+	var pkg *model.Package
+	if pkgNode, ok := node.(interface{ GetPackage() *model.Package }); ok {
+		pkg = pkgNode.GetPackage()
+	}
+	annotations, err := expand.TransformerAnnotations(pkg, node.GetAnnotations())
+	if err != nil {
+		return nil, err
+	}
+	for _, annotation := range annotations {
 		switch annotation.Name {
 		case "plumber:shape":
 			if err := changeTransformer(NewShaper(node.GetPosition(), annotation)); err != nil {
@@ -440,8 +454,11 @@ func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err 
 	return transformers, nil
 }
 
-func expandTransformations(transformations []Transformation) {
+func expandTransformations(transformations []Transformation) error {
 	for _, t := range transformations {
-		t.Transformer.Expand(t.Node)
+		if err := t.Transformer.Expand(t.Node); err != nil {
+			return err
+		}
 	}
+	return nil
 }

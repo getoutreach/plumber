@@ -48,7 +48,7 @@ The type can be specified as:
   loaded packages)
 
 The macro is expanded with the provided `--macro-arg` and `--macro-named-arg` values as
-its `.Macro.Args` and `.Macro.NamedArgs` template context, exactly as if the type had a
+its `.Source.Args` and `.Source.NamedArgs` template context, exactly as if the type had a
 `// @<macro-name> arg1 arg2 key=value` annotation in source code.
 
 ---
@@ -78,7 +78,7 @@ These refine the behaviour of the active transformation.
 | Annotation | Args | Description |
 |---|---|---|
 | `plumber:name` | `<NewName>` | Name of the generated type or function. Defaults to the source type name. |
-| `plumber:output` | `<file>` | Output filename relative to the source file's directory. Supports placeholders: `{filename}`, `{name}`, `{ext}`, `{suffix:<str>}`. Defaults to `generated.go`. |
+| `plumber:output` | `<file>` | Output filename relative to the source file's directory. The value is a Go `text/template` (see [Output filename templates](#output-filename-templates)) exposing `.Filename`, `.Name`, `.Ext` and the `suffixed` function. Defaults to `generated.go`. |
 | `plumber:mode` | `generated` \| `inplace` | Generation mode (see below). Defaults to `generated`. |
 | `plumber:template` | `<template-name>` | Go template to apply. Can be specified multiple times. |
 | `plumber:mixin` | `<mixin-name>` | Expands to a set of annotations defined in config under `plumber.shape.mixins`. |
@@ -430,7 +430,7 @@ plumber.shape:
           - name: plumber:derive
             args: ["MacroDerived"]
           - name: plumber:output
-            args: ["{suffix:generated}"]
+            args: ['{{ suffixed "generated" }}']
 
   # ---------- mixins ----------
   # Mixins are named bundles of modifier annotations that can be referenced
@@ -523,17 +523,28 @@ definitions alongside the templates.
 
 ---
 
-## Output filename placeholders
+## Output filename templates
 
-The `plumber:output` annotation value supports several placeholders that are expanded
-relative to the source file:
+The `plumber:output` annotation value is rendered as a Go `text/template`. Values that
+contain no `{{` template delimiters are returned verbatim, so plain filenames such as
+`merged.go` are unaffected. The template context exposes the source file's identity and
+a `suffixed` helper:
 
-| Placeholder | Expands to |
-|---|---|
-| `{filename}` | Full base filename of the source file, e.g. `model.go` |
-| `{name}` | Filename without extension, e.g. `model` |
-| `{ext}` | File extension including dot, e.g. `.go` |
-| `{suffix:str}` | `{name}_str{ext}`, e.g. `{suffix:filter}` → `model_filter.go` |
+| Expression                | Expands to |
+|---------------------------|---|
+| `{{ .Filename }}`         | Full base filename of the source file, e.g. `model.go` |
+| `{{ .Name }}`             | Filename without extension, e.g. `model` |
+| `{{ .Ext }}`              | File extension including dot, e.g. `.go` |
+| `{{ suffixed "str" }}`    | `<.Name>_str<.Ext>`, e.g. `{{ suffixed "filter" }}` → `model_filter.go` |
+
+Examples:
+
+```
+plumber:output {{ suffixed "generated" }}      # model.go → model_generated.go
+plumber:output {{ .Name }}_filter{{ .Ext }}     # model.go → model_filter.go
+plumber:output {{ .Filename }}.bak              # model.go → model.go.bak
+plumber:output merged.go                        # literal — no template
+```
 
 ---
 
@@ -563,7 +574,7 @@ mixins:
 // plumber:derive
 // plumber:name WorkerFilter
 // plumber:mixin mixing.model.filtrable
-// plumber:output {suffix:generated}
+// plumber:output {{ suffixed "generated" }}
 type Worker struct {
     // Name
     //
@@ -601,7 +612,7 @@ macros:
       name: "@derive"
       annotations:
         - { name: plumber:derive, args: ["MacroDerived"] }
-        - { name: plumber:output, args: ["{suffix:generated}"] }
+        - { name: plumber:output, args: ['{{ suffixed "generated" }}'] }
 ```
 
 ### Using a macro
@@ -615,22 +626,28 @@ type Worker struct {
 ```
 
 At runtime, `expandMacros()` replaces the `@derive` annotation with `plumber:derive
-MacroDerived` + `plumber:output {suffix:generated}` on the node before any transformer
-building occurs.  The result is a `generated` mode derive that produces
+MacroDerived` + `plumber:output {{ suffixed "generated" }}` on the node before any
+transformer building occurs. The result is a `generated` mode derive that produces
 `worker_generated.go` containing a `MacroDerived` struct.
 
 ### Template expansion
 
-Macro annotation values support Go `text/template` syntax, giving macros access to the
-arguments passed at the call site **and** to the package the annotation is being expanded
-in. The template data context exposes:
+Annotations produced by macros (and mixins) support Go `text/template` syntax,
+giving them access to the arguments passed at the call site **and** to the
+package the annotation is being expanded in. Templates are evaluated lazily, in
+the transformer stage, on a per-annotation basis: an annotation is only
+template-expanded if it was implied by another annotation (i.e. its `ImpliedBy`
+reference is set, as is the case for every annotation produced by a macro or
+mixin invocation). This unifies template support across both macros and mixins.
 
-| Field               | Type                | Description                                                                |
-|---------------------|---------------------|----------------------------------------------------------------------------|
-| `.Macro.Args`       | `[]string`          | Positional arguments from the triggering annotation                        |
-| `.Macro.NamedArgs`  | `map[string]string` | Named arguments (`key=value`) from the triggering annotation               |
-| `.Package.Name`     | `string`            | Name of the Go package the annotation is being expanded in                 |
-| `.Package.Path`     | `string`            | Import path of the Go package the annotation is being expanded in          |
+The template data context exposes:
+
+| Field                | Type                | Description                                                                |
+|----------------------|---------------------|----------------------------------------------------------------------------|
+| `.Source.Args`       | `[]string`          | Positional arguments from the triggering annotation (macro/mixin)          |
+| `.Source.NamedArgs`  | `map[string]string` | Named arguments (`key=value`) from the triggering annotation               |
+| `.Package.Name`      | `string`            | Name of the Go package the annotation is being expanded in                 |
+| `.Package.Path`      | `string`            | Import path of the Go package the annotation is being expanded in          |
 
 #### Defining a macro with templates
 
@@ -639,8 +656,8 @@ macros:
   - plumber.macro:
       name: "@tderive"
       annotations:
-        - { name: plumber:derive, args: ["{{ index .Macro.Args 0 }}"] }
-        - { name: plumber:output, args: ["{{ .Macro.NamedArgs.file }}"] }
+        - { name: plumber:derive, args: ["{{ index .Source.Args 0 }}"] }
+        - { name: plumber:output, args: ["{{ .Source.NamedArgs.file }}"] }
         - { name: plumber:comment, args: ["from {{ .Package.Path }}"] }
 ```
 
@@ -657,10 +674,9 @@ type Order struct {
 This expands to `plumber:derive Widget` + `plumber:output generated.go`, producing a
 `Widget` struct derived from `Order`.
 
-Strings that do not contain `{{` are passed through unchanged, so the existing
-`{name}` / `{suffix:...}` placeholder syntax used by transformers is unaffected.
-Template errors (e.g. referencing a missing key) cause a hard failure and abort the
-pipeline.
+Strings that do not contain `{{` are passed through unchanged, so plain literal
+annotation values incur no template overhead. Template errors (e.g. referencing a
+missing key) cause a hard failure and abort the pipeline.
 
 ### Macros vs mixins
 

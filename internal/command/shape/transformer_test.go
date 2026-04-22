@@ -22,23 +22,33 @@ func TestOutput(t *testing.T) {
 			expected: "generated.go",
 		},
 		{
-			name: "output with suffix",
+			name: "output with template name and ext",
 			position: model.Position{
 				Filename: "example.go",
 			},
 			expected: "example_generated.go",
 			annotations: []model.Annotation{
-				model.NewAnnotation(contract.OptionOutput, []string{"{name}_generated{ext}"}),
+				model.NewAnnotation(contract.OptionOutput, []string{`{{ .Name }}_generated{{ .Ext }}`}),
 			},
 		},
 		{
-			name: "output with suffixed output",
+			name: "output with suffixed function",
 			position: model.Position{
 				Filename: "example.go",
 			},
 			expected: "example_generated.go",
 			annotations: []model.Annotation{
-				model.NewAnnotation(contract.OptionOutput, []string{"{suffix:generated}"}),
+				model.NewAnnotation(contract.OptionOutput, []string{`{{ suffixed "generated" }}`}),
+			},
+		},
+		{
+			name: "output with filename template",
+			position: model.Position{
+				Filename: "example.go",
+			},
+			expected: "example.go.bak",
+			annotations: []model.Annotation{
+				model.NewAnnotation(contract.OptionOutput, []string{`{{ .Filename }}.bak`}),
 			},
 		},
 		{

@@ -43,7 +43,7 @@ type Transformer interface {
 	Output() string
 	GetName() string
 	Mode() string
-	Expand(node model.Node)
+	Expand(node model.Node) error
 	Render(context *render.Context, tp *model.Type, scope baserender.Scope, output string, opener gen.MemoryFileOpener) (string, error)
 }
 
@@ -157,6 +157,11 @@ func (t *BasicTransformer) Add(annotation model.Annotation) {
 	t.Annotations = append(t.Annotations, annotation)
 }
 
-func (t *BasicTransformer) Expand(node model.Node) {
-	t.Annotations = expand.TransformerAnnotations(t.Annotations)
+func (t *BasicTransformer) Expand(node model.Node) error {
+	annotations, err := expand.TransformerAnnotations(node.GetPackage(), t.Annotations)
+	if err != nil {
+		return err
+	}
+	t.Annotations = annotations
+	return nil
 }

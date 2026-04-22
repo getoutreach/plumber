@@ -1,6 +1,7 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file contains unit tests for macro template expansion in expandAnnotations.
+// Description: This file contains unit tests for macro expansion in expandAnnotations
+// and the deferred per-annotation template expansion performed by TransformerAnnotations.
 
 package expand
 
@@ -22,6 +23,25 @@ func fixturePackage() *model.Package {
 	}
 }
 
+// expandAndTransform runs the two-stage pipeline: macro expansion (which only
+// substitutes the macro annotation with its child annotation list and records
+// ImpliedBy on each child) followed by the deferred per-annotation template
+// expansion performed by TransformerAnnotations. Helper used by tests that
+// previously asserted on the combined behaviour.
+func expandAndTransform(
+	t *testing.T,
+	pkg *model.Package,
+	input model.Annotations,
+	macroMap map[string]*config.PlumberMacroConfig,
+) (model.Annotations, error) {
+	t.Helper()
+	expanded, err := expandAnnotations(pkg, input, macroMap)
+	if err != nil {
+		return nil, err
+	}
+	return TransformerAnnotations(pkg, expanded)
+}
+
 func TestExpandAnnotations_NoMacro(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{}
 	input := model.Annotations{
@@ -35,12 +55,15 @@ func TestExpandAnnotations_NoMacro(t *testing.T) {
 	assert.Equal(t, result[0].Args[0], "Foo")
 }
 
-func TestExpandAnnotations_TemplateArgs(t *testing.T) {
+// TestExpandAnnotations_DefersTemplates verifies that the macro stage
+// substitutes annotations verbatim (templates intact) and records the
+// triggering annotation via ImpliedBy on each child.
+func TestExpandAnnotations_DefersTemplates(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@derive": {
 			Name: "@derive",
 			Annotations: []config.AnnotationConfig{
-				{Name: "plumber:derive", Args: []string{`{{ index .Macro.Args 0 }}Derived`}},
+				{Name: "plumber:derive", Args: []string{`{{ index .Source.Args 0 }}Derived`}},
 				{Name: "plumber:output", Args: []string{"generated.go"}},
 			},
 		},
@@ -53,13 +76,43 @@ func TestExpandAnnotations_TemplateArgs(t *testing.T) {
 	result, err := expandAnnotations(fixturePackage(), input, macroMap)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 2)
+	// Templates remain unexpanded at the macro stage.
+	assert.Equal(t, result[0].Name, "plumber:derive")
+	assert.Equal(t, result[0].Args[0], `{{ index .Source.Args 0 }}Derived`)
+	assert.Equal(t, result[1].Name, "plumber:output")
+	assert.Equal(t, result[1].Args[0], "generated.go")
+	// Both children record the triggering macro annotation.
+	assert.Assert(t, result[0].ImpliedBy != nil)
+	assert.Equal(t, result[0].ImpliedBy.Name, "@derive")
+	assert.Assert(t, result[1].ImpliedBy != nil)
+	assert.Equal(t, result[1].ImpliedBy.Name, "@derive")
+}
+
+func TestTransformerAnnotations_TemplateArgs(t *testing.T) {
+	macroMap := map[string]*config.PlumberMacroConfig{
+		"@derive": {
+			Name: "@derive",
+			Annotations: []config.AnnotationConfig{
+				{Name: "plumber:derive", Args: []string{`{{ index .Source.Args 0 }}Derived`}},
+				{Name: "plumber:output", Args: []string{"generated.go"}},
+			},
+		},
+	}
+
+	input := model.Annotations{
+		model.NewAnnotation("@derive", []string{"Foo"}),
+	}
+
+	result, err := expandAndTransform(t, fixturePackage(), input, macroMap)
+	assert.NilError(t, err)
+	assert.Equal(t, len(result), 2)
 	assert.Equal(t, result[0].Name, "plumber:derive")
 	assert.Equal(t, result[0].Args[0], "FooDerived")
 	assert.Equal(t, result[1].Name, "plumber:output")
 	assert.Equal(t, result[1].Args[0], "generated.go")
 }
 
-func TestExpandAnnotations_TemplateNamedArgs(t *testing.T) {
+func TestTransformerAnnotations_TemplateNamedArgs(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@gen": {
 			Name: "@gen",
@@ -67,7 +120,7 @@ func TestExpandAnnotations_TemplateNamedArgs(t *testing.T) {
 				{
 					Name: "plumber:output",
 					NamedArgs: map[string]string{
-						"dir": `{{ .Macro.NamedArgs.dir }}/generated`,
+						"dir": `{{ .Source.NamedArgs.dir }}/generated`,
 					},
 				},
 			},
@@ -78,15 +131,16 @@ func TestExpandAnnotations_TemplateNamedArgs(t *testing.T) {
 		model.NewAnnotation("@gen", nil, model.WithNamedArgs(map[string]string{"dir": "out"})),
 	}
 
-	result, err := expandAnnotations(fixturePackage(), input, macroMap)
+	result, err := expandAndTransform(t, fixturePackage(), input, macroMap)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	assert.Equal(t, result[0].NamedArgs["dir"], "out/generated")
 }
 
-// TestExpandAnnotations_PackageContext verifies that .Package.Name and
-// .Package.Path are exposed to the macro template context.
-func TestExpandAnnotations_PackageContext(t *testing.T) {
+// TestTransformerAnnotations_PackageContext verifies that .Package.Name and
+// .Package.Path are exposed to the macro template context during the deferred
+// transformer-stage expansion.
+func TestTransformerAnnotations_PackageContext(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@pkg": {
 			Name: "@pkg",
@@ -101,16 +155,16 @@ func TestExpandAnnotations_PackageContext(t *testing.T) {
 		model.NewAnnotation("@pkg", nil),
 	}
 
-	result, err := expandAnnotations(fixturePackage(), input, macroMap)
+	result, err := expandAndTransform(t, fixturePackage(), input, macroMap)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 2)
 	assert.Equal(t, result[0].Args[0], "fixtureDerived")
 	assert.Equal(t, result[1].Args[0], "from example.com/fixture")
 }
 
-// TestExpandAnnotations_NilPackage asserts that a nil package gracefully degrades
-// to empty .Package.Name / .Package.Path values rather than panicking.
-func TestExpandAnnotations_NilPackage(t *testing.T) {
+// TestTransformerAnnotations_NilPackage asserts that a nil package gracefully
+// degrades to empty .Package.Name / .Package.Path values rather than panicking.
+func TestTransformerAnnotations_NilPackage(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@pkg": {
 			Name: "@pkg",
@@ -124,13 +178,13 @@ func TestExpandAnnotations_NilPackage(t *testing.T) {
 		model.NewAnnotation("@pkg", nil),
 	}
 
-	result, err := expandAnnotations(nil, input, macroMap)
+	result, err := expandAndTransform(t, nil, input, macroMap)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	assert.Equal(t, result[0].Args[0], "prefix-")
 }
 
-func TestExpandAnnotations_TemplateError(t *testing.T) {
+func TestTransformerAnnotations_TemplateError(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@bad": {
 			Name: "@bad",
@@ -144,11 +198,11 @@ func TestExpandAnnotations_TemplateError(t *testing.T) {
 		model.NewAnnotation("@bad", nil),
 	}
 
-	_, err := expandAnnotations(fixturePackage(), input, macroMap)
-	assert.ErrorContains(t, err, "expanding macro")
+	_, err := expandAndTransform(t, fixturePackage(), input, macroMap)
+	assert.ErrorContains(t, err, "expanding implied annotation")
 }
 
-func TestExpandAnnotations_NoTemplatePassthrough(t *testing.T) {
+func TestTransformerAnnotations_NoTemplatePassthrough(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@simple": {
 			Name: "@simple",
@@ -162,9 +216,23 @@ func TestExpandAnnotations_NoTemplatePassthrough(t *testing.T) {
 		model.NewAnnotation("@simple", nil),
 	}
 
-	result, err := expandAnnotations(fixturePackage(), input, macroMap)
+	result, err := expandAndTransform(t, fixturePackage(), input, macroMap)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	// No {{ }} in the string, so it passes through unchanged.
 	assert.Equal(t, result[0].Args[0], "{name}Macro")
+}
+
+// TestTransformerAnnotations_PassthroughWithoutImpliedBy verifies that
+// annotations not implied by another annotation are returned unchanged even
+// when their args contain template syntax (templates are only expanded on
+// implied annotations).
+func TestTransformerAnnotations_PassthroughWithoutImpliedBy(t *testing.T) {
+	input := model.Annotations{
+		model.NewAnnotation("plumber:derive", []string{`{{ .Source.Args 0 }}`}),
+	}
+	result, err := TransformerAnnotations(fixturePackage(), input)
+	assert.NilError(t, err)
+	assert.Equal(t, len(result), 1)
+	assert.Equal(t, result[0].Args[0], `{{ .Source.Args 0 }}`)
 }

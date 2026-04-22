@@ -17,7 +17,7 @@ func TestShapeTargeted(t *testing.T) {
 						PlumberMacro: &config.PlumberMacroConfig{
 							Name: "@derive",
 							Annotations: []config.AnnotationConfig{
-								{Name: "plumber:derive", Args: []string{`{{ index .Macro.Args 0 }}`}},
+								{Name: "plumber:derive", Args: []string{`{{ index .Source.Args 0 }}`}},
 								{Name: "plumber:output", Args: []string{"generated.go"}},
 							},
 						},
