@@ -585,7 +585,7 @@ func inflateVariable(pkg *model.Package, target QueryTarget, results []QueryResu
 
 // processQueries is the top-level function that processes all plumber:query annotations.
 // It finds query-annotated variables, executes queries, and inflates variables in-place.
-func processQueries(pkgs model.Packages) ([]*QueryOutput, error) {
+func processQueries(ctx *contract.ShapingContext, pkgs model.Packages) ([]*QueryOutput, error) {
 	targets, err := collectQueryTargets(pkgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect query targets: %w", err)
@@ -598,30 +598,36 @@ func processQueries(pkgs model.Packages) ([]*QueryOutput, error) {
 	var outputs []*QueryOutput
 
 	for _, target := range targets {
-		fmt.Printf("Processing query for variable %q (pattern=%s, scope=%s)\n",
-			target.GetName(), target.Annotation.Pattern, target.Annotation.Scope)
+		err := func(target QueryTarget) error {
+			fmt.Printf("Processing query for variable %q (pattern=%s, scope=%s)\n",
+				target.GetName(), target.Annotation.Pattern, target.Annotation.Scope)
 
-		results, err := executeQuery(pkgs, target)
+			results, err := executeQuery(pkgs, target)
+			if err != nil {
+				return fmt.Errorf("query for variable %q failed: %w", target.GetName(), err)
+			}
+
+			fmt.Printf("  Found %d matching entities\n", len(results))
+			for _, r := range results {
+				fmt.Printf("    - %s (pkg: %s)\n", r.Name, r.PkgPath)
+			}
+
+			pkg := target.GetPackage()
+			file, err := inflateVariable(pkg, target, results)
+			if err != nil {
+				return fmt.Errorf("failed to inflate variable %q: %w", target.GetName(), err)
+			}
+
+			outputs = append(outputs, &QueryOutput{
+				Filename: target.GetFilename(),
+				File:     file,
+				Package:  pkg,
+			})
+			return nil
+		}(target)
 		if err != nil {
-			return nil, fmt.Errorf("query for variable %q failed: %w", target.GetName(), err)
+			ctx.QueryError(target.GetName(), target.GetFilename(), err)
 		}
-
-		fmt.Printf("  Found %d matching entities\n", len(results))
-		for _, r := range results {
-			fmt.Printf("    - %s (pkg: %s)\n", r.Name, r.PkgPath)
-		}
-
-		pkg := target.GetPackage()
-		file, err := inflateVariable(pkg, target, results)
-		if err != nil {
-			return nil, fmt.Errorf("failed to inflate variable %q: %w", target.GetName(), err)
-		}
-
-		outputs = append(outputs, &QueryOutput{
-			Filename: target.GetFilename(),
-			File:     file,
-			Package:  pkg,
-		})
 	}
 
 	return outputs, nil

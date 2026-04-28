@@ -245,11 +245,15 @@ The template context (`sourceTemplateData` in `expand.go`) exposes:
 - `.Source.NamedArgs` (`map[string]string`) — named `key=value` arguments from the triggering annotation.
 - `.Package.Name` (`string`) — name of the package whose annotation is being expanded.
 - `.Package.Path` (`string`) — import path of that package.
+- `.Type` (`model.Node`) — the AST node being processed (typically a `*model.Type`).
+  Exposes methods like `.Type.Name`, `.Type.GetPosition.Filename`, and
+  `.Type.GetAnnotations` for templates that need to inspect type metadata.
 
 `.Source.*` is populated from the annotation referenced by `ImpliedBy` (the macro
-or mixin invocation site). The `*model.Package` is threaded through
-`TransformerAnnotations(pkg, annotations)`; a nil package yields empty
-`.Package.Name` / `.Package.Path` strings (no panic).
+or mixin invocation site). The `model.Node` is threaded through
+`TransformerAnnotations(node, annotations)` and `.Package.*` is derived from
+`node.GetPackage()`; a nil node yields empty `.Package.*` strings and a nil
+`.Type` (no panic).
 
 Example config with templates:
 ```yaml
@@ -259,7 +263,7 @@ macros:
       annotations:
         - { name: plumber:derive, args: ["{{ index .Source.Args 0 }}"] }
         - { name: plumber:output, args: ["{{ .Source.NamedArgs.file }}"] }
-        - { name: plumber:comment, args: ["from {{ .Package.Path }}"] }
+        - { name: plumber:comment, args: ["from {{ .Package.Path }} ({{ .Type.Name }})"] }
 ```
 
 Example Go source:

@@ -21,13 +21,6 @@ func (c *Grpc) Define(ctx context.Context, cf *Config, a *Container) {
 
 	c.Server.Resolver(func(r *plumber.ResolutionR[*grpc.Server]) {
 		r.Require(
-			&c.Port,
-			&a.Service.Querier,
-			&a.Service.NotifyingMutator,
-			&c.Port,
-			&a.Service.Querier,
-			&a.Service.NotifyingMutator,
-			&c.Port,
 			&a.Service.Querier,
 			&a.Service.NotifyingMutator,
 		).Then(func() {

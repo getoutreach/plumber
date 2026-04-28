@@ -38,7 +38,7 @@ type AnnotationMatcher func(annotation model.Annotation) bool
 
 func WithAnnotations(matcher AnnotationMatcher, visitor func(node model.Node) error) func(node model.Node) error {
 	return func(node model.Node) error {
-		for _, annotation := range node.GetNode().GetAnnotations() {
+		for _, annotation := range node.GetAnnotations() {
 			if matcher(annotation) {
 				return visitor(node)
 			}

@@ -125,7 +125,6 @@ func Merge(pkg *model.Package, file *dst.File, output string) ([]*dst.File, erro
 	// is idempotent so it is safe to call on files that already contained the
 	// declaration (existing entries are matched by name and skipped).
 	for _, f := range ordered {
-		fmt.Println("!!! File ", f.Name.Name)
 		inspect.HydrateFile(pkg, f)
 	}
 	return ordered, nil
@@ -249,8 +248,6 @@ func findOrCreateOutputFile(pkg *model.Package, output string) *dst.File {
 	}
 	absFilename := filepath.Join(dir, filename)
 
-	fmt.Println("!!! findOrCreate", absFilename)
-
 	// Register the new file with the package and decorator so it is treated as a real
 	// member of the package by downstream restoration logic.
 	pkg.Package.Syntax = append(pkg.Package.Syntax, newFile)
@@ -349,14 +346,17 @@ func fieldNames(field *dst.Field) []string {
 	case *dst.Ident:
 		return []string{t.Name}
 	case *dst.StarExpr:
-		if ident, ok := t.X.(*dst.Ident); ok {
-			return []string{ident.Name}
-		}
-		if sel, ok := t.X.(*dst.SelectorExpr); ok {
-			return []string{sel.Sel.Name}
-		}
+		// Pointer to embedded type — recurse to handle all inner forms
+		// (ident, selector, generic, etc.)
+		return fieldNames(&dst.Field{Type: t.X})
 	case *dst.SelectorExpr:
 		return []string{t.Sel.Name}
+	case *dst.IndexExpr:
+		// Generic embedded field with single type param, e.g. GenericType[int]
+		return fieldNames(&dst.Field{Type: t.X})
+	case *dst.IndexListExpr:
+		// Generic embedded field with multiple type params, e.g. GenericType[int, string]
+		return fieldNames(&dst.Field{Type: t.X})
 	}
 	return nil
 }

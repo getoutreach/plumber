@@ -39,11 +39,11 @@ type Transformer interface {
 	contract.Annotable
 	Accepts(annotation string) bool
 	Add(annotation model.Annotation)
-	Validate() error
+	Validate(node model.Node) error
 	Output() string
 	GetName() string
 	Mode() string
-	Expand(node model.Node) error
+	Expand(node model.Node, scope baserender.Scope) error
 	Render(context *render.Context, tp *model.Type, scope baserender.Scope, output string, opener gen.MemoryFileOpener) (string, error)
 }
 
@@ -96,7 +96,7 @@ type RenderFunc func(
 
 // Manager defines the interface for managing the rendering of transformations,
 type Manager interface {
-	Render(pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error)
+	Render(ctx *contract.ShapingContext, pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error)
 }
 
 // BasicTransformer provides a base implementation of the Transformer interface,
@@ -115,13 +115,13 @@ func (t *BasicTransformer) GetName() string {
 
 // Validate checks if the transformer has the required annotations and options,
 // and adds default annotations if necessary.
-func (t *BasicTransformer) Validate() error {
+func (t *BasicTransformer) Validate(node model.Node) error {
 	if t.Annotations.Find(contract.OptionName) == nil {
 		if len(t.Options.Args) > 0 {
-			t.Annotations.Append(model.Annotation{
-				Name: contract.OptionName,
-				Args: t.Options.Args,
-			})
+			t.Annotations.Append(model.NewAnnotation(
+				contract.OptionName,
+				t.Options.Args,
+			))
 		}
 	}
 	return nil
@@ -146,7 +146,7 @@ func (t *BasicTransformer) Mode() string {
 // In inplace mode this is the file the synthesized declarations are merged or appended into;
 // the intermediate fragment used during template rendering is independent of this value.
 func (t *BasicTransformer) Output() string {
-	return expand.TransformerOutput(t.Annotations, t.Position.Filename)
+	return t.Annotations.Find(contract.OptionOutput).Value()
 }
 
 func (t *BasicTransformer) Accepts(annotation string) bool {
@@ -157,8 +157,8 @@ func (t *BasicTransformer) Add(annotation model.Annotation) {
 	t.Annotations = append(t.Annotations, annotation)
 }
 
-func (t *BasicTransformer) Expand(node model.Node) error {
-	annotations, err := expand.TransformerAnnotations(node.GetPackage(), t.Annotations)
+func (t *BasicTransformer) Expand(node model.Node, scope baserender.Scope) error {
+	annotations, err := expand.TransformerAnnotations(node, t.Annotations, scope)
 	if err != nil {
 		return err
 	}

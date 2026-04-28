@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/expand"
 	"github.com/getoutreach/plumber/internal/genius/gen"
@@ -41,35 +40,12 @@ func (i *Ignores) Ignored(groups ...string) bool {
 	return exists
 }
 
-func typesRenderer(currentPkgPath string, register *render.ModuleRegister) func(spec model.TypeSpec) (string, error) {
-	return func(spec model.TypeSpec) (string, error) {
-		fqn, err := astx.ParseFQN(spec.FQN)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse FQN: %w", err)
-		}
-		fqn.WalkPackages(func(pkgPath, typeName string) (string, bool) {
-			if pkgPath == currentPkgPath {
-				return "", true
-			}
-			id := register.Register(pkgPath, astx.StandardType(pkgPath)).ID
-			if id == "." {
-				return "", true
-			}
-			return id, true
-		})
-		if fqn.IsPackageLess() {
-			return fqn.Unquote(), nil
-		}
-		return fqn.String(), nil
-	}
-}
-
 func typesRendererWithWrapper(
 	currentPkgPath string,
 	register *render.ModuleRegister,
 	wrapper TypeWrapperProvider,
 ) func(o any, spec model.TypeSpec) (string, error) {
-	c := typesRenderer(currentPkgPath, register)
+	c := render.TypesRenderer(currentPkgPath, register)
 	return func(o any, spec model.TypeSpec) (string, error) {
 		if n, ok := o.(model.AnnotationProvider); ok {
 			wn := n.GetAnnotations().Find(contract.OptionFieldWrapper)

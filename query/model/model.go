@@ -57,8 +57,10 @@ type (
 
 	// Node is an interface implemented by all AST nodes in the model, providing access to the underlying TypeNode and its associated package.
 	Node interface {
-		GetNode() *TypeNode
+		GetAnnotations() Annotations
+		// GetNode() *TypeNode
 		GetPackage() *Package
+		GetPosition() Position
 	}
 
 	// Package represents a Go package, containing its name, path, types, functions, variables, and comments.
@@ -92,6 +94,7 @@ type (
 		Doc         string      `json:"doc,omitempty" yaml:"doc,omitempty"`
 		Annotations Annotations `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 		Position    Position
+		Package     *Package `json:"-" yaml:"-"`
 	}
 
 	// TypeSpec represents the specification of a type, including its kind (struct, interface, func, etc.),
@@ -305,6 +308,15 @@ func (aa Annotations) Find(name string) *Annotation {
 	return nil
 }
 
+func (aa Annotations) FindOr(name string, defaultValues ...string) *Annotation {
+	for _, ann := range aa {
+		if ann.Name == name {
+			return &ann
+		}
+	}
+	return &Annotation{Name: name, Args: defaultValues}
+}
+
 func (aa Annotations) FindAll(name string) Annotations {
 	var matches Annotations
 	for _, ann := range aa {
@@ -369,6 +381,10 @@ func (n *CommentGroup) GetAnnotations() Annotations {
 
 func (n *CommentGroup) GetPosition() Position {
 	return n.Position
+}
+
+func (n *CommentGroup) GetPackage() *Package {
+	return n.Package
 }
 
 func (n *CommentGroup) FilterAnnotations(expressions ...func(a Annotation) bool) *CommentGroup {

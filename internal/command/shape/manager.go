@@ -64,6 +64,7 @@ func NewGeneratorManager(cfg *Config, pkgPath, output string) *GeneratorManager 
 // GeneratorManager and InplaceManager, handling the common logic of building the context, running transformations,
 // and finalizing the output.
 func managerRender(
+	ctx *contract.ShapingContext,
 	cfg *Config,
 	pkgs []*model.Package,
 	pkgPath string,
@@ -90,7 +91,7 @@ func managerRender(
 
 	var contents []string
 
-	err := runTransformations(cfg, pkgs, context, gen.NewBufferFileOpener(), scope, transformations, func(content string) {
+	err := runTransformations(ctx, cfg, pkgs, context, gen.NewBufferFileOpener(), scope, transformations, func(content string) {
 		contents = append(contents, content)
 	})
 	if err != nil {
@@ -106,7 +107,7 @@ func managerRender(
 
 // Render implements the Manager interface for GeneratorManager, orchestrating the rendering of transformations and generating
 // new output files based on the specified output package path.
-func (m *GeneratorManager) Render(pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error) {
+func (m *GeneratorManager) Render(ctx *contract.ShapingContext, pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error) {
 	var (
 		scope = baserender.Scope{
 			"Mode": baserender.ModeGenerated,
@@ -114,7 +115,7 @@ func (m *GeneratorManager) Render(pkgs []*model.Package, transformations []Trans
 		opener = gen.NewSystemFileOpener()
 	)
 
-	return managerRender(m.cfg, pkgs, m.pkgPath, opener, transformations, scope, m.output)
+	return managerRender(ctx, m.cfg, pkgs, m.pkgPath, opener, transformations, scope, m.output)
 }
 
 // InplaceManager is responsible for rendering transformations and merging the generated content into
@@ -136,7 +137,7 @@ func NewInplaceManager(cfg *Config, pkgPath, output string) *InplaceManager {
 
 // Render implements the Manager interface for InplaceManager, orchestrating the rendering of transformations and merging
 // the generated content into existing source files based on the specified output package path.
-func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error) {
+func (m *InplaceManager) Render(ctx *contract.ShapingContext, pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error) {
 	pkg, found := lo.Find(pkgs, func(p *model.Package) bool {
 		return p.Path == m.output
 	})
@@ -152,66 +153,73 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 	// downstream consumer (e.g. Merge -> findOrCreateOutputFile) needs it.
 	pkg.EnsureDir()
 
-	fmt.Printf("Found package %q for output %q\n", pkg.Path, m.output)
+	// fmt.Printf("Found package %q for output %q\n", pkg.Path, m.output)
 
 	outputs := make([]*baserender.Output, 0)
 
 	modules := baserender.NewModuleRegister()
 
 	for _, t := range transformations {
-		var (
-			opener = gen.NewBufferFileOpener()
-		)
-		context := buildContext(m.cfg, modules, pkg, m.output)
+		err := func(t Transformation) error {
+			var (
+				opener = gen.NewBufferFileOpener()
+			)
+			context := buildContext(m.cfg, modules, pkg, m.output)
 
-		var content string
+			var content string
 
-		err := runTransformations(m.cfg, pkgs, context, opener, scope, []Transformation{t}, func(c string) {
-			content = c
-		})
-		if err != nil {
-			return nil, fmt.Errorf("error during rendering: %w", err)
-		}
-
-		filename := path.Join(pkg.Path, "plumber_inplace_helper.go")
-
-		o, err := render.Finalize(context, scope, []string{content}, filename, opener)
-		if err != nil {
-			return nil, fmt.Errorf("error during finalization: %w", err)
-		}
-
-		if false {
-			fmt.Println("-----------------------")
-			fmt.Println(string(o.Content))
-			fmt.Println("-----------------------")
-		}
-
-		f, err := decorator.Parse(o.Content)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse generated content for transformation %q: %w", t.Transformer.GetName(), err)
-		}
-
-		fmt.Printf("Default output: %q\n", t.Transformer.Output())
-
-		mergedFiles, err := Merge(pkg, f, t.Transformer.Output())
-		if err != nil {
-			return nil, fmt.Errorf("failed to merge generated content for transformation %q: %w", t.Transformer.GetName(), err)
-		}
-
-		// A single transformation may touch multiple files (struct in one file,
-		// method in another, missing entity creating a new file, ...). Emit one
-		// output per modified file so each is restored independently.
-		for _, existingFile := range mergedFiles {
-			filename = pkg.Package.Decorator.Filenames[existingFile]
-			fmt.Printf("Output: %q => %v\n", filename, existingFile)
-			outputs = append(outputs, &baserender.Output{
-				Filename: filename,
-				Modules:  modules,
-				Dst: &baserender.DstOutput{
-					File:    existingFile,
-					Package: pkg.Package,
-				},
+			err := runTransformations(ctx, m.cfg, pkgs, context, opener, scope, []Transformation{t}, func(c string) {
+				content = c
 			})
+			if err != nil {
+				return fmt.Errorf("error during rendering: %w", err)
+			}
+
+			filename := path.Join(pkg.Path, "plumber_inplace_helper.go")
+
+			o, err := render.Finalize(context, scope, []string{content}, filename, opener)
+			if err != nil {
+				return fmt.Errorf("error during finalization: %w", err)
+			}
+
+			if false {
+				fmt.Println("-----------------------")
+				fmt.Println(string(o.Content))
+				fmt.Println("-----------------------")
+			}
+
+			f, err := decorator.Parse(o.Content)
+			if err != nil {
+				return &contract.SyntaxError{
+					Content: string(o.Content),
+					Err:     fmt.Errorf("failed to parse generated content for transformation %q: %w", t.Transformer.GetName(), err),
+				}
+			}
+
+			mergedFiles, err := Merge(pkg, f, t.Transformer.Output())
+			if err != nil {
+				return fmt.Errorf("failed to merge generated content for transformation %q: %w", t.Transformer.GetName(), err)
+			}
+
+			// A single transformation may touch multiple files (struct in one file,
+			// method in another, missing entity creating a new file, ...). Emit one
+			// output per modified file so each is restored independently.
+			for _, existingFile := range mergedFiles {
+				filename = pkg.Package.Decorator.Filenames[existingFile]
+				ctx.TransformerOutput(t.Transformer, filename)
+				outputs = append(outputs, &baserender.Output{
+					Filename: filename,
+					Modules:  modules,
+					Dst: &baserender.DstOutput{
+						File:    existingFile,
+						Package: pkg.Package,
+					},
+				})
+			}
+			return nil
+		}(t)
+		if err != nil {
+			ctx.TransformerError(t.Transformer, err)
 		}
 	}
 	//
@@ -221,6 +229,7 @@ func (m *InplaceManager) Render(pkgs []*model.Package, transformations []Transfo
 // Postprocess is not needed for InplaceManager since the merging is done during the Render phase,
 // so we can omit it or leave it as a no-op.
 func runTransformations(
+	ctx *contract.ShapingContext,
 	cfg *Config,
 	pkgs []*model.Package,
 	state *render.Context,
@@ -229,48 +238,61 @@ func runTransformations(
 	transformations []Transformation, contentFunc func(string),
 ) (err error) {
 	for _, t := range transformations {
-		// Skip the entire transformation when any plumber:depends_on dependency cannot
-		// be resolved in the inspected packages. This allows transformers to opt out
-		// gracefully when their required collaborators are absent (e.g. an optional
-		// adapter package that hasn't been generated yet).
-		satisfied, err := dependsOnSatisfied(t.Transformer, pkgs)
+		err = func(t Transformation) error {
+
+			if err := inflateCustomScope(t.Transformer, pkgs, scope); err != nil {
+				return err
+			}
+
+			if err := t.Transformer.Expand(t.Node, scope); err != nil {
+				ctx.TransformerError(t.Transformer, err)
+				return nil
+			}
+			ctx.TransformerAdded(t.Transformer)
+
+			scope["Subject"] = view.Annotable{
+				Annotations: t.Transformer.GetAnnotations(),
+			}
+
+			// Skip the entire transformation when any plumber:depends_on dependency cannot
+			// be resolved in the inspected packages. This allows transformers to opt out
+			// gracefully when their required collaborators are absent (e.g. an optional
+			// adapter package that hasn't been generated yet).
+			satisfied, err := dependsOnSatisfied(t.Transformer, pkgs)
+			if err != nil {
+				return fmt.Errorf("error evaluating plumber:depends_on for transformer %q: %w", t.Transformer.GetName(), err)
+			}
+			if !satisfied {
+				ctx.TransformerSkipped(t.Transformer, t.Node, "unmet plumber:depends_on dependency")
+				return nil
+			}
+
+			ignores := state.Ignores
+			if ignores == nil {
+				ignores = render.NewIgnores(t.Transformer.GetAnnotations().FindAll(contract.OptionIgnore).Values())
+			}
+
+			ctxPtr, err := transformationContext(state.WithIgnores(ignores), cfg, &t)
+			if err != nil {
+				return fmt.Errorf("error building transformation context for transformer %q: %w", t.Transformer.GetName(), err)
+			}
+
+			fmt.Printf("  > Transformer[%s], Line: %d\n",
+				t.Transformer.GetName(),
+				t.Node.GetPosition().Line,
+			)
+
+			content, err := t.Transformer.Render(ctxPtr, t.Node.(*model.Type), scope, t.Transformer.Output(), opener)
+			if err != nil {
+				ctx.TransformerError(t.Transformer, err)
+				fmt.Println("Error during rendering:", err)
+			}
+			contentFunc(content)
+			return nil
+		}(t)
 		if err != nil {
-			return fmt.Errorf("error evaluating plumber:depends_on for transformer %q: %w", t.Transformer.GetName(), err)
+			ctx.TransformerError(t.Transformer, err)
 		}
-		if !satisfied {
-			fmt.Printf("  > Transformer[%s] skipped: unmet plumber:depends_on dependency\n", t.Transformer.GetName())
-			continue
-		}
-
-		ignores := state.Ignores
-		if ignores == nil {
-			ignores = render.NewIgnores(t.Transformer.GetAnnotations().FindAll(contract.OptionIgnore).Values())
-		}
-		ctx := state.WithIgnores(ignores)
-
-		ctxPtr, err := transformationContext(ctx, cfg, &t)
-		if err != nil {
-			return fmt.Errorf("error building transformation context for transformer %q: %w", t.Transformer.GetName(), err)
-		}
-
-		fmt.Printf("  > Transformer[%s], Line: %d\n",
-			t.Transformer.GetName(),
-			t.Node.GetNode().GetPosition().Line,
-		)
-
-		scope["Subject"] = view.Annotable{
-			Annotations: t.Transformer.GetAnnotations(),
-		}
-
-		if err := inflateCustomScope(t.Transformer, pkgs, scope); err != nil {
-			return err
-		}
-
-		content, err := t.Transformer.Render(ctxPtr, t.Node.(*model.Type), scope, t.Transformer.Output(), opener)
-		if err != nil {
-			fmt.Println("Error during rendering:", err)
-		}
-		contentFunc(content)
 	}
 	return nil
 }
@@ -296,6 +318,7 @@ func dependsOnSatisfied(transformer Transformer, pkgs []*model.Package) (bool, e
 			return false, fmt.Errorf("failed to parse FQN %q for plumber:depends_on: %w", fqnStr, err)
 		}
 		if model.Packages(pkgs).TypeByFQN(fqn) == nil {
+			fmt.Println("FQN NOT AVAI", fqn.String())
 			return false, nil
 		}
 	}

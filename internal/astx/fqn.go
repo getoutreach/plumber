@@ -91,14 +91,14 @@ type FQN struct {
 }
 
 func (f *FQN) IsStandard() bool {
-	return StandardType(f.String())
+	return IsStandardType(f.String())
 }
 
 func (f *FQN) IsPackageLess() bool {
 	return IsPackageLess(f.String())
 }
 
-func StandardType(name string) bool {
+func IsStandardType(name string) bool {
 	return !strings.Contains(name, `/`)
 }
 
@@ -408,6 +408,105 @@ func (f *FQN) Wrap(o *FQN) *FQN {
 			Index: o.Expression,
 		},
 	}
+}
+
+// Mask returns a new FQN whose underlying type identifier has been transformed
+// by applying fmt.Sprintf(maskFmt, name) to it. The package qualifier (if any)
+// and any pointer/slice/map/chan/generic wrappers are preserved.
+//
+// Examples (using "%s_Filter" as the mask):
+//
+//	"github.com/org/repo".Type      -> "github.com/org/repo".Type_Filter
+//	*"github.com/org/repo".Type     -> *"github.com/org/repo".Type_Filter
+//	[]"github.com/org/repo".Type    -> []"github.com/org/repo".Type_Filter
+//	"pkg".Type[int]                 -> "pkg".Type_Filter[int]   (only base masked, type args untouched)
+//	LocalType                       -> LocalType_Filter        (package-less)
+//
+// The receiver is not mutated; a new *FQN with a deep copy of the relevant
+// portion of the expression tree is returned. If the FQN's expression cannot be
+// reached as an identifier (e.g. it is malformed), the original FQN is returned
+// unchanged.
+func (f *FQN) Mask(maskFmt string) *FQN {
+	if f == nil || f.Expression == nil {
+		return f
+	}
+	clone := cloneExpr(f.Expression)
+	if !maskIdent(clone, maskFmt) {
+		return f
+	}
+	return &FQN{Expression: clone}
+}
+
+// maskIdent walks the expression tree to locate the leaf type identifier and
+// rewrites its Name using fmt.Sprintf(maskFmt, oldName). Returns true when an
+// identifier was successfully rewritten. Type arguments inside generic
+// expressions (IndexExpr/IndexListExpr) are left untouched — only the base type
+// identifier is masked.
+func maskIdent(expr ast.Expr, maskFmt string) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		e.Name = fmt.Sprintf(maskFmt, e.Name)
+		return true
+	case *ast.SelectorExpr:
+		if e.Sel != nil {
+			e.Sel.Name = fmt.Sprintf(maskFmt, e.Sel.Name)
+			return true
+		}
+	case *ast.StarExpr:
+		return maskIdent(e.X, maskFmt)
+	case *ast.ArrayType:
+		return maskIdent(e.Elt, maskFmt)
+	case *ast.MapType:
+		// Mask the value type — the conventional "primary" type of a map.
+		return maskIdent(e.Value, maskFmt)
+	case *ast.ChanType:
+		return maskIdent(e.Value, maskFmt)
+	case *ast.IndexExpr:
+		// Generic type instantiation — mask only the base, not the type arg.
+		return maskIdent(e.X, maskFmt)
+	case *ast.IndexListExpr:
+		return maskIdent(e.X, maskFmt)
+	}
+	return false
+}
+
+// cloneExpr produces a structural copy of the supported subset of ast.Expr nodes
+// so Mask can return a new FQN without mutating the receiver. Identifiers are
+// cloned by value; only fields traversed by maskIdent need to be deep-copied.
+func cloneExpr(expr ast.Expr) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return &ast.Ident{Name: e.Name}
+	case *ast.SelectorExpr:
+		out := &ast.SelectorExpr{}
+		if x, ok := e.X.(*ast.Ident); ok {
+			out.X = &ast.Ident{Name: x.Name}
+		} else {
+			out.X = cloneExpr(e.X)
+		}
+		if e.Sel != nil {
+			out.Sel = &ast.Ident{Name: e.Sel.Name}
+		}
+		return out
+	case *ast.StarExpr:
+		return &ast.StarExpr{X: cloneExpr(e.X)}
+	case *ast.ArrayType:
+		return &ast.ArrayType{Elt: cloneExpr(e.Elt), Len: e.Len}
+	case *ast.MapType:
+		return &ast.MapType{Key: cloneExpr(e.Key), Value: cloneExpr(e.Value)}
+	case *ast.ChanType:
+		return &ast.ChanType{Dir: e.Dir, Value: cloneExpr(e.Value)}
+	case *ast.IndexExpr:
+		return &ast.IndexExpr{X: cloneExpr(e.X), Index: cloneExpr(e.Index)}
+	case *ast.IndexListExpr:
+		out := &ast.IndexListExpr{X: cloneExpr(e.X)}
+		out.Indices = make([]ast.Expr, len(e.Indices))
+		for i, idx := range e.Indices {
+			out.Indices[i] = cloneExpr(idx)
+		}
+		return out
+	}
+	return expr
 }
 
 // walkExpr recursively walks an ast.Expr, replacing remote-package SelectorExprs

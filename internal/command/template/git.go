@@ -87,7 +87,6 @@ func checkoutGit(cfg *GitSourceConfig, cacheDir string) ([]string, error) {
 			return []FileRef{f}
 		}
 		matches, err := filepath.Glob(filepath.Join(repoPath, f.Path))
-		fmt.Println("!!!!", matches, filepath.Join(repoPath, f.Path))
 		if err != nil {
 			expandError = append(expandError, fmt.Errorf("failed to glob template path %q in repo %s: %w", f.Path, cfg.Repository, err))
 			return nil

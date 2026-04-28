@@ -266,11 +266,13 @@ Referenced with `@<name>` in source comments. Expand **before** transformers are
 so they can inject any annotation including `plumber:derive` and `plumber:shape`.
 
 Annotations produced by macros (and mixins) support Go `text/template` with
-`.Source.Args`, `.Source.NamedArgs`, `.Package.Name`, and `.Package.Path`.
-Templates are evaluated lazily in the transformer stage on a per-annotation
-basis: only annotations carrying an `ImpliedBy` reference (i.e. those produced
-by a macro or mixin) are template-expanded, which means the same template
-context works uniformly for both macros and mixins.
+`.Source.Args`, `.Source.NamedArgs`, `.Package.Name`, `.Package.Path`, and
+`.Type` (the AST node being processed — typically a `*model.Type`, exposing
+methods such as `.Type.Name` and `.Type.GetPosition.Filename`). Templates are
+evaluated lazily in the transformer stage on a per-annotation basis: only
+annotations carrying an `ImpliedBy` reference (i.e. those produced by a macro
+or mixin) are template-expanded, which means the same template context works
+uniformly for both macros and mixins.
 
 ```go
 // @tderive Widget file=generated.go
@@ -284,6 +286,7 @@ With macro config:
     annotations:
       - { name: plumber:derive, args: ["{{ index .Source.Args 0 }}"] }
       - { name: plumber:output, args: ["{{ .Source.NamedArgs.file }}"] }
+      - { name: plumber:comment, args: ["derived from {{ .Type.Name }}"] }
 ```
 
 ### Mixins

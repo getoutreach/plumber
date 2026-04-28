@@ -8,7 +8,20 @@ package redis
 type Client struct {
 }
 
+type Dep1 struct {
+}
+
 // is:provider
-func NewClient() (*Client, error) {
+func NewDep1() (*Dep1, error) {
+	return &Dep1{}, nil
+}
+
+// is:provider
+func NewDep1Named() (*Dep1, error) {
+	return &Dep1{}, nil
+}
+
+// is:provider
+func NewClient(*Dep1) (*Client, error) {
 	return &Client{}, nil
 }

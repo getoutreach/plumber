@@ -6,6 +6,8 @@
 package contract
 
 import (
+	"context"
+
 	"github.com/getoutreach/plumber/query/model"
 )
 
@@ -58,7 +60,7 @@ type Transformer interface {
 	Annotable
 	Accepts(annotation string) bool
 	Add(annotation model.Annotation)
-	Validate() error
+	Validate(node model.Node) error
 	Output() string
 	GetName() string
 	Mode() string
@@ -67,4 +69,137 @@ type Transformer interface {
 // Annotable represents an entity that can have annotations, such as a struct or interface type in the AST.
 type Annotable interface {
 	GetAnnotations() model.Annotations
+}
+
+// Node represents a node in the AST that can be transformed by a Transformer, such as a struct or interface type.
+type Node interface {
+	Annotable
+	GetPosition() model.Position
+}
+
+// ReporterEventType defines the type of events that can be reported by the Reporter interface
+type ReporterEventType string
+
+// ReporterEventType constants for different types of events that can be reported by the Reporter interface.
+const (
+	// EventTransformerAdded is emitted when a transformer is added to a node.
+	EventTransformerAdded ReporterEventType = "transformer.added"
+	// EventTransformerSkipped is emitted when a transformer is skipped for a node.
+	EventTransformerSkipped ReporterEventType = "transformer.skipped"
+	// EventTransformerRestored is emitted when a transformer is restored for a node.
+	EventTransformerRestored ReporterEventType = "transformer.restored"
+	// EventTransformerError is emitted when an error occurs during transformer processing.
+	EventTransformerError ReporterEventType = "transformer.error"
+	// EventTransformerInfo is emitted for informational messages during transformer processing.
+	EventTransformerInfo ReporterEventType = "transformer.info"
+	// EventTransformerOutput is emitted when a transformer produces output, such as a generated file.
+	EventTransformerOutput ReporterEventType = "transformer.output"
+	// EventQueryExecuted is emitted when a query is executed, containing the query string and results.
+	EventQueryExecuted ReporterEventType = "query.executed"
+	// EventQueryError is emitted when an error occurs during query execution.
+	EventQueryError ReporterEventType = "query.error"
+)
+
+// ReporterEvent represents an event that can be reported by the Reporter interface,
+// containing information about the event type and any relevant data.
+type ReporterEvent struct {
+	Message     string
+	Kind        ReporterEventType
+	Transformer Transformer
+	Node        model.Node
+	Path        string
+	Error       error
+}
+
+// Reporter defines the interface for reporting events during the transformation process,
+// allowing for logging, debugging, or other side effects based on events such as adding a transformer to a node.
+type Reporter interface {
+	Notify(ReporterEvent)
+}
+
+// ShapingContext provides context for a transformation, including a Reporter for emitting events during the transformation process.
+type ShapingContext struct {
+	context.Context
+	Reporter Reporter
+}
+
+func (ctx *ShapingContext) TransformerAdded(transformer Transformer) {
+	if ctx.Reporter != nil {
+		ctx.Reporter.Notify(ReporterEvent{
+			Kind:        EventTransformerAdded,
+			Transformer: transformer,
+		})
+	}
+}
+
+func (ctx *ShapingContext) TransformerSkipped(transformer Transformer, node model.Node, message string) {
+	if ctx.Reporter != nil {
+		ctx.Reporter.Notify(ReporterEvent{
+			Kind:        EventTransformerSkipped,
+			Transformer: transformer,
+			Node:        node,
+			Message:     message,
+		})
+	}
+}
+
+func (ctx *ShapingContext) TransformerError(transformer Transformer, err error) {
+	if ctx.Reporter != nil {
+		ctx.Reporter.Notify(ReporterEvent{
+			Kind:        EventTransformerError,
+			Transformer: transformer,
+			Error:       err,
+		})
+	}
+}
+
+func (ctx *ShapingContext) TransformerOutput(transformer Transformer, filename string) {
+	if ctx.Reporter != nil {
+		ctx.Reporter.Notify(ReporterEvent{
+			Kind:        EventTransformerOutput,
+			Transformer: transformer,
+			Path:        filename,
+		})
+	}
+}
+
+func (ctx *ShapingContext) TransformerInfo(transformer Transformer, message string) {
+	if ctx.Reporter != nil {
+		ctx.Reporter.Notify(ReporterEvent{
+			Kind:        EventTransformerInfo,
+			Transformer: transformer,
+			Message:     message,
+		})
+	}
+}
+
+func (ctx *ShapingContext) RestoredOutput(filename string, err error) {
+	if ctx.Reporter != nil {
+		ctx.Reporter.Notify(ReporterEvent{
+			Kind:  EventTransformerRestored,
+			Path:  filename,
+			Error: err,
+		})
+	}
+}
+
+func (ctx *ShapingContext) QueryExecuted(query string, filename string) {
+	if ctx.Reporter != nil {
+		ctx.Reporter.Notify(ReporterEvent{
+			Kind:    EventQueryExecuted,
+			Message: query,
+			Path:    filename,
+		})
+	}
+}
+
+func (ctx *ShapingContext) QueryError(query string, filename string, err error) {
+	if ctx.Reporter != nil {
+		ctx.Reporter.Notify(ReporterEvent{
+			Kind:    EventQueryError,
+			Message: query,
+			Path:    filename,
+			Error:   err,
+		})
+	}
 }

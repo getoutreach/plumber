@@ -228,6 +228,17 @@ func TestFQNWalkPackages(t *testing.T) {
 		assert.Equal(t, "MyUUID.UUID", fqn.String())
 	})
 
+	t.Run("replaces generic type", func(t *testing.T) {
+		fqn, err := ParseFQN(`"github.com/getoutreach/blueprint/pkg/blueprint/database/filter".String[string]`)
+		assert.NilError(t, err)
+
+		fqn.WalkPackages(func(pkgPath, typeName string) (string, bool) {
+			assert.Equal(t, "github.com/getoutreach/blueprint/pkg/blueprint/database/filter", pkgPath)
+			assert.Equal(t, "String", typeName)
+			return "MyString", true
+		})
+	})
+
 	t.Run("replaces named type inside pointer", func(t *testing.T) {
 		fqn := FQNFromGoType(types.NewPointer(typeUUID))
 		fqn.WalkPackages(func(_, _ string) (string, bool) { return "X", true })
@@ -274,5 +285,71 @@ func TestFQNWalkPackages(t *testing.T) {
 		fqn.WalkPackages(func(_, _ string) (string, bool) { called = true; return "", false })
 		assert.Equal(t, false, called)
 		assert.Equal(t, "int", fqn.String())
+	})
+}
+
+func TestFQNMask(t *testing.T) {
+	t.Run("masks qualified type", func(t *testing.T) {
+		fqn, err := ParseFQN(`"github.com/org/repo".Type`)
+		assert.NilError(t, err)
+
+		masked := fqn.Mask("%s_Filter")
+		assert.Equal(t, `"github.com/org/repo".Type_Filter`, masked.String())
+		// Receiver should not be mutated.
+		assert.Equal(t, `"github.com/org/repo".Type`, fqn.String())
+	})
+
+	t.Run("masks package-less identifier", func(t *testing.T) {
+		fqn, err := ParseFQN("LocalType")
+		assert.NilError(t, err)
+
+		masked := fqn.Mask("%s_Filter")
+		assert.Equal(t, "LocalType_Filter", masked.String())
+		assert.Equal(t, "LocalType", fqn.String())
+	})
+
+	t.Run("preserves pointer wrapper", func(t *testing.T) {
+		fqn, err := ParseFQN(`*"github.com/org/repo".Type`)
+		assert.NilError(t, err)
+
+		masked := fqn.Mask("%s_Filter")
+		assert.Equal(t, `*"github.com/org/repo".Type_Filter`, masked.String())
+	})
+
+	t.Run("preserves slice wrapper", func(t *testing.T) {
+		fqn, err := ParseFQN(`[]"github.com/org/repo".Type`)
+		assert.NilError(t, err)
+
+		masked := fqn.Mask("%s_Filter")
+		assert.Equal(t, `[]"github.com/org/repo".Type_Filter`, masked.String())
+	})
+
+	t.Run("preserves chan wrapper", func(t *testing.T) {
+		fqn, err := ParseFQN(`chan "github.com/org/repo".Type`)
+		assert.NilError(t, err)
+
+		masked := fqn.Mask("%s_Filter")
+		assert.Equal(t, `chan "github.com/org/repo".Type_Filter`, masked.String())
+	})
+
+	t.Run("masks only base of generic instantiation", func(t *testing.T) {
+		fqn, err := ParseFQN(`"github.com/org/repo".Type[int]`)
+		assert.NilError(t, err)
+
+		masked := fqn.Mask("%s_Filter")
+		assert.Equal(t, `"github.com/org/repo".Type_Filter[int]`, masked.String())
+	})
+
+	t.Run("custom mask format", func(t *testing.T) {
+		fqn, err := ParseFQN(`"github.com/org/repo".Type`)
+		assert.NilError(t, err)
+
+		masked := fqn.Mask("New%sBuilder")
+		assert.Equal(t, `"github.com/org/repo".NewTypeBuilder`, masked.String())
+	})
+
+	t.Run("nil receiver is safe", func(t *testing.T) {
+		var fqn *FQN
+		assert.Equal(t, (*FQN)(nil), fqn.Mask("%s_Filter"))
 	})
 }

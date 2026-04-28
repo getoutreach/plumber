@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/getoutreach/plumber/internal/command/shape/config"
+	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"gotest.tools/v3/assert"
 )
@@ -23,6 +24,21 @@ func fixturePackage() *model.Package {
 	}
 }
 
+// fixtureNode wraps the fixturePackage in a *model.Type so it satisfies the
+// model.Node interface required by TransformerAnnotations. Tests that need to
+// drive .Type-aware templates can extend the returned node before passing it in.
+func fixtureNode() model.Node {
+	return &model.Type{
+		TypeNode: &model.TypeNode{
+			Package: fixturePackage(),
+			Position: model.Position{
+				Filename: "fixture.go",
+			},
+		},
+		Name: "FixtureType",
+	}
+}
+
 // expandAndTransform runs the two-stage pipeline: macro expansion (which only
 // substitutes the macro annotation with its child annotation list and records
 // ImpliedBy on each child) followed by the deferred per-annotation template
@@ -30,16 +46,20 @@ func fixturePackage() *model.Package {
 // previously asserted on the combined behaviour.
 func expandAndTransform(
 	t *testing.T,
-	pkg *model.Package,
+	node model.Node,
 	input model.Annotations,
 	macroMap map[string]*config.PlumberMacroConfig,
 ) (model.Annotations, error) {
 	t.Helper()
+	var pkg *model.Package
+	if node != nil {
+		pkg = node.GetPackage()
+	}
 	expanded, err := expandAnnotations(pkg, input, macroMap)
 	if err != nil {
 		return nil, err
 	}
-	return TransformerAnnotations(pkg, expanded)
+	return TransformerAnnotations(node, expanded, render.Scope{})
 }
 
 func TestExpandAnnotations_NoMacro(t *testing.T) {
@@ -103,7 +123,7 @@ func TestTransformerAnnotations_TemplateArgs(t *testing.T) {
 		model.NewAnnotation("@derive", []string{"Foo"}),
 	}
 
-	result, err := expandAndTransform(t, fixturePackage(), input, macroMap)
+	result, err := expandAndTransform(t, fixtureNode(), input, macroMap)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 2)
 	assert.Equal(t, result[0].Name, "plumber:derive")
@@ -131,7 +151,7 @@ func TestTransformerAnnotations_TemplateNamedArgs(t *testing.T) {
 		model.NewAnnotation("@gen", nil, model.WithNamedArgs(map[string]string{"dir": "out"})),
 	}
 
-	result, err := expandAndTransform(t, fixturePackage(), input, macroMap)
+	result, err := expandAndTransform(t, fixtureNode(), input, macroMap)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	assert.Equal(t, result[0].NamedArgs["dir"], "out/generated")
@@ -155,16 +175,42 @@ func TestTransformerAnnotations_PackageContext(t *testing.T) {
 		model.NewAnnotation("@pkg", nil),
 	}
 
-	result, err := expandAndTransform(t, fixturePackage(), input, macroMap)
+	result, err := expandAndTransform(t, fixtureNode(), input, macroMap)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 2)
 	assert.Equal(t, result[0].Args[0], "fixtureDerived")
 	assert.Equal(t, result[1].Args[0], "from example.com/fixture")
 }
 
-// TestTransformerAnnotations_NilPackage asserts that a nil package gracefully
-// degrades to empty .Package.Name / .Package.Path values rather than panicking.
-func TestTransformerAnnotations_NilPackage(t *testing.T) {
+// TestTransformerAnnotations_TypeContext verifies that the AST node itself is
+// exposed under .Type so templates may inspect type metadata such as the
+// type's name or its source filename.
+func TestTransformerAnnotations_TypeContext(t *testing.T) {
+	macroMap := map[string]*config.PlumberMacroConfig{
+		"@named": {
+			Name: "@named",
+			Annotations: []config.AnnotationConfig{
+				{Name: "plumber:name", Args: []string{`{{ .Type.Name }}Filter`}},
+				{Name: "plumber:comment", Args: []string{`source: {{ .Type.GetPosition.Filename }}`}},
+			},
+		},
+	}
+
+	input := model.Annotations{
+		model.NewAnnotation("@named", nil),
+	}
+
+	result, err := expandAndTransform(t, fixtureNode(), input, macroMap)
+	assert.NilError(t, err)
+	assert.Equal(t, len(result), 2)
+	assert.Equal(t, result[0].Args[0], "FixtureTypeFilter")
+	assert.Equal(t, result[1].Args[0], "source: fixture.go")
+}
+
+// TestTransformerAnnotations_NilNode asserts that a nil node gracefully
+// degrades to empty .Package fields and a nil .Type rather than panicking,
+// as long as templates do not dereference .Type.
+func TestTransformerAnnotations_NilNode(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@pkg": {
 			Name: "@pkg",
@@ -198,7 +244,7 @@ func TestTransformerAnnotations_TemplateError(t *testing.T) {
 		model.NewAnnotation("@bad", nil),
 	}
 
-	_, err := expandAndTransform(t, fixturePackage(), input, macroMap)
+	_, err := expandAndTransform(t, fixtureNode(), input, macroMap)
 	assert.ErrorContains(t, err, "expanding implied annotation")
 }
 
@@ -216,7 +262,7 @@ func TestTransformerAnnotations_NoTemplatePassthrough(t *testing.T) {
 		model.NewAnnotation("@simple", nil),
 	}
 
-	result, err := expandAndTransform(t, fixturePackage(), input, macroMap)
+	result, err := expandAndTransform(t, fixtureNode(), input, macroMap)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	// No {{ }} in the string, so it passes through unchanged.
@@ -231,7 +277,7 @@ func TestTransformerAnnotations_PassthroughWithoutImpliedBy(t *testing.T) {
 	input := model.Annotations{
 		model.NewAnnotation("plumber:derive", []string{`{{ .Source.Args 0 }}`}),
 	}
-	result, err := TransformerAnnotations(fixturePackage(), input)
+	result, err := TransformerAnnotations(fixtureNode(), input, render.Scope{})
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	assert.Equal(t, result[0].Args[0], `{{ .Source.Args 0 }}`)

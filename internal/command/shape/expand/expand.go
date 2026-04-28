@@ -8,14 +8,18 @@ package expand
 import (
 	"bytes"
 	"fmt"
-	"html/template"
+	"maps"
+	"path"
 	"strings"
+	"text/template"
 
 	"github.com/getoutreach/plumber/internal/command/shape/config"
+	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 )
 
 func Name(v string, t *model.Type) any {
+	return v
 	return strings.ReplaceAll(v, "{name}", t.Name)
 }
 
@@ -23,12 +27,17 @@ func Name(v string, t *model.Type) any {
 // implied annotation values (those produced by a macro or mixin).
 //
 // The triggering annotation's positional and named arguments are exposed under
-// .Source, and the package the annotation is being expanded in is exposed
-// under .Package (Name and import Path). Templates therefore use expressions
-// such as `{{ index .Source.Args 0 }}` or `{{ .Package.Path }}`.
+// .Source, the package the annotation is being expanded in is exposed under
+// .Package (Name and import Path), and the AST node currently being processed
+// is exposed under .Type (a contract.Node, typically *model.Type or
+// *model.CommentGroup) so templates may inspect type metadata such as
+// `{{ .Type.GetAnnotations }}` or `{{ .Type.GetPosition.Filename }}`.
 type sourceTemplateData struct {
-	Source  sourceAnnotationData
+	Name    string
+	Source  *sourceAnnotationData
 	Package sourcePackageData
+	Output  outputTemplateData
+	Type    any
 }
 
 // sourceAnnotationData carries the positional and named arguments of the
@@ -43,6 +52,25 @@ type sourceAnnotationData struct {
 type sourcePackageData struct {
 	Name string
 	Path string
+}
+
+// outputTemplateData is the template context used to expand the value of the
+// plumber:output annotation. It exposes the source-file identity components
+// commonly needed for naming generated files:
+//
+//   - .Filename — the full base filename of the source file (e.g. "model.go").
+//   - .Name     — the source filename without extension (e.g. "model").
+//   - .Ext      — the source file extension including the leading dot (".go").
+//
+// In addition, the template environment registers a `suffixed` function that
+// produces "<.Name>_<suffix><.Ext>" — the equivalent of the legacy
+// `{suffix:<str>}` placeholder. Example: `{{ suffixed "filter" }}` evaluates
+// to `model_filter.go` when expanding output for `model.go`.
+type outputTemplateData struct {
+	Filename string
+	Name     string
+	Ext      string
+	Dir      string
 }
 
 // Macros replaces macro annotations with their defined annotation lists on all nodes
@@ -133,13 +161,13 @@ func expandAnnotations(
 
 // expandTemplateSlice applies template expansion to each element in a string
 // slice, returning a new slice with all templates resolved.
-func expandTemplateSlice(values []string, data sourceTemplateData, context string) ([]string, error) {
+func expandTemplateSlice(scope render.Scope, node model.Node, values []string, data sourceTemplateData, context string) ([]string, error) {
 	if len(values) == 0 {
 		return values, nil
 	}
 	result := make([]string, len(values))
 	for i, v := range values {
-		expanded, err := expandTemplateStr(v, data, fmt.Sprintf("%s/args[%d]", context, i))
+		expanded, err := expandTemplateStr(scope, node, v, data, fmt.Sprintf("%s/args[%d]", context, i))
 		if err != nil {
 			return nil, err
 		}
@@ -150,13 +178,13 @@ func expandTemplateSlice(values []string, data sourceTemplateData, context strin
 
 // expandTemplateMap applies template expansion to each value in a string map,
 // returning a new map with all templates resolved. Keys are not expanded.
-func expandTemplateMap(values map[string]string, data sourceTemplateData, context string) (map[string]string, error) {
+func expandTemplateMap(scope render.Scope, node model.Node, values map[string]string, data sourceTemplateData, context string) (map[string]string, error) {
 	if len(values) == 0 {
 		return values, nil
 	}
 	result := make(map[string]string, len(values))
 	for k, v := range values {
-		expanded, err := expandTemplateStr(v, data, fmt.Sprintf("%s/namedArgs[%s]", context, k))
+		expanded, err := expandTemplateStr(scope, node, v, data, fmt.Sprintf("%s/namedArgs[%s]", context, k))
 		if err != nil {
 			return nil, err
 		}
@@ -179,19 +207,47 @@ func packageTemplateData(pkg *model.Package) sourcePackageData {
 
 // expandTemplateStr parses and executes s as a text/template against data.
 // If s contains no template delimiters it is returned as-is.
-func expandTemplateStr(s string, data sourceTemplateData, name string) (string, error) {
+func expandTemplateStr(scope render.Scope, node model.Node, s string, data sourceTemplateData, name string) (string, error) {
 	if !strings.Contains(s, "{{") {
 		return s, nil
 	}
 
-	tmpl, err := template.New(name).Option("missingkey=error").Parse(s)
+	//pkg := node.GetPackage()
+	pos := node.GetPosition()
+
+	payload := map[any]any{
+		"Name":    data.Name,
+		"Output":  data.Output,
+		"Package": data.Package,
+		"Type":    data.Type,
+		"Source":  data.Source,
+	}
+	maps.Copy(payload, scope)
+
+	pos.Filename = path.Base(pos.Filename)
+
+	tmpl, err := template.New(name).
+		Option("missingkey=error").
+		Funcs(render.GenericFunctions()).
+		Funcs(map[string]any{
+			"output_suffixed": func(suffix string) string {
+				output := toOutputTemplateData(pos.Filename)
+				base := path.Join(output.Dir, output.Name)
+				return fmt.Sprintf("%s_%s%s", base, suffix, output.Ext)
+			},
+		}).Parse(s)
+
 	if err != nil {
 		return "", fmt.Errorf("parsing template %q: %w", s, err)
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
+	if err := tmpl.Execute(&buf, payload); err != nil {
 		return "", fmt.Errorf("executing template %q: %w", s, err)
 	}
+
+	//fmt.Println("expanding ", name, s, "->", buf.String())
+	//fmt.Printf("DATA %v\n", data)
+
 	return buf.String(), nil
 }

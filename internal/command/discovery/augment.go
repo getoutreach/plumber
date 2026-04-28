@@ -417,6 +417,8 @@ func (a *Augmenter) ensureDependencyRequired(dec *decorator.Decorator, file *dst
 		return astx.MatchOnly(astx.IsFuncCallTo(node, "Resolver"))
 	})
 
+	changed := false
+
 	for _, resolver := range resolvers {
 		requireFunc := astx.FindNode(resolver, func(node dst.Node) (match bool, recurse bool) {
 			return astx.MatchOnly(astx.IsFuncCallTo(node, "Require"))
@@ -436,6 +438,7 @@ func (a *Augmenter) ensureDependencyRequired(dec *decorator.Decorator, file *dst
 			lo.Map(functionCalls, func(thenCallNode dst.Node, _ int) dst.Node {
 				thenCall := thenCallNode.(*dst.CallExpr)
 				if sel, ok := thenCall.Fun.(*dst.SelectorExpr); ok {
+					fmt.Println(sel.Sel.Name, lo.Contains(instanceMethods, sel.Sel.Name), instanceMethods)
 					if lo.Contains(instanceMethods, sel.Sel.Name) {
 						return sel
 					}
@@ -445,7 +448,7 @@ func (a *Augmenter) ensureDependencyRequired(dec *decorator.Decorator, file *dst
 
 		if rf, ok := requireFunc.(*dst.CallExpr); ok {
 			if rf == nil {
-				return false
+				continue
 			}
 			if len(rf.Args) == 0 || len(usedInstanceSelectorExpr) > 0 {
 				used := lo.Map(usedInstanceSelectorExpr, func(sel dst.Node, _ int) dst.Expr {
@@ -454,18 +457,17 @@ func (a *Augmenter) ensureDependencyRequired(dec *decorator.Decorator, file *dst
 						X:  dst.Clone(sel).(*dst.SelectorExpr).X,
 					}
 				})
-				used = filterExistingDependecySelectors(used, rf.Args)
+				used = filterExistingDependencySelectors(used, rf.Args)
 				rf.Args = append(rf.Args, newLinedArguments(used)...)
-				return true
+				changed = true
 			}
-			return false
 		}
 	}
 
-	return false
+	return changed
 }
 
-func filterExistingDependecySelectors(selectors, args []dst.Expr) []dst.Expr {
+func filterExistingDependencySelectors(selectors, args []dst.Expr) []dst.Expr {
 	if len(args) == 0 || len(selectors) == 0 {
 		return selectors
 	}

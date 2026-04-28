@@ -648,6 +648,7 @@ The template data context exposes:
 | `.Source.NamedArgs`  | `map[string]string` | Named arguments (`key=value`) from the triggering annotation               |
 | `.Package.Name`      | `string`            | Name of the Go package the annotation is being expanded in                 |
 | `.Package.Path`      | `string`            | Import path of the Go package the annotation is being expanded in          |
+| `.Type`              | `model.Node`        | The AST node being processed (typically a `*model.Type`). Exposes methods such as `.Type.Name`, `.Type.GetPosition.Filename`, `.Type.GetAnnotations`. |
 
 #### Defining a macro with templates
 
@@ -658,7 +659,7 @@ macros:
       annotations:
         - { name: plumber:derive, args: ["{{ index .Source.Args 0 }}"] }
         - { name: plumber:output, args: ["{{ .Source.NamedArgs.file }}"] }
-        - { name: plumber:comment, args: ["from {{ .Package.Path }}"] }
+        - { name: plumber:comment, args: ["from {{ .Package.Path }} ({{ .Type.Name }})"] }
 ```
 
 #### Using a macro with arguments

@@ -71,7 +71,7 @@ func (i *Ignores) Ignored(groups ...string) bool {
 	return exists
 }
 
-func typesRenderer(currentPkgPath string, register *ModuleRegister) func(spec model.TypeSpec) (string, error) {
+func TypesRenderer(currentPkgPath string, register *ModuleRegister) func(spec model.TypeSpec) (string, error) {
 	return func(spec model.TypeSpec) (string, error) {
 		fqn, err := astx.ParseFQN(spec.FQN)
 		if err != nil {
@@ -81,7 +81,7 @@ func typesRenderer(currentPkgPath string, register *ModuleRegister) func(spec mo
 			if pkgPath == currentPkgPath {
 				return "", true
 			}
-			id := register.Register(pkgPath, astx.StandardType(pkgPath)).ID
+			id := register.Register(pkgPath, astx.IsStandardType(pkgPath)).ID
 			if id == "." {
 				return "", true
 			}
@@ -143,7 +143,7 @@ func ignored(ignores *Ignores) func(groups ...string) bool {
 func moduleInclude(context Context) func(modulePath string) (string, error) {
 	modules := context.GetModules()
 	return func(modulePath string) (string, error) {
-		modules.Register(modulePath, strings.Contains(modulePath, "/"))
+		modules.Register(modulePath, !strings.Contains(modulePath, "/"))
 		return "", nil
 	}
 }
@@ -158,7 +158,7 @@ func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.Ren
 	functions := template.FuncMap{
 		"extend": extend,
 
-		"type": typesRenderer(context.GetPkgPath(), context.GetModules()),
+		"type": TypesRenderer(context.GetPkgPath(), context.GetModules()),
 		"type_set": func(name string) (string, error) {
 			fqn, err := astx.CraftFQN(context.GetPkgPath(), name)
 			if err != nil {
@@ -194,12 +194,29 @@ func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.Ren
 			})
 			return !ok, nil
 		},
+		"placeholder":    placeholder,
+		"fragment_start": fragmentStart(scope),
+		"fragment_end":   fragmentEnd(scope),
+		"module_include": moduleInclude(context),
+	}
+	maps.Copy(functions, GenericFunctions())
+	return gen.WithFuncMap(functions), dispose
+}
+
+func GenericFunctions() template.FuncMap {
+	return template.FuncMap{
 		"annotation":       annotation,
 		"annotation_value": AnnotationValue,
-		"placeholder":      placeholder,
-		"fragment_start":   fragmentStart(scope),
-		"fragment_end":     fragmentEnd(scope),
-		"module_include":   moduleInclude(context),
+		"fqn_mask": func(spec model.TypeSpec, mask string) (string, error) {
+			fqn, err := astx.ParseFQN(spec.FQN)
+			if err != nil {
+				return "", fmt.Errorf("failed to parse FQN: %w", err)
+			}
+			return fqn.Mask(mask).String(), nil
+		},
 	}
-	return gen.WithFuncMap(functions), dispose
+}
+
+func WithGenericFuncMap(context Context) (opt gen.RenderOptionsFunc) {
+	return gen.WithFuncMap(GenericFunctions())
 }

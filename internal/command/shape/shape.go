@@ -9,6 +9,7 @@ package shape
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path"
@@ -22,6 +23,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/expand"
+	"github.com/getoutreach/plumber/internal/command/shape/report/term"
 	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
@@ -32,6 +34,13 @@ import (
 func Run(cfg *Config, args []string) error {
 	if err := checkoutAndMergeIncludes(cfg); err != nil {
 		return err
+	}
+
+	reporter := term.NewTerminalReporter()
+
+	ctx := &contract.ShapingContext{
+		Context:  context.Background(),
+		Reporter: reporter,
 	}
 
 	filenames, err := inspect.ScanFiles("./", args)
@@ -46,7 +55,7 @@ func Run(cfg *Config, args []string) error {
 
 	// Single-type targeted mode: process only the specified type with the named macro.
 	if cfg.Target != nil {
-		return runTargeted(cfg, pkgs)
+		return runTargeted(ctx, cfg, pkgs)
 	}
 
 	// Expand macros in all annotations before walking and building transformers.
@@ -61,17 +70,18 @@ func Run(cfg *Config, args []string) error {
 		return err
 	}
 
-	if err := expandTransformations(transformations); err != nil {
-		return err
-	}
+	// // Expand transformation
+	// if err := expandTransformations(ctx, transformations); err != nil {
+	// 	return err
+	// }
 
-	outputs, err := renderTransformations(cfg, pkgs, transformations)
+	outputs, err := renderTransformations(ctx, cfg, pkgs, transformations)
 	if err != nil {
 		return err
 	}
 
 	if len(outputs) > 0 {
-		return restoreOutputs(outputs)
+		return restoreOutputs(ctx, outputs)
 	}
 
 	return nil
@@ -80,7 +90,7 @@ func Run(cfg *Config, args []string) error {
 // runTargeted processes a single type with a named macro, bypassing the full annotation scan.
 // The macro is injected as a synthetic annotation onto the type, expanded, and then the
 // standard transformer building and rendering pipeline runs for that single type.
-func runTargeted(cfg *Config, pkgs model.Packages) error {
+func runTargeted(ctx *contract.ShapingContext, cfg *Config, pkgs model.Packages) error {
 	typ, err := resolveTargetType(cfg.Target.TypeFQN, pkgs)
 	if err != nil {
 		return err
@@ -115,17 +125,17 @@ func runTargeted(cfg *Config, pkgs model.Packages) error {
 		transformations = append(transformations, Transformation{
 			Node:        typ,
 			Transformer: t,
-			Path:        buildPath(t.Mode(), typ.GetPackage().Path, typ.GetNode().GetPosition().Filename, t.Output()),
+			Path:        buildPath(t.Mode(), typ.GetPackage().Path, typ.GetPosition().Filename, t.Output()),
 		})
 	}
 
 	// Render and restore
-	outputs, err := renderTransformations(cfg, pkgs, transformations)
+	outputs, err := renderTransformations(ctx, cfg, pkgs, transformations)
 	if err != nil {
 		return err
 	}
 	if len(outputs) > 0 {
-		return restoreOutputs(outputs)
+		return restoreOutputs(ctx, outputs)
 	}
 	return nil
 }
@@ -196,18 +206,22 @@ func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation,
 			transformations = append(transformations, Transformation{
 				Node:        node,
 				Transformer: t,
-				Path:        buildPath(t.Mode(), node.GetPackage().Path, node.GetNode().GetPosition().Filename, t.Output()),
+				Path:        buildPath(t.Mode(), node.GetPackage().Path, node.GetPosition().Filename, t.Output()),
 			})
 		}
 	}
 
 	for _, node := range transformingNodes {
-		ts, err := buildTransformers(cfg, node.GetNode())
+		ts, err := buildTransformers(cfg, node)
 		if err != nil {
-			return nil, fmt.Errorf("failed to build transformers for node %q: %w", node.GetNode().GetPosition(), err)
+			return nil, fmt.Errorf("failed to build transformers for node %q: %w", node.GetPosition(), err)
 		}
 		appendTransformer(node, ts)
 	}
+
+	// for _, t := range transformations {
+
+	// }
 
 	// Process package-level comments for transformations.
 	for _, pkg := range pkgs {
@@ -228,7 +242,7 @@ func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation,
 				return a.Name != contract.OptionContext
 			}))
 			if err != nil {
-				return nil, fmt.Errorf("failed to build transformers for node %q: %w", t.GetNode().GetPosition(), err)
+				return nil, fmt.Errorf("failed to build transformers for node %q: %w", t.GetPosition(), err)
 			}
 			appendTransformer(t, ts)
 		}
@@ -239,7 +253,7 @@ func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation,
 
 // renderTransformations groups transformations by mode and output filename,
 // renders each group via the appropriate manager, and appends query outputs.
-func renderTransformations(cfg *Config, pkgs []*model.Package, transformations []Transformation) ([]*ManagerOutput, error) {
+func renderTransformations(ctx *contract.ShapingContext, cfg *Config, pkgs []*model.Package, transformations []Transformation) ([]*ManagerOutput, error) {
 	byMode := lo.GroupBy(transformations, func(t Transformation) string {
 		return t.Transformer.Mode()
 	})
@@ -247,7 +261,7 @@ func renderTransformations(cfg *Config, pkgs []*model.Package, transformations [
 	var outputs []*ManagerOutput
 
 	for mode, transformations := range byMode {
-		fmt.Printf("Processing mode %q with %d transformations\n", mode, len(transformations))
+		// fmt.Printf("Processing mode %q with %d transformations\n", mode, len(transformations))
 
 		byOutput := lo.GroupBy(transformations, func(t Transformation) string {
 			return t.Path.Filename
@@ -256,9 +270,9 @@ func renderTransformations(cfg *Config, pkgs []*model.Package, transformations [
 		for filename, transformations := range byOutput {
 			manager := buildModeManager(cfg, mode, transformations[0].Path.Package, filename)
 
-			fmt.Printf("Found %d transformations for output %q\n", len(transformations), filename)
+			//fmt.Printf("Found %d transformations for output %q\n", len(transformations), filename)
 
-			output, err := manager.Render(pkgs, transformations)
+			output, err := manager.Render(ctx, pkgs, transformations)
 			if err != nil {
 				return nil, fmt.Errorf("failed to render transformations for output %q: %w", filename, err)
 			}
@@ -275,7 +289,7 @@ func renderTransformations(cfg *Config, pkgs []*model.Package, transformations [
 	}
 
 	// Process plumber:query annotations on package-level variables.
-	queryOutputs, err := processQueries(pkgs)
+	queryOutputs, err := processQueries(ctx, pkgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process queries: %w", err)
 	}
@@ -294,7 +308,7 @@ func renderTransformations(cfg *Config, pkgs []*model.Package, transformations [
 	return outputs, nil
 }
 
-func restoreOutputs(output []*ManagerOutput) error {
+func restoreOutputs(ctx *contract.ShapingContext, output []*ManagerOutput) error {
 	filenames := []string{}
 	overlay := make(map[string][]byte)
 
@@ -322,7 +336,7 @@ func restoreOutputs(output []*ManagerOutput) error {
 			if err != nil {
 				return fmt.Errorf("failed to parse generated file %q: %w", o.Output.Filename, err)
 			}
-			err = restoreOutput(o, content, pkg)
+			err = restoreOutput(ctx, o, content, pkg)
 			if err != nil {
 				return fmt.Errorf("failed to restore generated file %q: %w", o.Output.Filename, err)
 			}
@@ -334,7 +348,7 @@ func restoreOutputs(output []*ManagerOutput) error {
 		if o.Output.Dst == nil {
 			continue
 		}
-		err := restoreOutput(o, o.Output.Dst.File, o.Output.Dst.Package)
+		err := restoreOutput(ctx, o, o.Output.Dst.File, o.Output.Dst.Package)
 		if err != nil {
 			return fmt.Errorf("failed to restore generated dst file %q: %w", o.Output.Filename, err)
 		}
@@ -344,7 +358,9 @@ func restoreOutputs(output []*ManagerOutput) error {
 }
 
 // restoreOutput takes a ManagerOutput, the corresponding dst.File content, and the decorator.Package,
-func restoreOutput(output *ManagerOutput, content *dst.File, pkg *decorator.Package) error {
+func restoreOutput(ctx *contract.ShapingContext, output *ManagerOutput, content *dst.File, pkg *decorator.Package) (outError error) {
+	defer ctx.RestoredOutput(output.Output.Filename, outError)
+
 	var buf bytes.Buffer
 	r := decorator.NewRestorerWithImports(pkg.PkgPath, gopackages.WithHints("./", map[string]string{"time": "time"}))
 
@@ -356,6 +372,7 @@ func restoreOutput(output *ManagerOutput, content *dst.File, pkg *decorator.Pack
 	if err := os.WriteFile(output.Output.Filename, buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
+
 	return nil
 }
 
@@ -391,14 +408,15 @@ func buildModeManager(cfg *Config, mode, pkgPath, output string) Manager {
 }
 
 // buildTransformers constructs the list of transformers to apply to a given node based on its annotations and the provided configuration.
-func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err error) {
+// node can be either comming from model.Type (targeted), model.CommentGroup or any other model.Node that carries annotations
+func buildTransformers(cfg *Config, node model.Node) (transformers []Transformer, err error) {
 	var (
 		lastTransformer Transformer
 	)
 
 	changeTransformer := func(t Transformer) error {
 		if lastTransformer != nil {
-			if err := lastTransformer.Validate(); err != nil {
+			if err := lastTransformer.Validate(node); err != nil {
 				return err
 			}
 		}
@@ -413,14 +431,11 @@ func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err 
 	// macro (or mixin) carries an ImpliedBy reference. We expand its templated
 	// args/namedArgs eagerly, before the transformer consumes it, so that
 	// downstream stages (Validate, Render) observe fully-resolved values.
-	var pkg *model.Package
-	if pkgNode, ok := node.(interface{ GetPackage() *model.Package }); ok {
-		pkg = pkgNode.GetPackage()
-	}
-	annotations, err := expand.TransformerAnnotations(pkg, node.GetAnnotations())
-	if err != nil {
-		return nil, err
-	}
+	//
+	// node may or may not satisfy model.Node — e.g. *model.CommentGroup does
+	// not — so we fall back to a nil model.Node when it does not, which the
+	// expander handles gracefully (empty .Package, nil .Type).
+	annotations := node.GetAnnotations()
 	for _, annotation := range annotations {
 		switch annotation.Name {
 		case "plumber:shape":
@@ -441,7 +456,7 @@ func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err 
 				return nil, fmt.Errorf("transformer %s does not accept annotation %q", lastTransformer.GetName(), annotation.Name)
 			}
 			lastTransformer.Add(annotation)
-			if annotation.Name == "plumber:mixin" {
+			if annotation.Name == contract.OptionMixin {
 				if err := expand.Mixin(annotation, lastTransformer, cfg.Mixins); err != nil {
 					return nil, err
 				}
@@ -451,14 +466,6 @@ func buildTransformers(cfg *Config, node Node) (transformers []Transformer, err 
 	if err := changeTransformer(nil); err != nil {
 		return nil, err
 	}
-	return transformers, nil
-}
 
-func expandTransformations(transformations []Transformation) error {
-	for _, t := range transformations {
-		if err := t.Transformer.Expand(t.Node); err != nil {
-			return err
-		}
-	}
-	return nil
+	return transformers, nil
 }

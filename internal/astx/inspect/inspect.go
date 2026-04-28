@@ -81,7 +81,7 @@ func Inspect(filenames []string, workingDir string) (pkgs model.Packages, err er
 		pm.EnsureDir()
 
 		for _, file := range pkg.Package.Syntax {
-			pm.Comments = append(pm.Comments, processComments(pkg, file)...)
+			pm.Comments = append(pm.Comments, processComments(pm, file)...)
 		}
 
 		processScope(pkg.Package.Types.Scope(), pm)
@@ -246,7 +246,7 @@ func dstReceiverTypeName(recv *dst.Field) string {
 	return ""
 }
 
-func processComments(pkg *decorator.Package, f *ast.File) []*model.CommentGroup {
+func processComments(pkg *model.Package, f *ast.File) []*model.CommentGroup {
 	var comments []*model.CommentGroup
 
 	for _, cg := range f.Comments {
@@ -263,10 +263,11 @@ func processComments(pkg *decorator.Package, f *ast.File) []*model.CommentGroup 
 			Doc:         txt,
 			Annotations: ParseAnnotations(txt),
 			Position: model.Position{
-				Filename: pkg.Fset.Position(cg.Pos()).Filename,
-				Line:     pkg.Fset.Position(cg.Pos()).Line,
-				Column:   pkg.Fset.Position(cg.Pos()).Column,
+				Filename: pkg.Package.Fset.Position(cg.Pos()).Filename,
+				Line:     pkg.Package.Fset.Position(cg.Pos()).Line,
+				Column:   pkg.Package.Fset.Position(cg.Pos()).Column,
 			},
+			Package: pkg,
 		})
 	}
 	return comments
