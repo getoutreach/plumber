@@ -77,14 +77,10 @@ func LoadAllContent(content []ContentConfig) ([]gen.RenderOptionsFunc, error) {
 // ResolveRefs resolves a list of ContentConfig references into render options.
 // Each ref is either:
 //   - Inline content (Content is non-empty): parsed as a template directly.
-//   - Name reference (Content is empty): resolved from the registry (sources + content)
-//     via LoadTemplates.
+//   - Name reference (Content is empty): resolved from the cache.
 func ResolveRefs(
+	cache *TemplateCache,
 	refs []ContentConfig,
-	sources []*SourceConfig,
-	registry []ContentConfig,
-	cacheDir string,
-	fs embed.FS,
 ) ([]gen.RenderOptionsFunc, error) {
 	var opts []gen.RenderOptionsFunc
 	for _, ref := range refs {
@@ -93,13 +89,129 @@ func ResolveRefs(
 			// are parsed into the root template with funcmaps already available.
 			opts = append(opts, gen.WithTemplateContent(ref.Content))
 		} else {
-			// Name reference — resolve from registry (sources + content)
-			resolved, err := LoadTemplates(sources, registry, cacheDir, []string{ref.Name}, fs)
+			// Name reference — resolve from cache
+			resolved, err := cache.Load([]string{ref.Name})
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve template %q: %w", ref.Name, err)
 			}
 			opts = append(opts, resolved...)
 		}
+	}
+	return opts, nil
+}
+
+// TemplateCache provides a memoizing wrapper around template resolution. It
+// loads each template name at most once and caches the resulting render options
+// so that repeated lookups (e.g. across many transformations) avoid redundant
+// file I/O and template parsing.
+//
+//nolint:revive //Why: We might rename package
+type TemplateCache struct {
+	sources  []*SourceConfig
+	content  []ContentConfig
+	cacheDir string
+	fs       embed.FS
+	cache    map[string][]gen.RenderOptionsFunc
+}
+
+// NewTemplateCache creates a TemplateCache backed by the given sources,
+// inline content definitions, cache directory (for git repos) and embedded FS.
+func NewTemplateCache(sources []*SourceConfig, content []ContentConfig, cacheDir string, fs embed.FS) *TemplateCache {
+	return &TemplateCache{
+		sources:  sources,
+		content:  content,
+		cacheDir: cacheDir,
+		fs:       fs,
+		cache:    make(map[string][]gen.RenderOptionsFunc),
+	}
+}
+
+// Load resolves the given template names into render option functions,
+// returning cached results when available and resolving (then caching)
+// any names seen for the first time.
+func (tc *TemplateCache) Load(names []string) ([]gen.RenderOptionsFunc, error) {
+	var opts []gen.RenderOptionsFunc
+	for _, name := range names {
+		if cached, ok := tc.cache[name]; ok {
+			opts = append(opts, cached...)
+			continue
+		}
+		resolved, err := resolveTemplate(tc.sources, tc.content, tc.cacheDir, name, tc.fs)
+		if err != nil {
+			return nil, err
+		}
+		tc.cache[name] = resolved
+		opts = append(opts, resolved...)
+	}
+	return opts, nil
+}
+
+// resolveTemplate resolves a single template name into render option functions
+// by searching embedded templates, sources and inline content in order.
+func resolveTemplate(
+	sources []*SourceConfig,
+	content []ContentConfig,
+	cacheDir string,
+	name string,
+	fs embed.FS,
+) ([]gen.RenderOptionsFunc, error) {
+	if strings.HasPrefix(name, "plumber:") {
+		trimmed := strings.TrimPrefix(name, "plumber:")
+		if !strings.HasPrefix(trimmed, "templates/") {
+			trimmed = "templates/" + trimmed
+		}
+		if !strings.HasSuffix(trimmed, ".gtpl") {
+			trimmed += ".gtpl"
+		}
+		return []gen.RenderOptionsFunc{gen.WithFS(fs, trimmed)}, nil
+	}
+
+	var opts []gen.RenderOptionsFunc
+	found := false
+	for _, s := range sources {
+		switch {
+		case s.Git != nil:
+			repoPath := gitRepoPath(cacheDir, s.Git)
+			for _, tpl := range s.Git.Templates {
+				if tpl.Name != name {
+					continue
+				}
+				found = true
+				filename := path.Join(repoPath, tpl.Path)
+				data, err := os.ReadFile(filename)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read git template file %q: %w", filename, err)
+				}
+				opts = append(opts, gen.WithTemplateContent(string(data)))
+			}
+		case s.Local != nil:
+			for _, tpl := range s.Local.Templates {
+				if tpl.Name != name {
+					continue
+				}
+				found = true
+				tplPath := tpl.Path
+				if tplPath == "" {
+					tplPath = name + ".gtpl"
+				}
+				t, err := template.New(tpl.Name).ParseFiles(path.Join(s.Local.Path, tplPath))
+				if err != nil {
+					return nil, fmt.Errorf("Can't load local template: %w", err)
+				}
+				opts = append(opts, gen.WithTemplate(t))
+			}
+		default:
+			return nil, fmt.Errorf("Unsupported template configuration for %T", s)
+		}
+	}
+	for _, s := range content {
+		if s.Name == name {
+			found = true
+			opts = append(opts, gen.WithTemplateContent(s.Content))
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("template %q not found", name)
 	}
 	return opts, nil
 }
@@ -113,67 +225,13 @@ func LoadTemplates(
 	names []string,
 	fs embed.FS,
 ) ([]gen.RenderOptionsFunc, error) {
-	opts := []gen.RenderOptionsFunc{}
+	var opts []gen.RenderOptionsFunc
 	for _, name := range names {
-		if strings.HasPrefix(name, "plumber:") {
-			name = strings.TrimPrefix(name, "plumber:")
-			if !strings.HasPrefix(name, "templates/") {
-				name = "templates/" + name
-			}
-			if !strings.HasSuffix(name, ".gtpl") {
-				name += ".gtpl"
-			}
-			opts = append(opts, gen.WithFS(fs, name))
-			continue
+		resolved, err := resolveTemplate(sources, content, cacheDir, name, fs)
+		if err != nil {
+			return nil, err
 		}
-		found := false
-		for _, s := range sources {
-			switch {
-			case s.Git != nil:
-				fmt.Println("GIT templates", s.Git.Templates)
-				repoPath := gitRepoPath(cacheDir, s.Git)
-				for _, tpl := range s.Git.Templates {
-					fmt.Println(tpl.Name, name)
-					if tpl.Name == name {
-						found = true
-						filename := path.Join(repoPath, tpl.Path)
-						data, err := os.ReadFile(filename)
-						if err != nil {
-							return nil, fmt.Errorf("failed to read git template file %q: %w", filename, err)
-						}
-						opts = append(opts, gen.WithTemplateContent(string(data)))
-					}
-				}
-			case s.Local != nil:
-				for _, tpl := range s.Local.Templates {
-					if tpl.Name != name {
-						continue
-					}
-					found = true
-					tplPath := tpl.Path
-					if tplPath == "" {
-						tplPath = name + ".gtpl"
-					}
-					t, err := template.New(tpl.Name).ParseFiles(path.Join(s.Local.Path, tplPath))
-					if err != nil {
-						return nil, fmt.Errorf("Can't load local template: %w", err)
-					}
-					opts = append(opts, gen.WithTemplate(t))
-				}
-			default:
-				return nil, fmt.Errorf("Unsupported template configuration for %T", s)
-			}
-		}
-		for _, s := range content {
-			if s.Name == name {
-				found = true
-				opts = append(opts, gen.WithTemplateContent(s.Content))
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf("template %q not found", name)
-		}
+		opts = append(opts, resolved...)
 	}
-
 	return opts, nil
 }

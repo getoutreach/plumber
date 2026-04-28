@@ -20,7 +20,6 @@ import (
 
 func Name(v string, t *model.Type) any {
 	return v
-	return strings.ReplaceAll(v, "{name}", t.Name)
 }
 
 // sourceTemplateData is the context supplied to text/template when expanding
@@ -178,7 +177,12 @@ func expandTemplateSlice(scope render.Scope, node model.Node, values []string, d
 
 // expandTemplateMap applies template expansion to each value in a string map,
 // returning a new map with all templates resolved. Keys are not expanded.
-func expandTemplateMap(scope render.Scope, node model.Node, values map[string]string, data sourceTemplateData, context string) (map[string]string, error) {
+func expandTemplateMap(
+	scope render.Scope,
+	node model.Node,
+	values map[string]string,
+	data sourceTemplateData, context string,
+) (map[string]string, error) {
 	if len(values) == 0 {
 		return values, nil
 	}
@@ -212,7 +216,6 @@ func expandTemplateStr(scope render.Scope, node model.Node, s string, data sourc
 		return s, nil
 	}
 
-	//pkg := node.GetPackage()
 	pos := node.GetPosition()
 
 	payload := map[any]any{
@@ -245,9 +248,6 @@ func expandTemplateStr(scope render.Scope, node model.Node, s string, data sourc
 	if err := tmpl.Execute(&buf, payload); err != nil {
 		return "", fmt.Errorf("executing template %q: %w", s, err)
 	}
-
-	//fmt.Println("expanding ", name, s, "->", buf.String())
-	//fmt.Printf("DATA %v\n", data)
 
 	return buf.String(), nil
 }

@@ -56,8 +56,13 @@ func TransformerAnnotations(node model.Node, annotations model.Annotations, scop
 // expandAnnotationValue runs template expansion on the Args and NamedArgs of a
 // single annotation when it was implied by another annotation (macro or mixin).
 // Annotations without an ImpliedBy reference are returned unchanged.
-func expandAnnotationValue(scope render.Scope, node model.Node, pkg *model.Package, ann model.Annotation, name, output string) (model.Annotation, error) {
-	// return rendered
+func expandAnnotationValue(
+	scope render.Scope,
+	node model.Node,
+	pkg *model.Package,
+	ann model.Annotation,
+	name, output string,
+) (model.Annotation, error) {
 	var n any = node
 	if tn, ok := node.(*model.Type); ok {
 		n = tn

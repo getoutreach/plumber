@@ -63,34 +63,32 @@ func Run(c *cli.Context) error {
 
 	// Resolve per-file template references from the unified templates config.
 	// Global templates apply to all renders; container/application templates are additive.
-	globalOpts, err := template.ResolveRefs(
-		cfg.Templates.Global,
+	templateCache := template.NewTemplateCache(
 		fileCfg.Templates.Sources,
 		fileCfg.Templates.Content,
 		template.DefaultCacheDir,
 		render.EmbededTemplates,
+	)
+
+	globalOpts, err := template.ResolveRefs(
+		templateCache,
+		cfg.Templates.Global,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to resolve global templates: %w", err)
 	}
 
 	containerRefOpts, err := template.ResolveRefs(
+		templateCache,
 		cfg.Templates.Container,
-		fileCfg.Templates.Sources,
-		fileCfg.Templates.Content,
-		template.DefaultCacheDir,
-		render.EmbededTemplates,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to resolve container templates: %w", err)
 	}
 
 	applicationRefOpts, err := template.ResolveRefs(
+		templateCache,
 		cfg.Templates.Application,
-		fileCfg.Templates.Sources,
-		fileCfg.Templates.Content,
-		template.DefaultCacheDir,
-		render.EmbededTemplates,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to resolve application templates: %w", err)

@@ -13,7 +13,6 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/command/shape/render/view"
-	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	baserender "github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
@@ -31,11 +30,10 @@ func buildContext(cfg *Config, modules *baserender.ModuleRegister, pkg *model.Pa
 }
 
 // transformationContext is a helper function that builds the rendering context for a given transformation,
-// loading any necessary templates based on the transformer's annotations and the provided configuration.
-func transformationContext(context *render.Context, cfg *Config, t *Transformation) (*render.Context, error) {
+// loading any necessary templates based on the transformer's annotations and the shaping context's template loader.
+func transformationContext(context *render.Context, ctx *contract.ShapingContext, t *Transformation) (*render.Context, error) {
 	names := t.Transformer.GetAnnotations().FindAll(contract.OptionTemplate).FlatArgs()
-	fmt.Println("Loading templates", names)
-	opts, err := template.LoadTemplates(cfg.Sources, cfg.Templates.Content, cfg.CacheDir, names, render.EmbededTemplates)
+	opts, err := ctx.TemplateLoader.Load(names)
 	if err != nil {
 		return context, err
 	}
@@ -107,7 +105,11 @@ func managerRender(
 
 // Render implements the Manager interface for GeneratorManager, orchestrating the rendering of transformations and generating
 // new output files based on the specified output package path.
-func (m *GeneratorManager) Render(ctx *contract.ShapingContext, pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error) {
+func (m *GeneratorManager) Render(
+	ctx *contract.ShapingContext,
+	pkgs []*model.Package,
+	transformations []Transformation,
+) ([]*baserender.Output, error) {
 	var (
 		scope = baserender.Scope{
 			"Mode": baserender.ModeGenerated,
@@ -137,7 +139,11 @@ func NewInplaceManager(cfg *Config, pkgPath, output string) *InplaceManager {
 
 // Render implements the Manager interface for InplaceManager, orchestrating the rendering of transformations and merging
 // the generated content into existing source files based on the specified output package path.
-func (m *InplaceManager) Render(ctx *contract.ShapingContext, pkgs []*model.Package, transformations []Transformation) ([]*baserender.Output, error) {
+func (m *InplaceManager) Render(
+	ctx *contract.ShapingContext,
+	pkgs []*model.Package,
+	transformations []Transformation,
+) ([]*baserender.Output, error) {
 	pkg, found := lo.Find(pkgs, func(p *model.Package) bool {
 		return p.Path == m.output
 	})
@@ -152,8 +158,6 @@ func (m *InplaceManager) Render(ctx *contract.ShapingContext, pkgs []*model.Pack
 	// Make sure the package's filesystem directory has been resolved before any
 	// downstream consumer (e.g. Merge -> findOrCreateOutputFile) needs it.
 	pkg.EnsureDir()
-
-	// fmt.Printf("Found package %q for output %q\n", pkg.Path, m.output)
 
 	outputs := make([]*baserender.Output, 0)
 
@@ -239,7 +243,6 @@ func runTransformations(
 ) (err error) {
 	for _, t := range transformations {
 		err = func(t Transformation) error {
-
 			if err := inflateCustomScope(t.Transformer, pkgs, scope); err != nil {
 				return err
 			}
@@ -272,15 +275,10 @@ func runTransformations(
 				ignores = render.NewIgnores(t.Transformer.GetAnnotations().FindAll(contract.OptionIgnore).Values())
 			}
 
-			ctxPtr, err := transformationContext(state.WithIgnores(ignores), cfg, &t)
+			ctxPtr, err := transformationContext(state.WithIgnores(ignores), ctx, &t)
 			if err != nil {
 				return fmt.Errorf("error building transformation context for transformer %q: %w", t.Transformer.GetName(), err)
 			}
-
-			fmt.Printf("  > Transformer[%s], Line: %d\n",
-				t.Transformer.GetName(),
-				t.Node.GetPosition().Line,
-			)
 
 			content, err := t.Transformer.Render(ctxPtr, t.Node.(*model.Type), scope, t.Transformer.Output(), opener)
 			if err != nil {

@@ -55,6 +55,7 @@ linters:
         - whyNoLint # Doesn't seem to work properly
         - ifElseChain
         - rangeValCopy
+        - hugeParam
       enabled-tags:
         - diagnostic
         - experimental

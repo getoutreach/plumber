@@ -8,6 +8,7 @@ package contract
 import (
 	"context"
 
+	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/query/model"
 )
 
@@ -117,10 +118,17 @@ type Reporter interface {
 	Notify(ReporterEvent)
 }
 
+// TemplateLoader resolves template names into render option functions.
+// This is implemented by template.TemplateCache.
+type TemplateLoader interface {
+	Load(names []string) ([]gen.RenderOptionsFunc, error)
+}
+
 // ShapingContext provides context for a transformation, including a Reporter for emitting events during the transformation process.
 type ShapingContext struct {
 	context.Context
-	Reporter Reporter
+	Reporter       Reporter
+	TemplateLoader TemplateLoader
 }
 
 func (ctx *ShapingContext) TransformerAdded(transformer Transformer) {
@@ -183,7 +191,7 @@ func (ctx *ShapingContext) RestoredOutput(filename string, err error) {
 	}
 }
 
-func (ctx *ShapingContext) QueryExecuted(query string, filename string) {
+func (ctx *ShapingContext) QueryExecuted(query, filename string) {
 	if ctx.Reporter != nil {
 		ctx.Reporter.Notify(ReporterEvent{
 			Kind:    EventQueryExecuted,
@@ -193,7 +201,7 @@ func (ctx *ShapingContext) QueryExecuted(query string, filename string) {
 	}
 }
 
-func (ctx *ShapingContext) QueryError(query string, filename string, err error) {
+func (ctx *ShapingContext) QueryError(query, filename string, err error) {
 	if ctx.Reporter != nil {
 		ctx.Reporter.Notify(ReporterEvent{
 			Kind:    EventQueryError,

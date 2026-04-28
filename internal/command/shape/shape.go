@@ -23,6 +23,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/expand"
+	shaperender "github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/command/shape/report/term"
 	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/internal/render"
@@ -36,11 +37,14 @@ func Run(cfg *Config, args []string) error {
 		return err
 	}
 
+	templateCache := template.NewTemplateCache(cfg.Sources, cfg.Templates.Content, cfg.CacheDir, shaperender.EmbededTemplates)
+
 	reporter := term.NewTerminalReporter()
 
 	ctx := &contract.ShapingContext{
-		Context:  context.Background(),
-		Reporter: reporter,
+		Context:        context.Background(),
+		Reporter:       reporter,
+		TemplateLoader: templateCache,
 	}
 
 	filenames, err := inspect.ScanFiles("./", args)
@@ -69,11 +73,6 @@ func Run(cfg *Config, args []string) error {
 	if err != nil {
 		return err
 	}
-
-	// // Expand transformation
-	// if err := expandTransformations(ctx, transformations); err != nil {
-	// 	return err
-	// }
 
 	outputs, err := renderTransformations(ctx, cfg, pkgs, transformations)
 	if err != nil {
@@ -253,7 +252,12 @@ func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation,
 
 // renderTransformations groups transformations by mode and output filename,
 // renders each group via the appropriate manager, and appends query outputs.
-func renderTransformations(ctx *contract.ShapingContext, cfg *Config, pkgs []*model.Package, transformations []Transformation) ([]*ManagerOutput, error) {
+func renderTransformations(
+	ctx *contract.ShapingContext,
+	cfg *Config,
+	pkgs []*model.Package,
+	transformations []Transformation,
+) ([]*ManagerOutput, error) {
 	byMode := lo.GroupBy(transformations, func(t Transformation) string {
 		return t.Transformer.Mode()
 	})
@@ -261,16 +265,12 @@ func renderTransformations(ctx *contract.ShapingContext, cfg *Config, pkgs []*mo
 	var outputs []*ManagerOutput
 
 	for mode, transformations := range byMode {
-		// fmt.Printf("Processing mode %q with %d transformations\n", mode, len(transformations))
-
 		byOutput := lo.GroupBy(transformations, func(t Transformation) string {
 			return t.Path.Filename
 		})
 
 		for filename, transformations := range byOutput {
 			manager := buildModeManager(cfg, mode, transformations[0].Path.Package, filename)
-
-			//fmt.Printf("Found %d transformations for output %q\n", len(transformations), filename)
 
 			output, err := manager.Render(ctx, pkgs, transformations)
 			if err != nil {

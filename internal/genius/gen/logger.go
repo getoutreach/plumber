@@ -63,6 +63,7 @@ func (l *Logger) GenerationReport(ctx *Context, filename string, err error) {
 			}
 		}
 		loggerArgs = l.instance.ArgsFromMap(args)
+
+		logger(filename, loggerArgs)
 	}
-	logger(filename, loggerArgs)
 }
