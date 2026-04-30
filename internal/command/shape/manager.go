@@ -89,11 +89,11 @@ func managerRender(
 
 	var contents []string
 
-	err := runTransformations(ctx, cfg, pkgs, context, gen.NewBufferFileOpener(), scope, transformations, func(content string) {
+	output, ok = runTransformations(ctx, cfg, pkgs, context, gen.NewBufferFileOpener(), scope, transformations, func(content string) {
 		contents = append(contents, content)
 	})
-	if err != nil {
-		return nil, fmt.Errorf("error during rendering: %w", err)
+	if !ok {
+		return nil, contract.TransformerRenderError
 	}
 
 	o, err := render.Finalize(context, scope, contents, output, opener)
@@ -172,11 +172,11 @@ func (m *InplaceManager) Render(
 
 			var content string
 
-			err := runTransformations(ctx, m.cfg, pkgs, context, opener, scope, []Transformation{t}, func(c string) {
+			_, ok := runTransformations(ctx, m.cfg, pkgs, context, opener, scope, []Transformation{t}, func(c string) {
 				content = c
 			})
-			if err != nil {
-				return fmt.Errorf("error during rendering: %w", err)
+			if !ok {
+				return nil
 			}
 
 			filename := path.Join(pkg.Path, "plumber_inplace_helper.go")
@@ -240,9 +240,10 @@ func runTransformations(
 	opener gen.MemoryFileOpener,
 	scope baserender.Scope,
 	transformations []Transformation, contentFunc func(string),
-) (err error) {
+) (output string, ok bool) {
+	ok = true
 	for _, t := range transformations {
-		err = func(t Transformation) error {
+		err := func(t Transformation) error {
 			if err := inflateCustomScope(t.Transformer, pkgs, scope); err != nil {
 				return err
 			}
@@ -289,10 +290,14 @@ func runTransformations(
 			return nil
 		}(t)
 		if err != nil {
+			ok = false
 			ctx.TransformerError(t.Transformer, err)
+			continue
 		}
+		// Output was expanded
+		output = t.Transformer.Output()
 	}
-	return nil
+	return output, ok
 }
 
 // dependsOnSatisfied evaluates every plumber:depends_on annotation on the transformer

@@ -57,11 +57,6 @@ func Run(cfg *Config, args []string) error {
 		return fmt.Errorf("failed to inspect files: %w", err)
 	}
 
-	// Single-type targeted mode: process only the specified type with the named macro.
-	if cfg.Target != nil {
-		return runTargeted(ctx, cfg, pkgs)
-	}
-
 	// Expand macros in all annotations before walking and building transformers.
 	// This allows macros to inject entry-point annotations like plumber:derive
 	// that create new transformers, which mixins cannot do.
@@ -84,6 +79,35 @@ func Run(cfg *Config, args []string) error {
 	}
 
 	return nil
+}
+
+// RunTarget is the entry point for the shape target subcommand, which processes a single specified type with a named macro, bypassing the full annotation scan.
+func RunTarget(cfg *Config, args []string) error {
+	if err := checkoutAndMergeIncludes(cfg); err != nil {
+		return err
+	}
+
+	templateCache := template.NewTemplateCache(cfg.Sources, cfg.Templates.Content, cfg.CacheDir, shaperender.EmbededTemplates)
+
+	reporter := term.NewTerminalReporter()
+
+	ctx := &contract.ShapingContext{
+		Context:        context.Background(),
+		Reporter:       reporter,
+		TemplateLoader: templateCache,
+	}
+
+	filenames, err := inspect.ScanFiles("./", args)
+	if err != nil {
+		return fmt.Errorf("failed to scan files: %w", err)
+	}
+
+	pkgs, err := inspect.Inspect(filenames, "./")
+	if err != nil {
+		return fmt.Errorf("failed to inspect files: %w", err)
+	}
+
+	return runTargeted(ctx, cfg, pkgs)
 }
 
 // runTargeted processes a single type with a named macro, bypassing the full annotation scan.
@@ -189,7 +213,7 @@ func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation,
 	var transformingNodes []model.Node
 
 	err := inspect.Walk(pkgs, inspect.WithAnnotations(
-		inspect.WithAnnotationName("plumber:shape", "plumber:derive"),
+		inspect.WithAnnotationName(contract.TransformationDerive, contract.TransformationShape, contract.TransformationRender),
 		func(node model.Node) error {
 			transformingNodes = append(transformingNodes, node)
 			return nil
@@ -438,13 +462,18 @@ func buildTransformers(cfg *Config, node model.Node) (transformers []Transformer
 	annotations := node.GetAnnotations()
 	for _, annotation := range annotations {
 		switch annotation.Name {
-		case "plumber:shape":
+		case contract.TransformationShape:
 			if err := changeTransformer(NewShaper(node.GetPosition(), annotation)); err != nil {
 				return nil, err
 			}
 			transformers = append(transformers, lastTransformer)
-		case "plumber:derive":
+		case contract.TransformationDerive:
 			if err := changeTransformer(NewDeriveTransformer(node.GetPosition(), annotation)); err != nil {
+				return nil, err
+			}
+			transformers = append(transformers, lastTransformer)
+		case contract.TransformationRender:
+			if err := changeTransformer(NewRenderTransformer(node.GetPosition(), annotation)); err != nil {
 				return nil, err
 			}
 			transformers = append(transformers, lastTransformer)

@@ -116,7 +116,7 @@ There are also **macro annotations** in the form `// @<name>` (see below).
 | Annotation | Key arg(s) | Effect |
 |---|---|---|
 | `plumber:name`         | `<Name>` | Override generated type name |
-| `plumber:output`       | `<file>` | Output path. Rendered as a Go `text/template` exposing `.Filename`, `.Name`, `.Ext`, and the `suffixed` function (e.g. `{{ suffixed "filter" }}`). |
+| `plumber:output`       | `<file>` | Output path. Rendered as a Go `text/template` exposing `.Filename`, `.Name`, `.Ext`, and the `suffixed` function (e.g. `{{ filename_suffixed "filter" }}`). |
 | `plumber:mode`         | `generated`\|`inplace` | Generation mode (default: `generated`) |
 | `plumber:template`     | `<name>` | Template to render |
 | `plumber:mixin`        | `<mixin-name>` | Expand a named mixin from config |
@@ -172,7 +172,7 @@ Example Go source:
 // plumber:derive
 // plumber:name WorkerFilter
 // plumber:mixin mixing.model.filtrable
-// plumber:output {{ suffixed "generated" }}
+// plumber:output {{ filename_suffixed "generated" }}
 type Worker struct { ... }
 ```
 
@@ -220,11 +220,11 @@ macros:
       name: "@derive"
       annotations:
         - { name: plumber:derive, args: ["MacroDerived"] }
-        - { name: plumber:output, args: ['{{ suffixed "generated" }}'] }
+        - { name: plumber:output, args: ['{{ filename_suffixed "generated" }}'] }
 ```
 
 At runtime, `expand.Macros()` in `expand.go` replaces the `@derive` annotation with
-`plumber:derive MacroDerived` + `plumber:output {{ suffixed "generated" }}` on the
+`plumber:derive MacroDerived` + `plumber:output {{ filename_suffixed "generated" }}` on the
 node's annotation list. The rest of the pipeline then processes them normally.
 
 #### Template expansion in macros and mixins

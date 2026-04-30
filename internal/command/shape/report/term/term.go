@@ -10,10 +10,13 @@ import (
 
 // TerminalReporter is a simple implementation of contract.Reporter that outputs events to the terminal.
 type TerminalReporter struct {
+	transformers map[contract.Transformer]struct{}
 }
 
 func NewTerminalReporter() *TerminalReporter {
-	return &TerminalReporter{}
+	return &TerminalReporter{
+		transformers: make(map[contract.Transformer]struct{}),
+	}
 }
 
 func PrintTransformer(t contract.Transformer) {
@@ -30,11 +33,21 @@ func PrintTransformer(t contract.Transformer) {
 func (r *TerminalReporter) Notify(event contract.ReporterEvent) {
 	switch event.Kind {
 	case contract.EventTransformerAdded:
+		if _, exists := r.transformers[event.Transformer]; exists {
+			return
+		}
+		r.transformers[event.Transformer] = struct{}{}
 		println("Transformer added:", event.Transformer.GetName())
 		PrintTransformer(event.Transformer)
 	case contract.EventTransformerSkipped:
 		println("Transformer skipped:", event.Transformer.GetName(), "-", event.Message)
 	case contract.EventTransformerError:
+		if _, exists := r.transformers[event.Transformer]; !exists {
+			r.Notify(contract.ReporterEvent{
+				Kind:        contract.EventTransformerAdded,
+				Transformer: event.Transformer,
+			})
+		}
 		var syntaxErr *contract.SyntaxError
 		if errors.As(event.Error, &syntaxErr) {
 			println("Transformer error in", event.Transformer.GetName(), ":")

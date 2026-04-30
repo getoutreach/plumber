@@ -28,6 +28,7 @@ type Config struct {
 	Macros     []config.MacroConfig         `yaml:"macros,omitempty"`
 	Mixins     []config.MixinConfig         `yaml:"mixins,omitempty"`
 	Type       config.TypeConfig            `yaml:"type,omitempty"`
+	Structures config.StructuresConfig      `yaml:"structures,omitempty"`
 	Target     *config.TargetConfig         `yaml:"-"`
 }
 

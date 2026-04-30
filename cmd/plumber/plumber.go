@@ -48,7 +48,13 @@ func main() {
 	log := logrus.New()
 
 	// <<Stencil::Block(init)>>
-
+	fc := &cli.StringFlag{
+		Name:        "config",
+		Aliases:     []string{"c"},
+		Usage:       "Path to plumber.yaml configuration file",
+		DefaultText: "plumber.yml",
+		Value:       "plumber.yml",
+	}
 	// <</Stencil::Block>>
 
 	app := cli.App{
@@ -82,31 +88,43 @@ func main() {
 		{
 			Name:   "shape",
 			Usage:  "Run shape command",
-			Action: shape.Run,
+			Action: shape.RunCommand("shape", shape.Run),
 			Flags: []cli.Flag{
-
-				&cli.StringFlag{
-					Name:        "config",
-					Aliases:     []string{"c"},
-					Usage:       "Path to plumber.yaml configuration file",
-					DefaultText: "plumber.yml",
-					Value:       "plumber.yml",
+				fc,
+			},
+			Subcommands: []*cli.Command{
+				{
+					Name: "target",
+					Flags: []cli.Flag{
+						fc,
+						&cli.StringFlag{
+							Name:     "type",
+							Usage:    "FQN of the target type (single-type mode, requires --macro)",
+							Required: true,
+						},
+						&cli.StringFlag{
+							Name:     "macro",
+							Usage:    "Macro name to apply in single-type mode (requires --type)",
+							Required: true,
+						},
+						&cli.StringSliceFlag{
+							Name:  "macro-arg",
+							Usage: "Positional arg for the macro (repeatable, requires --macro)",
+						},
+						&cli.StringSliceFlag{
+							Name:  "macro-named-arg",
+							Usage: "Named arg as key=value for the macro (repeatable, requires --macro)",
+						},
+					},
+					Action: shape.RunCommand("target", shape.RunTarget),
 				},
-				&cli.StringFlag{
-					Name:  "type",
-					Usage: "FQN of the target type (single-type mode, requires --macro)",
-				},
-				&cli.StringFlag{
-					Name:  "macro",
-					Usage: "Macro name to apply in single-type mode (requires --type)",
-				},
-				&cli.StringSliceFlag{
-					Name:  "macro-arg",
-					Usage: "Positional arg for the macro (repeatable, requires --macro)",
-				},
-				&cli.StringSliceFlag{
-					Name:  "macro-named-arg",
-					Usage: "Named arg as key=value for the macro (repeatable, requires --macro)",
+				{
+					Name:        "structure",
+					Description: "Initiate project structure",
+					Flags: []cli.Flag{
+						fc,
+					},
+					Action: shape.RunCommand("structure", shape.RunStructure),
 				},
 			},
 		},
@@ -115,12 +133,7 @@ func main() {
 			Usage:  "Run inspect command",
 			Action: inspect.Run,
 			Flags: []cli.Flag{
-
-				&cli.StringFlag{
-					Name:    "config",
-					Aliases: []string{"c"},
-					Usage:   "Path to plumber.yaml configuration file",
-				},
+				fc,
 				&cli.StringFlag{
 					Name:    "format",
 					Aliases: []string{"f"},

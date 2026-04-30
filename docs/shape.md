@@ -430,7 +430,7 @@ plumber.shape:
           - name: plumber:derive
             args: ["MacroDerived"]
           - name: plumber:output
-            args: ['{{ suffixed "generated" }}']
+            args: ['{{ filename_suffixed "generated" }}']
 
   # ---------- mixins ----------
   # Mixins are named bundles of modifier annotations that can be referenced
@@ -535,12 +535,12 @@ a `suffixed` helper:
 | `{{ .Filename }}`         | Full base filename of the source file, e.g. `model.go` |
 | `{{ .Name }}`             | Filename without extension, e.g. `model` |
 | `{{ .Ext }}`              | File extension including dot, e.g. `.go` |
-| `{{ suffixed "str" }}`    | `<.Name>_str<.Ext>`, e.g. `{{ suffixed "filter" }}` → `model_filter.go` |
+| `{{ filename_suffixed "str" }}`    | `<.Name>_str<.Ext>`, e.g. `{{ filename_suffixed "filter" }}` → `model_filter.go` |
 
 Examples:
 
 ```
-plumber:output {{ suffixed "generated" }}      # model.go → model_generated.go
+plumber:output {{ filename_suffixed "generated" }}      # model.go → model_generated.go
 plumber:output {{ .Name }}_filter{{ .Ext }}     # model.go → model_filter.go
 plumber:output {{ .Filename }}.bak              # model.go → model.go.bak
 plumber:output merged.go                        # literal — no template
@@ -574,7 +574,7 @@ mixins:
 // plumber:derive
 // plumber:name WorkerFilter
 // plumber:mixin mixing.model.filtrable
-// plumber:output {{ suffixed "generated" }}
+// plumber:output {{ filename_suffixed "generated" }}
 type Worker struct {
     // Name
     //
@@ -612,7 +612,7 @@ macros:
       name: "@derive"
       annotations:
         - { name: plumber:derive, args: ["MacroDerived"] }
-        - { name: plumber:output, args: ['{{ suffixed "generated" }}'] }
+        - { name: plumber:output, args: ['{{ filename_suffixed "generated" }}'] }
 ```
 
 ### Using a macro
@@ -626,7 +626,7 @@ type Worker struct {
 ```
 
 At runtime, `expandMacros()` replaces the `@derive` annotation with `plumber:derive
-MacroDerived` + `plumber:output {{ suffixed "generated" }}` on the node before any
+MacroDerived` + `plumber:output {{ filename_suffixed "generated" }}` on the node before any
 transformer building occurs. The result is a `generated` mode derive that produces
 `worker_generated.go` containing a `MacroDerived` struct.
 

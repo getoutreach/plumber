@@ -38,7 +38,7 @@ func TestOutput(t *testing.T) {
 			},
 			expected: "example_generated.go",
 			annotations: []model.Annotation{
-				model.NewAnnotation(contract.OptionOutput, []string{`{{ suffixed "generated" }}`}),
+				model.NewAnnotation(contract.OptionOutput, []string{`{{ filename_suffixed "generated" }}`}),
 			},
 		},
 		{

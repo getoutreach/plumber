@@ -18,46 +18,66 @@ import (
 )
 
 // Run executes the shape command
-func Run(c *cli.Context) error {
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Printf("Shape command panicked: %v\n", r)
-			debug.PrintStack()
-		}
-	}()
+func Run(c *cli.Context, shapeConfig *shape.Config) error {
 	args := c.Args().Slice()
-
-	configPath := c.String("config")
-
-	shapeConfig := shape.Config{}
-
-	if configPath != "" {
-		// Resolve absolute path for config file
-		absConfigPath, err := filepath.Abs(configPath)
-		if err != nil {
-			return fmt.Errorf("failed to resolve config path: %w", err)
-		}
-
-		// Parse and merge configuration (includes resolved automatically)
-		cfg, err := configs.Load(absConfigPath)
-		if err != nil {
-			return fmt.Errorf("failed to parse config: %w", err)
-		}
-
-		shapeConfig = cfg.Shape
-	}
-
-	// Parse single-type targeted mode flags
-	if err := parseTargetFlags(c, &shapeConfig); err != nil {
-		return err
-	}
-
-	err := shape.Run(&shapeConfig, args)
+	err := shape.Run(shapeConfig, args)
 	if err != nil {
 		return fmt.Errorf("failed to run shape command: %w", err)
 	}
 
 	return nil
+}
+
+// Run executes the shape command
+func RunStructure(c *cli.Context, shapeConfig *shape.Config) error {
+	return nil
+}
+
+func RunTarget(c *cli.Context, shapeConfig *shape.Config) error {
+	// Parse single-type targeted mode flags
+	if err := parseTargetFlags(c, shapeConfig); err != nil {
+		return err
+	}
+
+	args := c.Args().Slice()
+
+	err := shape.Run(shapeConfig, args)
+	if err != nil {
+		return fmt.Errorf("failed to run shape command: %w", err)
+	}
+	return nil
+}
+
+func RunCommand(name string, run func(*cli.Context, *shape.Config) error) func(c *cli.Context) error {
+	return func(c *cli.Context) error {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("Shape command panicked: %v\n", r)
+				debug.PrintStack()
+			}
+		}()
+
+		configPath := c.String("config")
+
+		shapeConfig := shape.Config{}
+
+		if configPath != "" {
+			// Resolve absolute path for config file
+			absConfigPath, err := filepath.Abs(configPath)
+			if err != nil {
+				return fmt.Errorf("failed to resolve config path: %w", err)
+			}
+
+			// Parse and merge configuration (includes resolved automatically)
+			cfg, err := configs.Load(absConfigPath)
+			if err != nil {
+				return fmt.Errorf("failed to parse config: %w", err)
+			}
+
+			shapeConfig = cfg.Shape
+		}
+		return run(c, &shapeConfig)
+	}
 }
 
 // parseTargetFlags reads --type, --macro, --macro-arg, --macro-named-arg flags
@@ -67,19 +87,6 @@ func parseTargetFlags(c *cli.Context, shapeConfig *shape.Config) error {
 	macro := c.String("macro")
 	macroArgs := c.StringSlice("macro-arg")
 	macroNamedArgs := c.StringSlice("macro-named-arg")
-
-	// Nothing to do if neither flag is set
-	if typeFQN == "" && macro == "" {
-		return nil
-	}
-
-	// Validate mutual requirements
-	if typeFQN != "" && macro == "" {
-		return fmt.Errorf("--macro is required when --type is specified")
-	}
-	if macro != "" && typeFQN == "" {
-		return fmt.Errorf("--type is required when --macro is specified")
-	}
 
 	// Parse named args from key=value format
 	namedArgs := make(map[string]string, len(macroNamedArgs))

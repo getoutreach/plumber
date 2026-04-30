@@ -47,7 +47,7 @@ type MutatorService interface {
 // Worker a named worker
 //
 // plumber:shape ForwardingCloser
-// plumber:output {{ suffixed "generated" }}
+// plumber:output {{ filename_suffixed "generated" }}
 // plumber:receiver c
 type Closer interface {
 	Close(ctx context.Context) (err error)
@@ -68,12 +68,12 @@ type Name string
 // plumber:derive
 // plumber:name DerivedWorker
 // plumber:template tmp1
-// plumber:output {{ suffixed "generated" }}
+// plumber:output {{ filename_suffixed "generated" }}
 //
 // plumber:derive
 // plumber:name WorkerFilter
 // plumber:mixin mixing.model.filtrable
-// plumber:output {{ suffixed "generated" }}
+// plumber:output {{ filename_suffixed "generated" }}
 //
 // plumber:derive
 // plumber:mode inplace

@@ -187,7 +187,7 @@ returned verbatim.
 | `{{ .Filename }}`         | Full base filename, e.g., `model.go` |
 | `{{ .Name }}`             | Filename without extension, e.g., `model` |
 | `{{ .Ext }}`              | Extension including dot, e.g., `.go` |
-| `{{ suffixed "str" }}`    | `<.Name>_str<.Ext>`, e.g., `{{ suffixed "filter" }}` -> `model_filter.go` |
+| `{{ filename_suffixed "str" }}`    | `<.Name>_str<.Ext>`, e.g., `{{ filename_suffixed "filter" }}` -> `model_filter.go` |
 
 ## Configuration (`plumber.shape.yaml`)
 
@@ -221,7 +221,7 @@ plumber.shape:
         name: "@derive"
         annotations:
           - { name: plumber:derive, args: ["MacroDerived"] }
-          - { name: plumber:output, args: ['{{ suffixed "generated" }}'] }
+          - { name: plumber:output, args: ['{{ filename_suffixed "generated" }}'] }
 
   mixins:
     - plumber.mixin:
@@ -354,7 +354,7 @@ Populates with `r.GetAlpha`, `r.GetBeta`, etc.
 ## Key rules for agents
 
 - **Do not edit outside `plumber::Block` fences** in generated files — changes will be lost.
-- **Use `{{ suffixed "..." }}` for output filenames** to avoid overwriting source files.
+- **Use `{{ filename_suffixed "..." }}` for output filenames** to avoid overwriting source files.
 - **Macros for entry-point injection**, mixins for modifier bundles — do not confuse them.
 - **Queries require explicit `var` with composite literal** — short declarations (`:=`) are not supported.
 - **Re-run shape after adding/modifying annotations** to regenerate output.

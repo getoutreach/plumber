@@ -19,7 +19,7 @@ plumber.shape:
         name: "@macro"
         annotations:
           - {name: plumber:derive, args: ["MacroDerived"]}
-          - {name: plumber:output, args: ['{{ suffixed "generated" }}']}
+          - {name: plumber:output, args: ['{{ filename_suffixed "generated" }}']}
   mixins:
     - plumber.mixin:
         name: mixing.model.filtrable

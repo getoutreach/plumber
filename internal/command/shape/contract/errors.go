@@ -4,7 +4,10 @@
 
 package contract
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // SyntaxError represents a syntax error encountered while parsing generated
 // content. It carries both the underlying parse error and the content that
@@ -31,3 +34,5 @@ func (e *SyntaxError) Unwrap() error {
 func (e *SyntaxError) String() string {
 	return fmt.Sprintf("syntax error: %s\n\ncontent:\n%s", e.Err, e.Content)
 }
+
+var TransformerRenderError = errors.New("error during transformer rendering")

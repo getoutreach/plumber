@@ -54,6 +54,17 @@ const (
 	// times; every dependency must resolve for the transformation to run.
 	// Usage: plumber:depends_on "pkg/path".TypeName
 	OptionDependsOn = "plumber:depends_on"
+
+	// TransformationDerive specifies a macro to derive a new type from the annotated node, allowing for custom type
+	// transformations and generation based on the original node's structure and annotations.
+	TransformationDerive = "plumber:derive"
+
+	// TransformationShape specifies that the annotated node should be processed by the shape command, enabling
+	// transformations based on the node's annotations and structure.
+	TransformationShape = "plumber:shape"
+
+	// TransformationRender specifies a template to render the annotated node, allowing for custom rendering of the node's code based on a specified template.
+	TransformationRender = "plumber:render"
 )
 
 // Transformer defines the interface for all transformers that can be applied to annotated nodes in the shape command.

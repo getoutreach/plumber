@@ -19,3 +19,57 @@ plumber.shape:
       - name: plumber.template
         content: |
           // template
+  structures:
+    - plumber.structure:
+        name: hexagonal.v1
+        path: internal/{{ .Module.NormalizedName }}
+        description: Hexagonal architecture structure
+        paths:
+          - name: domain.entity
+            description: Domain entities
+            path: domain/entity
+            template: hexagonal.v1/domain.entity
+
+          - name: domain.usecase
+            description: Domain use cases
+            path: domain/usecase
+            template: hexagonal.v1/domain.usecase
+
+          - name: domain.service
+            description: Domain services
+            path: domain/service
+            template: hexagonal.v1/domain.service
+
+          - name: port.inbound
+            description: Ports inbound
+            path: port/inbound
+            template: hexagonal.v1/port.inbound
+
+          - name: port.outbound
+            description: Ports outbound
+            path: port/outbound
+            template: hexagonal.v1/port.outbound
+
+          - name: adapter.inbound.http
+            description: HTTP adapter inbound
+            path: adapter/inbound/http
+            template: hexagonal.v1/adapter.inbound.http
+
+          - name: adapter.inbound.grpc
+            description: gRPC adapter inbound
+            path: adapter/inbound/grpc
+            template: hexagonal.v1/adapter.inbound.grpc
+
+          - name: adapter.inbound.graphql
+            description: GraphQL adapter inbound
+            path: adapter/inbound/graphql
+            template: hexagonal.v1/adapter.inbound.graphql
+
+          - name: adapter.outbound.pgsql
+            description: PostgreSQL adapter outbound
+            flavor: gojet
+            path: adapter/outbound/pgsql
+            template: hexagonal.v1/adapter.outbound.pgsql
+
+
+

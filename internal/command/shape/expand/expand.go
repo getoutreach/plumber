@@ -63,7 +63,7 @@ type sourcePackageData struct {
 //
 // In addition, the template environment registers a `suffixed` function that
 // produces "<.Name>_<suffix><.Ext>" — the equivalent of the legacy
-// `{suffix:<str>}` placeholder. Example: `{{ suffixed "filter" }}` evaluates
+// `{suffix:<str>}` placeholder. Example: `{{ filename_suffixed "filter" }}` evaluates
 // to `model_filter.go` when expanding output for `model.go`.
 type outputTemplateData struct {
 	Filename string
@@ -233,8 +233,8 @@ func expandTemplateStr(scope render.Scope, node model.Node, s string, data sourc
 		Option("missingkey=error").
 		Funcs(render.GenericFunctions()).
 		Funcs(map[string]any{
-			"output_suffixed": func(suffix string) string {
-				output := toOutputTemplateData(pos.Filename)
+			"filename_suffixed": func(suffix string) string {
+				output := toOutputTemplateData(path.Join(node.GetPackage().Dir, pos.Filename))
 				base := path.Join(output.Dir, output.Name)
 				return fmt.Sprintf("%s_%s%s", base, suffix, output.Ext)
 			},
