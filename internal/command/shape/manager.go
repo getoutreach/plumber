@@ -186,12 +186,6 @@ func (m *InplaceManager) Render(
 				return fmt.Errorf("error during finalization: %w", err)
 			}
 
-			if true {
-				fmt.Println("-----------------------")
-				fmt.Println(string(o.Content))
-				fmt.Println("-----------------------")
-			}
-
 			f, err := decorator.Parse(o.Content)
 			if err != nil {
 				return &contract.SyntaxError{
@@ -210,7 +204,6 @@ func (m *InplaceManager) Render(
 			// output per modified file so each is restored independently.
 			for _, existingFile := range mergedFiles {
 				filename = pkg.Package.Decorator.Filenames[existingFile]
-				fmt.Println(filename)
 				ctx.TransformerOutput(t.Transformer, filename)
 				outputs = append(outputs, &baserender.Output{
 					Filename: filename,
@@ -285,7 +278,6 @@ func runTransformations(
 			content, err := t.Transformer.Render(ctxPtr, t.Node.(*model.Type), scope, t.Transformer.Output(), opener)
 			if err != nil {
 				ctx.TransformerError(t.Transformer, t.Node, err)
-				fmt.Println("Error during rendering:", err)
 			}
 			contentFunc(content)
 			return nil
@@ -322,7 +314,6 @@ func dependsOnSatisfied(transformer Transformer, pkgs []*model.Package) (bool, e
 			return false, fmt.Errorf("failed to parse FQN %q for plumber:depends_on: %w", fqnStr, err)
 		}
 		if model.Packages(pkgs).TypeByFQN(fqn) == nil {
-			fmt.Println("FQN NOT AVAI", fqn.String())
 			return false, nil
 		}
 	}

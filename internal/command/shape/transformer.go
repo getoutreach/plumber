@@ -6,7 +6,6 @@
 package shape
 
 import (
-	"fmt"
 	"path"
 	"strings"
 
@@ -144,7 +143,6 @@ func (t *BasicTransformer) Validate(node model.Node) error {
 		if !strings.Contains(value, "{{") && !strings.HasPrefix(value, "/") {
 			value = strings.TrimPrefix(value, "./")
 			value = path.Join(node.GetPackage().Dir, value)
-			fmt.Println("!!!!!", value)
 			output.SetValue(value)
 		}
 	}

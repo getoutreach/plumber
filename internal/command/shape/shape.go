@@ -83,13 +83,8 @@ func Run(cfg *Config, args []string) error {
 		return err
 	}
 
-	outputs, err := renderTransformations(ctx, cfg, pkgs, transformations)
-	if err != nil {
+	if err := executeTransformations(ctx, cfg, pkgs, transformations); err != nil {
 		return err
-	}
-
-	if len(outputs) > 0 {
-		return restoreOutputs(ctx, outputs)
 	}
 
 	return nil
@@ -167,15 +162,8 @@ func runTargeted(ctx *contract.ShapingContext, cfg *Config, pkgs model.Packages)
 		})
 	}
 
-	// Render and restore
-	outputs, err := renderTransformations(ctx, cfg, pkgs, transformations)
-	if err != nil {
-		return err
-	}
-	if len(outputs) > 0 {
-		return restoreOutputs(ctx, outputs)
-	}
-	return nil
+	// Render and restore using the same interleaved pipeline as Run.
+	return executeTransformations(ctx, cfg, pkgs, transformations)
 }
 
 // resolveTargetType resolves the target type from the given FQN string.
@@ -290,7 +278,7 @@ func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation,
 }
 
 // renderTransformations groups transformations by mode and output filename,
-// renders each group via the appropriate manager, and appends query outputs.
+// and renders each group via the appropriate manager.
 func renderTransformations(
 	ctx *contract.ShapingContext,
 	cfg *Config,
@@ -309,7 +297,6 @@ func renderTransformations(
 		})
 
 		for filename, transformations := range byOutput {
-			fmt.Println(filename, "!!!!")
 			manager := buildModeManager(cfg, mode, transformations[0].Path.Package, filename)
 			if manager == nil {
 				return nil, fmt.Errorf("unsupported transformation mode: %q", mode)
@@ -329,23 +316,6 @@ func renderTransformations(
 				})
 			}
 		}
-	}
-
-	// Process plumber:query annotations on package-level variables.
-	queryOutputs, err := processQueries(ctx, pkgs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to process queries: %w", err)
-	}
-	for _, qo := range queryOutputs {
-		outputs = append(outputs, &ManagerOutput{
-			Output: &render.Output{
-				Filename: qo.Filename,
-				Dst: &render.DstOutput{
-					File:    qo.File,
-					Package: qo.Package.Package,
-				},
-			},
-		})
 	}
 
 	return outputs, nil
@@ -414,6 +384,86 @@ func restoreOutput(ctx *contract.ShapingContext, output *ManagerOutput, content 
 	// Write to file
 	if err := os.WriteFile(output.Output.Filename, buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("failed to write file %q: %w", output.Output.Filename, err)
+	}
+
+	return nil
+}
+
+// partitionByMode splits transformations into in-place and generated groups,
+// preserving the original collection order within each group.
+func partitionByMode(transformations []Transformation) (inplace, generated []Transformation) {
+	for _, t := range transformations {
+		if t.Transformer.Mode() == render.ModeInPlace {
+			inplace = append(inplace, t)
+		} else {
+			generated = append(generated, t)
+		}
+	}
+	return
+}
+
+// executeTransformations runs all transformations in dependency-safe order:
+// in-place transformations first (each rendered and restored individually so that
+// subsequent transformations see the on-disk changes), then generated
+// transformations (grouped by output file), and finally queries.
+func executeTransformations(
+	ctx *contract.ShapingContext,
+	cfg *Config,
+	pkgs []*model.Package,
+	transformations []Transformation,
+) error {
+	inplace, generated := partitionByMode(transformations)
+
+	// In-place transformations run first, one at a time, restoring after each
+	// so that later transformations can depend on the written output.
+	for _, t := range inplace {
+		outputs, err := renderTransformations(ctx, cfg, pkgs, []Transformation{t})
+		if err != nil {
+			return err
+		}
+		if len(outputs) > 0 {
+			if err := restoreOutputs(ctx, outputs); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Generated transformations grouped by output file, restoring after each group.
+	byOutput := lo.GroupBy(generated, func(t Transformation) string {
+		return t.Path.Filename
+	})
+	for _, batch := range byOutput {
+		outputs, err := renderTransformations(ctx, cfg, pkgs, batch)
+		if err != nil {
+			return err
+		}
+		if len(outputs) > 0 {
+			if err := restoreOutputs(ctx, outputs); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Process queries last — they read from the (now up-to-date) packages
+	// but do not feed back into other transformations.
+	queryOutputs, err := processQueries(ctx, pkgs)
+	if err != nil {
+		return fmt.Errorf("failed to process queries: %w", err)
+	}
+	if len(queryOutputs) > 0 {
+		var moList []*ManagerOutput
+		for _, qo := range queryOutputs {
+			moList = append(moList, &ManagerOutput{
+				Output: &render.Output{
+					Filename: qo.Filename,
+					Dst: &render.DstOutput{
+						File:    qo.File,
+						Package: qo.Package.Package,
+					},
+				},
+			})
+		}
+		return restoreOutputs(ctx, moList)
 	}
 
 	return nil

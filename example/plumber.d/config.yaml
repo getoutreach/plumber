@@ -14,6 +14,12 @@ plumber.shape:
                       fqn:"github.com/getoutreach/plumber/example/contract".OpenCloser
                   - rule: |
                       fqn:"github.com/getoutreach/plumber/example/contract".Name
+  matchers:
+    - plumber.matcher:
+        name: filtrable
+        matches:
+        - rule: |
+            annotation.has:is:filtrable
   macros:
     - plumber.macro:
         name: "@macro"
