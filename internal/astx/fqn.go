@@ -99,7 +99,8 @@ func (f *FQN) IsPackageLess() bool {
 }
 
 func IsStandardType(name string) bool {
-	return !strings.Contains(name, `/`)
+	names := strings.SplitN(name, "/", 2)
+	return !strings.Contains(names[0], `.`)
 }
 
 func IsPackageLess(name string) bool {

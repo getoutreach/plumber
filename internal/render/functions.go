@@ -112,8 +112,13 @@ func AnnotationValue(o any, name string) string {
 	return ""
 }
 
-func placeholder(name ...string) string {
-	return fmt.Sprintf("// <<plumber::Block(%s)>>\n// <</plumber::Block>>\n", strings.Join(name, "-"))
+func placeholder(scope Scope) func(name ...string) string {
+	return func(name ...string) string {
+		if scope["Mode"] == ModeInPlace {
+			return ""
+		}
+		return fmt.Sprintf("// <<plumber::Block(%s)>>\n// <</plumber::Block>>\n", strings.Join(name, "-"))
+	}
 }
 
 func fragmentStart(scope Scope) func(name ...string) string {
@@ -194,7 +199,7 @@ func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.Ren
 			})
 			return !ok, nil
 		},
-		"placeholder":    placeholder,
+		"placeholder":    placeholder(scope),
 		"fragment_start": fragmentStart(scope),
 		"fragment_end":   fragmentEnd(scope),
 		"module_include": moduleInclude(context),

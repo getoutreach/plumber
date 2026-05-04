@@ -375,6 +375,21 @@ func (m *Annotation) Value() string {
 	return ""
 }
 
+func (m *Annotation) SetValue(value string) {
+	if len(m.Args) > 0 {
+		m.Args[0] = value
+	} else {
+		m.Args = []string{value}
+	}
+}
+
+func (m *Annotation) ValueOr(defaultValue string) string {
+	if m == nil || len(m.Args) == 0 {
+		return defaultValue
+	}
+	return m.Value()
+}
+
 func (n *CommentGroup) GetAnnotations() Annotations {
 	return n.Annotations
 }

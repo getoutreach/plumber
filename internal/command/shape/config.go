@@ -21,15 +21,16 @@ type FileConfig struct {
 // Config holds specific configuration options for the shape command, such as working directory,
 // cache directory, template sources, mixins, and type wrappers.
 type Config struct {
-	WorkingDir string                       `yaml:"workingDir,omitempty"`
-	CacheDir   string                       `yaml:"cacheDir,omitempty"`
-	Sources    []*template.SourceConfig     `yaml:"sources,omitempty"`
-	Templates  template.TemplatesFileConfig `yaml:"templates,omitempty"`
-	Macros     []config.MacroConfig         `yaml:"macros,omitempty"`
-	Mixins     []config.MixinConfig         `yaml:"mixins,omitempty"`
-	Type       config.TypeConfig            `yaml:"type,omitempty"`
-	Structures config.StructuresConfig      `yaml:"structures,omitempty"`
-	Target     *config.TargetConfig         `yaml:"-"`
+	WorkingDir  string                       `yaml:"workingDir,omitempty"`
+	CacheDir    string                       `yaml:"cacheDir,omitempty"`
+	Sources     []*template.SourceConfig     `yaml:"sources,omitempty"`
+	Templates   template.TemplatesFileConfig `yaml:"templates,omitempty"`
+	Macros      []config.MacroConfig         `yaml:"macros,omitempty"`
+	Mixins      []config.MixinConfig         `yaml:"mixins,omitempty"`
+	Type        config.TypeConfig            `yaml:"type,omitempty"`
+	Structures  config.StructuresConfig      `yaml:"structures,omitempty"`
+	Target      *config.TargetConfig         `yaml:"-"`
+	Interactive bool                         `yaml:"-"`
 }
 
 func (c *FileConfig) Merge(includes ...*FileConfig) {

@@ -186,7 +186,7 @@ func (m *InplaceManager) Render(
 				return fmt.Errorf("error during finalization: %w", err)
 			}
 
-			if false {
+			if true {
 				fmt.Println("-----------------------")
 				fmt.Println(string(o.Content))
 				fmt.Println("-----------------------")
@@ -210,6 +210,7 @@ func (m *InplaceManager) Render(
 			// output per modified file so each is restored independently.
 			for _, existingFile := range mergedFiles {
 				filename = pkg.Package.Decorator.Filenames[existingFile]
+				fmt.Println(filename)
 				ctx.TransformerOutput(t.Transformer, filename)
 				outputs = append(outputs, &baserender.Output{
 					Filename: filename,
@@ -223,7 +224,7 @@ func (m *InplaceManager) Render(
 			return nil
 		}(t)
 		if err != nil {
-			ctx.TransformerError(t.Transformer, err)
+			ctx.TransformerError(t.Transformer, t.Node, err)
 		}
 	}
 	//
@@ -249,10 +250,10 @@ func runTransformations(
 			}
 
 			if err := t.Transformer.Expand(t.Node, scope); err != nil {
-				ctx.TransformerError(t.Transformer, err)
+				ctx.TransformerError(t.Transformer, t.Node, err)
 				return nil
 			}
-			ctx.TransformerAdded(t.Transformer)
+			ctx.TransformerAdded(t.Transformer, t.Node)
 
 			scope["Subject"] = view.Annotable{
 				Annotations: t.Transformer.GetAnnotations(),
@@ -283,7 +284,7 @@ func runTransformations(
 
 			content, err := t.Transformer.Render(ctxPtr, t.Node.(*model.Type), scope, t.Transformer.Output(), opener)
 			if err != nil {
-				ctx.TransformerError(t.Transformer, err)
+				ctx.TransformerError(t.Transformer, t.Node, err)
 				fmt.Println("Error during rendering:", err)
 			}
 			contentFunc(content)
@@ -291,7 +292,7 @@ func runTransformations(
 		}(t)
 		if err != nil {
 			ok = false
-			ctx.TransformerError(t.Transformer, err)
+			ctx.TransformerError(t.Transformer, t.Node, err)
 			continue
 		}
 		// Output was expanded

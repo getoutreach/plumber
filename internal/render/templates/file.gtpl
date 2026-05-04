@@ -16,8 +16,7 @@
         {{ range $i := $.Scope.Modules.Imports -}}
         {{ $i }}
         {{ end -}}
-        // <<plumber::Block(imports)>>
-        // <</plumber::Block>>
+        {{ placeholder "imports" -}}
         )
     {{end}}
 {{end}}

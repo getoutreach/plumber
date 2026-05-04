@@ -142,11 +142,12 @@ type ShapingContext struct {
 	TemplateLoader TemplateLoader
 }
 
-func (ctx *ShapingContext) TransformerAdded(transformer Transformer) {
+func (ctx *ShapingContext) TransformerAdded(transformer Transformer, node model.Node) {
 	if ctx.Reporter != nil {
 		ctx.Reporter.Notify(ReporterEvent{
 			Kind:        EventTransformerAdded,
 			Transformer: transformer,
+			Node:        node,
 		})
 	}
 }
@@ -162,11 +163,12 @@ func (ctx *ShapingContext) TransformerSkipped(transformer Transformer, node mode
 	}
 }
 
-func (ctx *ShapingContext) TransformerError(transformer Transformer, err error) {
+func (ctx *ShapingContext) TransformerError(transformer Transformer, node model.Node, err error) {
 	if ctx.Reporter != nil {
 		ctx.Reporter.Notify(ReporterEvent{
 			Kind:        EventTransformerError,
 			Transformer: transformer,
+			Node:        node,
 			Error:       err,
 		})
 	}

@@ -25,11 +25,24 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/expand"
 	shaperender "github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/command/shape/report/term"
+	"github.com/getoutreach/plumber/internal/command/shape/report/tui"
 	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
+
+// newReporter creates a reporter based on the interactive flag.
+// It returns the reporter and a wait function that should be deferred
+// to ensure proper cleanup (for the TUI reporter, this waits for the
+// bubbletea program to finish).
+func newReporter(interactive bool) (contract.Reporter, func()) {
+	if interactive {
+		r := tui.NewTUIReporter()
+		return r, r.Wait
+	}
+	return term.NewTerminalReporter(), func() {}
+}
 
 // Run is the main entry point for the shape command, orchestrating the entire transformation process.
 func Run(cfg *Config, args []string) error {
@@ -39,7 +52,8 @@ func Run(cfg *Config, args []string) error {
 
 	templateCache := template.NewTemplateCache(cfg.Sources, cfg.Templates.Content, cfg.CacheDir, shaperender.EmbededTemplates)
 
-	reporter := term.NewTerminalReporter()
+	reporter, wait := newReporter(cfg.Interactive)
+	defer wait()
 
 	ctx := &contract.ShapingContext{
 		Context:        context.Background(),
@@ -89,7 +103,8 @@ func RunTarget(cfg *Config, args []string) error {
 
 	templateCache := template.NewTemplateCache(cfg.Sources, cfg.Templates.Content, cfg.CacheDir, shaperender.EmbededTemplates)
 
-	reporter := term.NewTerminalReporter()
+	reporter, wait := newReporter(cfg.Interactive)
+	defer wait()
 
 	ctx := &contract.ShapingContext{
 		Context:        context.Background(),
@@ -294,7 +309,11 @@ func renderTransformations(
 		})
 
 		for filename, transformations := range byOutput {
+			fmt.Println(filename, "!!!!")
 			manager := buildModeManager(cfg, mode, transformations[0].Path.Package, filename)
+			if manager == nil {
+				return nil, fmt.Errorf("unsupported transformation mode: %q", mode)
+			}
 
 			output, err := manager.Render(ctx, pkgs, transformations)
 			if err != nil {
@@ -349,7 +368,7 @@ func restoreOutputs(ctx *contract.ShapingContext, output []*ManagerOutput) error
 	if len(filenames) > 0 {
 		parser, err := astx.NewParser(filenames, astx.WithReplacement(), astx.WithOverlay(overlay))
 		if err != nil {
-			return fmt.Errorf("failed to create parser for post-processing: %w", err)
+			return fmt.Errorf("failed to create parser for files %v, post-processing: %w", filenames, err)
 		}
 
 		for _, o := range output {
@@ -394,7 +413,7 @@ func restoreOutput(ctx *contract.ShapingContext, output *ManagerOutput, content 
 
 	// Write to file
 	if err := os.WriteFile(output.Output.Filename, buf.Bytes(), 0o600); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+		return fmt.Errorf("failed to write file %q: %w", output.Output.Filename, err)
 	}
 
 	return nil
@@ -403,11 +422,18 @@ func restoreOutput(ctx *contract.ShapingContext, output *ManagerOutput, content 
 // buildPath constructs the output path information for a transformation based on its mode, package path, original filename,
 // and desired output path.
 func buildPath(mode, pkgPath, filename, output string) Pathinfo {
-	baseDir := path.Dir(filename)
+	var (
+		baseDir        = path.Dir(filename)
+		pkg            = path.Join(pkgPath, path.Dir(output))
+		actualFilename = path.Join(baseDir, output)
+	)
 
-	actualFilename := path.Join(baseDir, output)
+	if path.IsAbs(output) {
+		actualFilename = output
+		baseDir = path.Dir(output)
 
-	pkg := path.Join(pkgPath, path.Dir(output))
+		pkg = pkgPath
+	}
 
 	if mode == render.ModeInPlace {
 		actualFilename = pkg

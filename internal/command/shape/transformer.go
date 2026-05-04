@@ -6,6 +6,10 @@
 package shape
 
 import (
+	"fmt"
+	"path"
+	"strings"
+
 	"github.com/dave/dst"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/expand"
@@ -124,6 +128,29 @@ func (t *BasicTransformer) Validate(node model.Node) error {
 			))
 		}
 	}
+
+	if t.Annotations.Find(contract.OptionOutput) == nil {
+		t.Annotations.Append(model.NewAnnotation(
+			contract.OptionOutput,
+			[]string{"generated.go"},
+		))
+	}
+	// Path
+	if output := t.Annotations.Find(contract.OptionOutput); output != nil {
+		value := output.Value()
+		if strings.HasPrefix(value, ".") {
+			output.SetValue("./generated.go")
+		}
+		if !strings.Contains(value, "{{") && !strings.HasPrefix(value, "/") {
+			value = strings.TrimPrefix(value, "./")
+			value = path.Join(node.GetPackage().Dir, value)
+			fmt.Println("!!!!!", value)
+			output.SetValue(value)
+		}
+	}
+
+	// path.Join(node.GetPackage().Dir
+
 	return nil
 }
 
@@ -132,11 +159,7 @@ func (t *BasicTransformer) GetAnnotations() model.Annotations {
 }
 
 func (t *BasicTransformer) Mode() string {
-	a := t.Annotations.Find(contract.OptionMode)
-	if a != nil {
-		return a.Value()
-	}
-	return defaultValues[contract.OptionMode]
+	return t.Annotations.Find(contract.OptionMode).ValueOr(defaultValues[contract.OptionMode])
 }
 
 // Output generates the output filename for the transformed code based on the transformer configuration and the

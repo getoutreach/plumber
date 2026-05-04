@@ -91,12 +91,22 @@ func main() {
 			Action: shape.RunCommand("shape", shape.Run),
 			Flags: []cli.Flag{
 				fc,
+				&cli.BoolFlag{
+					Name:    "interactive",
+					Aliases: []string{"i"},
+					Usage:   "Enable interactive TUI reporter",
+				},
 			},
 			Subcommands: []*cli.Command{
 				{
 					Name: "target",
 					Flags: []cli.Flag{
 						fc,
+						&cli.BoolFlag{
+							Name:    "interactive",
+							Aliases: []string{"i"},
+							Usage:   "Enable interactive TUI reporter",
+						},
 						&cli.StringFlag{
 							Name:     "type",
 							Usage:    "FQN of the target type (single-type mode, requires --macro)",

@@ -76,6 +76,9 @@ func RunCommand(name string, run func(*cli.Context, *shape.Config) error) func(c
 
 			shapeConfig = cfg.Shape
 		}
+
+		shapeConfig.Interactive = c.Bool("interactive")
+
 		return run(c, &shapeConfig)
 	}
 }
