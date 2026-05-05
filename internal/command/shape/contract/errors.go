@@ -35,4 +35,5 @@ func (e *SyntaxError) String() string {
 	return fmt.Sprintf("syntax error: %s\n\ncontent:\n%s", e.Err, e.Content)
 }
 
-var TransformerRenderError = errors.New("error during transformer rendering")
+// ErrTransformerRender is a sentinel error value indicating a failure during transformer rendering.
+var ErrTransformerRender = errors.New("error during transformer rendering")

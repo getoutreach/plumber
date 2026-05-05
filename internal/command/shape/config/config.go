@@ -42,6 +42,7 @@ type WrapperExpressionConfig struct {
 // PlumberWrapperExpressionConfig represents the configuration for a wrapper expression,
 type PlumberWrapperExpressionConfig struct {
 	Type    string            `yaml:"type"`
+	Matcher string            `yaml:"matcher,omitempty"`
 	Matches []MatchRuleConfig `yaml:"matches,omitempty"`
 }
 
@@ -85,4 +86,16 @@ type AnnotationConfig struct {
 	Name      string            `yaml:"name"`
 	Args      []string          `yaml:"args,omitempty"`
 	NamedArgs map[string]string `yaml:"namedArgs,omitempty"`
+}
+
+// MatcherConfig represents a named, reusable matcher defined at plumber.shape.matchers.
+type MatcherConfig struct {
+	PlumberMatcher *PlumberMatcherConfig `yaml:"plumber.matcher,omitempty"`
+}
+
+// PlumberMatcherConfig holds the name and match rules for a reusable matcher
+// that can be referenced by name from wrapper expressions.
+type PlumberMatcherConfig struct {
+	Name    string            `yaml:"name"`
+	Matches []MatchRuleConfig `yaml:"matches,omitempty"`
 }

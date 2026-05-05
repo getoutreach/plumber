@@ -1,3 +1,9 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines the terminal reporter for the shape command
+
+// Package term implements a simple terminal reporter for the shape command, which outputs transformation events and errors to the console.
+// It provides a straightforward way to track the progress of transformations without requiring an interactive UI.
 package term
 
 import (

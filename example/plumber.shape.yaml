@@ -70,6 +70,3 @@ plumber.shape:
             flavor: gojet
             path: adapter/outbound/pgsql
             template: hexagonal.v1/adapter.outbound.pgsql
-
-
-

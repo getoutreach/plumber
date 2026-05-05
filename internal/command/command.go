@@ -42,7 +42,7 @@ func ParseConfigs[T any](paths ...string) ([]*T, error) {
 			return nil, fmt.Errorf("failed to glob path %q: %w", path, err)
 		}
 		for _, match := range matches {
-			// TODO: use reporter fmt.Println("Loading", match)
+			// TODO(pavelsm): use reporter fmt.Println("Loading", match)
 			data, err := os.ReadFile(match)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read config file %q: %w", match, err)

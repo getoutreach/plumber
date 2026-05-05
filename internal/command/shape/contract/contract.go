@@ -18,8 +18,10 @@ const (
 	OptionTemplate = "plumber:template"
 	// OptionIgnore specifies a template to ignore, allowing for selective exclusion of templates during code generation.
 	OptionIgnore = "plumber:ignore"
-	// OptionContext specifies the context to pass to the template during code generation,
-	// enabling dynamic behavior based on the node's context.
+	// OptionContext specifies the context for the transformation. It supports two modes:
+	//   - Single type: plumber:context "pkg/path".TypeName — targets a single type by FQN.
+	//   - Package matcher: plumber:context pkg/path matcher=<name> — targets all types in the
+	//     package that match the named matcher's rules (kind, fqn, or annotation-based).
 	OptionContext = "plumber:context"
 	// OptionComment allows adding a comment to the generated code, which can be used for documentation or clarification purposes.
 	OptionComment = "plumber:comment"
@@ -63,7 +65,8 @@ const (
 	// transformations based on the node's annotations and structure.
 	TransformationShape = "plumber:shape"
 
-	// TransformationRender specifies a template to render the annotated node, allowing for custom rendering of the node's code based on a specified template.
+	// TransformationRender specifies a template to render the annotated node, allowing for custom rendering of the node's
+	// code based on a specified template.
 	TransformationRender = "plumber:render"
 )
 

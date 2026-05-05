@@ -1,7 +1,7 @@
 {{define "plumber/command/derive/struct/comment"}}{{end}}
 {{define "plumber/command/derive/field/comment"}}{{end}}
 {{define "plumber/command/derive/field/type" -}}
-{{ type_wrap $.Scope.Subject $.Scope.Field.Type.Spec }}
+{{ type_wrap $.Scope.Subject $.Scope.Field.Type.Spec $.Scope.Field }}
 {{end}}
 {{define "plumber/command/derive/field" -}}
 {{ template "plumber/command/derive/field/comment" $ -}}

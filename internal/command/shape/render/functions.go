@@ -44,14 +44,25 @@ func typesRendererWithWrapper(
 	currentPkgPath string,
 	register *render.ModuleRegister,
 	wrapper TypeWrapperProvider,
-) func(o any, spec model.TypeSpec) (string, error) {
+) func(o any, spec model.TypeSpec, subjects ...any) (string, error) {
 	c := render.TypesRenderer(currentPkgPath, register)
-	return func(o any, spec model.TypeSpec) (string, error) {
+	return func(o any, spec model.TypeSpec, subjects ...any) (string, error) {
 		if n, ok := o.(model.AnnotationProvider); ok {
 			wn := n.GetAnnotations().Find(contract.OptionFieldWrapper)
 			if wn != nil {
 				wrapperType := wn.Value()
-				wrapped, err := wrapper.WrapType(wrapperType, &spec)
+
+				// Use the first variadic subject for annotation-based matching,
+				// falling back to the primary object when none is provided.
+				var subject model.AnnotationProvider
+				if len(subjects) > 0 {
+					subject, _ = subjects[0].(model.AnnotationProvider)
+				}
+				if subject == nil {
+					subject = n
+				}
+
+				wrapped, err := wrapper.WrapType(wrapperType, &spec, subject)
 				if err != nil {
 					return "", fmt.Errorf("failed to wrap type with wrapper %q: %w", wrapperType, err)
 				}

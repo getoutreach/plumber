@@ -1,6 +1,7 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements TypeWrapper for wrapping Go type specs based on configured wrapper rules and FQN matching.
+// Description: This file implements TypeWrapper for wrapping Go type specs based on configured
+// wrapper rules, named matchers, and FQN/kind/annotation matching.
 
 package shape
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/command/shape/config"
+	"github.com/getoutreach/plumber/internal/command/shape/matcher"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
@@ -23,7 +25,7 @@ type TypeWrapper struct {
 	cfg *Config
 }
 
-func (w *TypeWrapper) WrapType(name string, t *model.TypeSpec) (*model.TypeSpec, error) {
+func (w *TypeWrapper) WrapType(name string, t *model.TypeSpec, subject model.AnnotationProvider) (*model.TypeSpec, error) {
 	if w.cfg == nil || w.cfg.Type.Wrappers == nil {
 		return nil, nil
 	}
@@ -38,17 +40,17 @@ func (w *TypeWrapper) WrapType(name string, t *model.TypeSpec) (*model.TypeSpec,
 	}
 
 	for _, expr := range wr.PlumberWrapper.Expressions {
-		if expr.PlumberWrapperExpression != nil {
-			matches := expr.PlumberWrapperExpression.Matches
-			for _, match := range matches {
-				rule := strings.TrimSpace(match.Rule)
-				switch {
-				case rule == fmt.Sprintf("kind:%s", t.Kind.String()):
-					return w.wrap(expr.PlumberWrapperExpression.Type, t)
-				case rule == fmt.Sprintf("fqn:%s", t.FQN):
-					return w.wrap(expr.PlumberWrapperExpression.Type, t)
-				}
-			}
+		if expr.PlumberWrapperExpression == nil {
+			continue
+		}
+
+		rules, err := matcher.ResolveRules(expr.PlumberWrapperExpression, w.cfg.Matchers)
+		if err != nil {
+			return nil, err
+		}
+
+		if matcher.MatchRules(rules, t, subject) {
+			return w.wrap(expr.PlumberWrapperExpression.Type, t)
 		}
 	}
 

@@ -23,6 +23,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/expand"
+	"github.com/getoutreach/plumber/internal/command/shape/matcher"
 	shaperender "github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/command/shape/report/term"
 	"github.com/getoutreach/plumber/internal/command/shape/report/tui"
@@ -36,9 +37,9 @@ import (
 // It returns the reporter and a wait function that should be deferred
 // to ensure proper cleanup (for the TUI reporter, this waits for the
 // bubbletea program to finish).
-func newReporter(interactive bool) (contract.Reporter, func()) {
+func newReporter(interactive bool) (reporter contract.Reporter, cleanup func()) {
 	if interactive {
-		r := tui.NewTUIReporter()
+		r := tui.NewReporter()
 		return r, r.Wait
 	}
 	return term.NewTerminalReporter(), func() {}
@@ -90,7 +91,8 @@ func Run(cfg *Config, args []string) error {
 	return nil
 }
 
-// RunTarget is the entry point for the shape target subcommand, which processes a single specified type with a named macro, bypassing the full annotation scan.
+// RunTarget is the entry point for the shape target subcommand, which processes a single specified type with a named macro,
+// bypassing the full annotation scan.
 func RunTarget(cfg *Config, args []string) error {
 	if err := checkoutAndMergeIncludes(cfg); err != nil {
 		return err
@@ -245,36 +247,94 @@ func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation,
 		appendTransformer(node, ts)
 	}
 
-	// for _, t := range transformations {
+	if err := collectCommentTransformations(cfg, pkgs, appendTransformer); err != nil {
+		return nil, fmt.Errorf("failed to collect comment transformations: %w", err)
+	}
 
-	// }
+	return transformations, nil
+}
 
-	// Process package-level comments for transformations.
+// collectCommentTransformations processes package-level comments for transformations.
+// It supports two modes for the plumber:context annotation:
+//   - Single type: plumber:context "pkg/path".TypeName — targets a single type by FQN.
+//   - Package matcher: plumber:context pkg/path matcher=<name> — targets all types in the
+//     package that match the named matcher's rules.
+func collectCommentTransformations(cfg *Config, pkgs model.Packages, appendTransformer func(node model.Node, ts []Transformer)) error {
 	for _, pkg := range pkgs {
 		for _, comment := range pkg.Comments {
 			m := comment.Annotations.Find(contract.OptionContext)
 			if m == nil {
 				continue
 			}
+
+			matcherName := m.NamedArgs["matcher"]
+
+			if matcherName != "" {
+				// Package + matcher mode: match all types in the target package.
+				if err := collectMatcherContextTransformations(cfg, pkgs, comment, m.Value(), matcherName, appendTransformer); err != nil {
+					return err
+				}
+				continue
+			}
+
+			// Single-FQN mode (existing behavior).
 			fqn, err := astx.ParseFQN(m.Value())
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse model FQN %q: %w", m.Value(), err)
+				return fmt.Errorf("failed to parse model FQN %q: %w", m.Value(), err)
 			}
 			t := pkgs.TypeByFQN(fqn)
 			if t == nil {
-				return nil, fmt.Errorf("model type %q not found in packages", fqn)
+				return fmt.Errorf("model type %q not found in packages", fqn)
 			}
 			ts, err := buildTransformers(cfg, comment.FilterAnnotations(func(a model.Annotation) bool {
 				return a.Name != contract.OptionContext
 			}))
 			if err != nil {
-				return nil, fmt.Errorf("failed to build transformers for node %q: %w", t.GetPosition(), err)
+				return fmt.Errorf("failed to build transformers for node %q: %w", t.GetPosition(), err)
 			}
 			appendTransformer(t, ts)
 		}
 	}
+	return nil
+}
 
-	return transformations, nil
+// collectMatcherContextTransformations finds all types in the given package that
+// match the named matcher's rules and builds transformations for each.
+func collectMatcherContextTransformations(
+	cfg *Config,
+	pkgs model.Packages,
+	comment *model.CommentGroup,
+	pkgPath string,
+	matcherName string,
+	appendTransformer func(node model.Node, ts []Transformer),
+) error {
+	targetPkg, found := lo.Find(pkgs, func(p *model.Package) bool {
+		return p.Path == pkgPath
+	})
+	if !found {
+		return fmt.Errorf("package %q not found in inspected packages", pkgPath)
+	}
+
+	m, ok := matcher.FindMatcher(cfg.Matchers, matcherName)
+	if !ok {
+		return fmt.Errorf("matcher %q not found in config", matcherName)
+	}
+
+	for _, t := range targetPkg.Types {
+		if !matcher.MatchRules(m.Matches, &t.Spec, t) {
+			continue
+		}
+
+		ts, err := buildTransformers(cfg, comment.FilterAnnotations(func(a model.Annotation) bool {
+			return a.Name != contract.OptionContext
+		}))
+		if err != nil {
+			return fmt.Errorf("failed to build transformers for matched type %q: %w", t.Name, err)
+		}
+		appendTransformer(t, ts)
+	}
+
+	return nil
 }
 
 // renderTransformations groups transformations by mode and output filename,

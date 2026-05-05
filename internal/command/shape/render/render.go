@@ -23,8 +23,10 @@ var (
 
 // TypeWrapperProvider is an interface that provides a method for wrapping a model.TypeSpec
 // with additional information or transformations during the rendering process.
+// The subject parameter carries annotations of the entity being wrapped (e.g. a struct field)
+// to support annotation-based match rules.
 type TypeWrapperProvider interface {
-	WrapType(name string, t *model.TypeSpec) (*model.TypeSpec, error)
+	WrapType(name string, t *model.TypeSpec, subject model.AnnotationProvider) (*model.TypeSpec, error)
 }
 
 // Template represents a renderable template with a name and associated rendering logic.

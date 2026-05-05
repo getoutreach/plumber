@@ -93,7 +93,7 @@ func managerRender(
 		contents = append(contents, content)
 	})
 	if !ok {
-		return nil, contract.TransformerRenderError
+		return nil, contract.ErrTransformerRender
 	}
 
 	o, err := render.Finalize(context, scope, contents, output, opener)

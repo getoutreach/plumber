@@ -27,6 +27,7 @@ type Config struct {
 	Templates   template.TemplatesFileConfig `yaml:"templates,omitempty"`
 	Macros      []config.MacroConfig         `yaml:"macros,omitempty"`
 	Mixins      []config.MixinConfig         `yaml:"mixins,omitempty"`
+	Matchers    []config.MatcherConfig       `yaml:"matchers,omitempty"`
 	Type        config.TypeConfig            `yaml:"type,omitempty"`
 	Structures  config.StructuresConfig      `yaml:"structures,omitempty"`
 	Target      *config.TargetConfig         `yaml:"-"`
@@ -39,11 +40,12 @@ func (c *FileConfig) Merge(includes ...*FileConfig) {
 	}
 }
 
-// MergeShape merges another Config into this one, appending sources, templates, mixins, and wrappers.
+// MergeShape merges another Config into this one, appending sources, templates, mixins, matchers, and wrappers.
 func (c *Config) MergeShape(other *Config) {
 	c.Sources = append(c.Sources, other.Sources...)
 	c.Templates.Content = append(c.Templates.Content, other.Templates.Content...)
 	c.Macros = append(c.Macros, other.Macros...)
 	c.Mixins = append(c.Mixins, other.Mixins...)
+	c.Matchers = append(c.Matchers, other.Matchers...)
 	c.Type.Wrappers = append(c.Type.Wrappers, other.Type.Wrappers...)
 }

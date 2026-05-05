@@ -27,7 +27,6 @@ import (
 // ---------------------------------------------------------------------------
 // Colors — all colors are explicitly declared here for easy customization.
 // ---------------------------------------------------------------------------
-
 var (
 	// ColorActive is the header background for the currently processing transformer.
 	ColorActive = lipgloss.Color("#27AE60")
@@ -65,10 +64,16 @@ const barGlyph = "▋"
 // status represents the lifecycle state of a transformer panel.
 type status int
 
+// The status of a transformer starts as active when the transformer is first
 const (
+	// statusActive indicates the transformer is currently processing. The header
 	statusActive status = iota
+	// statusSuccess indicates the transformer completed successfully.
 	statusSuccess
+	// statusError indicates the transformer encountered an error.
 	statusError
+	// statusSkipped indicates the transformer was skipped, either due to an explicit skip event or because it
+	// was never added in the first place.
 	statusSkipped
 )
 
@@ -537,27 +542,27 @@ func renderPanel(p *panel, termWidth int) string {
 // TUIReporter — implements contract.Reporter
 // ---------------------------------------------------------------------------
 
-// TUIReporter is a bubbletea-based reporter that renders transformer progress
+// Reporter is a bubbletea-based reporter that renders transformer progress
 // as a fullscreen panel with live log output. The bubbletea program runs in a
 // dedicated goroutine; reporter callbacks marshal events onto the program's
 // message queue so updates remain serialised inside the model's Update method.
-type TUIReporter struct {
+type Reporter struct {
 	program *tea.Program
 	model   *tuiModel
 	done    chan struct{}
 	once    sync.Once
 }
 
-// NewTUIReporter creates and starts a new TUI reporter. The program runs in
+// NewReporter creates and starts a new TUI reporter. The program runs in
 // inline mode (rather than the alternate screen buffer) so that the final
 // rendered panels remain visible in the terminal scrollback after the program
 // exits. The bubbletea program runs in a separate goroutine; call Wait()
 // after all transformations complete to flush the final frame and shut down
 // the renderer.
-func NewTUIReporter() *TUIReporter {
+func NewReporter() *Reporter {
 	m := newModel()
 	prog := tea.NewProgram(m)
-	r := &TUIReporter{
+	r := &Reporter{
 		program: prog,
 		model:   m,
 		done:    make(chan struct{}),
@@ -567,7 +572,10 @@ func NewTUIReporter() *TUIReporter {
 		// The returned model and error are not surfaced: terminating early
 		// (e.g. Ctrl+C) is treated the same as a normal shutdown so the caller
 		// can continue with its own cleanup.
-		_, _ = prog.Run()
+		_, err := prog.Run()
+		if err != nil {
+			fmt.Printf("TUI program exited with error: %v\n", err)
+		}
 	}()
 	return r
 }
@@ -575,7 +583,7 @@ func NewTUIReporter() *TUIReporter {
 // Notify sends a reporter event to the bubbletea program for rendering.
 // The call is non-blocking from the perspective of the caller: bubbletea
 // queues the message and processes it on its event loop.
-func (r *TUIReporter) Notify(event contract.ReporterEvent) {
+func (r *Reporter) Notify(event contract.ReporterEvent) {
 	if r == nil || r.program == nil {
 		return
 	}
@@ -585,7 +593,7 @@ func (r *TUIReporter) Notify(event contract.ReporterEvent) {
 // Wait signals that all transformations are complete and waits for the
 // bubbletea program to finish rendering and exit. It is safe to call Wait
 // multiple times; only the first call sends the quit signal.
-func (r *TUIReporter) Wait() {
+func (r *Reporter) Wait() {
 	if r == nil || r.program == nil {
 		return
 	}
