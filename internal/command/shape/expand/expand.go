@@ -137,8 +137,9 @@ func expandAnnotations(
 	for i := range annotations {
 		ann := annotations[i]
 		macro, ok := macroMap[ann.Name]
+		// let's not filter it out
+		expanded = append(expanded, ann)
 		if !ok {
-			expanded = append(expanded, ann)
 			continue
 		}
 

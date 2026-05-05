@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
@@ -308,6 +309,9 @@ func collectMatcherContextTransformations(
 	matcherName string,
 	appendTransformer func(node model.Node, ts []Transformer),
 ) error {
+	if strings.HasPrefix(pkgPath, "..") {
+		pkgPath = path.Clean(path.Join(comment.Package.Path, pkgPath))
+	}
 	targetPkg, found := lo.Find(pkgs, func(p *model.Package) bool {
 		return p.Path == pkgPath
 	})
@@ -614,6 +618,11 @@ func buildTransformers(cfg *Config, node model.Node) (transformers []Transformer
 			}
 			transformers = append(transformers, lastTransformer)
 		default:
+			if strings.HasPrefix(annotation.Name, "@") {
+				// skip macro annotations during transformer building —
+				// they are only for the expander to process, and should not be treated as transformation directives
+				continue
+			}
 			if lastTransformer == nil {
 				return nil, fmt.Errorf("unexpected annotation %q without a transformer", annotation.Name)
 			}
