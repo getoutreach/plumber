@@ -199,6 +199,10 @@ func (m *InplaceManager) Render(
 				return fmt.Errorf("failed to merge generated content for transformation %q: %w", t.Transformer.GetName(), err)
 			}
 
+			if len(mergedFiles) == 0 {
+				ctx.TransformerInfo(t.Transformer, "no elements found, nothing was merged in")
+			}
+
 			// A single transformation may touch multiple files (struct in one file,
 			// method in another, missing entity creating a new file, ...). Emit one
 			// output per modified file so each is restored independently.

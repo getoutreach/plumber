@@ -178,8 +178,12 @@ func (t *BasicTransformer) Expand(node model.Node, scope baserender.Scope) error
 	if output := t.Annotations.Find(contract.OptionOutput); output != nil {
 		value := output.Value()
 		if !strings.HasPrefix(value, "/") {
+			dir := path.Dir(t.Position.Filename)
+			if dir == "" {
+				dir = node.GetPackage().Dir
+			}
 			value = strings.TrimPrefix(value, "./")
-			value = path.Join(node.GetPackage().Dir, value)
+			value = path.Join(dir, value)
 			output.SetValue(path.Clean(value))
 		}
 	}
