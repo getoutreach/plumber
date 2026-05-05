@@ -70,12 +70,18 @@ const (
 	TransformationRender = "plumber:render"
 )
 
+// Packager defines an interface for retrieving the package information of a node,
+// which can be used in transformations to access package-level details during code generation.
+type Packager interface {
+	GetPackage() *model.Package
+}
+
 // Transformer defines the interface for all transformers that can be applied to annotated nodes in the shape command.
 type Transformer interface {
 	Annotable
 	Accepts(annotation string) bool
 	Add(annotation model.Annotation)
-	Validate(node model.Node) error
+	Validate(packager Packager) error
 	Output() string
 	GetName() string
 	Mode() string

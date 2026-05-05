@@ -71,10 +71,13 @@ func expandAnnotationValue(
 		Package: packageTemplateData(pkg),
 		Type:    n,
 		Name:    name,
-		Output:  toOutputTemplateData(output),
+		Output:  toOutputTemplateData(node.GetPosition().Filename),
 	}
 
+	impliedBy := ""
+
 	if ann.ImpliedBy != nil {
+		impliedBy = ann.ImpliedBy.Name
 		data.Source = &sourceAnnotationData{
 			Args:      ann.ImpliedBy.Args,
 			NamedArgs: ann.ImpliedBy.NamedArgs,
@@ -83,12 +86,12 @@ func expandAnnotationValue(
 
 	args, err := expandTemplateSlice(scope, node, ann.Args, data, ann.Name)
 	if err != nil {
-		return ann, fmt.Errorf("expanding implied annotation %q (from %q) args: %w", ann.Name, ann.ImpliedBy.Name, err)
+		return ann, fmt.Errorf("expanding implied annotation %q (from %q) args: %w", ann.Name, impliedBy, err)
 	}
 
 	namedArgs, err := expandTemplateMap(scope, node, ann.NamedArgs, data, ann.Name)
 	if err != nil {
-		return ann, fmt.Errorf("expanding implied annotation %q (from %q) namedArgs: %w", ann.Name, ann.ImpliedBy.Name, err)
+		return ann, fmt.Errorf("expanding implied annotation %q (from %q) namedArgs: %w", ann.Name, impliedBy, err)
 	}
 
 	ann.Args = args

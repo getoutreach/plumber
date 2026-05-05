@@ -42,7 +42,7 @@ type Transformer interface {
 	contract.Annotable
 	Accepts(annotation string) bool
 	Add(annotation model.Annotation)
-	Validate(node model.Node) error
+	Validate(packager contract.Packager) error
 	Output() string
 	GetName() string
 	Mode() string
@@ -118,7 +118,7 @@ func (t *BasicTransformer) GetName() string {
 
 // Validate checks if the transformer has the required annotations and options,
 // and adds default annotations if necessary.
-func (t *BasicTransformer) Validate(node model.Node) error {
+func (t *BasicTransformer) Validate(packager contract.Packager) error {
 	if t.Annotations.Find(contract.OptionName) == nil {
 		if len(t.Options.Args) > 0 {
 			t.Annotations.Append(model.NewAnnotation(
@@ -134,19 +134,6 @@ func (t *BasicTransformer) Validate(node model.Node) error {
 			[]string{"generated.go"},
 		))
 	}
-	// Path
-	if output := t.Annotations.Find(contract.OptionOutput); output != nil {
-		value := output.Value()
-		if strings.HasPrefix(value, ".") {
-			output.SetValue("./generated.go")
-		}
-		if !strings.Contains(value, "{{") && !strings.HasPrefix(value, "/") {
-			value = strings.TrimPrefix(value, "./")
-			value = path.Join(node.GetPackage().Dir, value)
-			output.SetValue(value)
-		}
-	}
-
 	// path.Join(node.GetPackage().Dir
 
 	return nil
@@ -184,5 +171,22 @@ func (t *BasicTransformer) Expand(node model.Node, scope baserender.Scope) error
 		return err
 	}
 	t.Annotations = annotations
+
+	// Path
+	if output := t.Annotations.Find(contract.OptionOutput); output != nil {
+		value := output.Value()
+		// if strings.HasPrefix(value, ".") {
+		// 	output.SetValue("./generated.go")
+		// }
+		if !strings.HasPrefix(value, "/") {
+			value = strings.TrimPrefix(value, "./")
+			if !strings.HasPrefix(value, node.GetPackage().Dir) {
+
+			}
+			value = path.Join(node.GetPackage().Dir, value)
+			output.SetValue(path.Clean(value))
+		}
+	}
+
 	return nil
 }

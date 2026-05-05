@@ -4,10 +4,15 @@ import (
 	"testing"
 
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	baserender "github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
+	"gotest.tools/v3/assert"
 )
 
 func TestOutput(t *testing.T) {
+
+	pkg := &model.Package{Dir: "pkg"}
+
 	tests := []struct {
 		name        string
 		position    model.Position
@@ -17,18 +22,18 @@ func TestOutput(t *testing.T) {
 		{
 			name: "simple output",
 			position: model.Position{
-				Filename: "file.go",
+				Filename: "pkg/file.go",
 			},
-			expected: "generated.go",
+			expected: "pkg/generated.go",
 		},
 		{
 			name: "output with template name and ext",
 			position: model.Position{
 				Filename: "example.go",
 			},
-			expected: "example_generated.go",
+			expected: "pkg/example_generated.go",
 			annotations: []model.Annotation{
-				model.NewAnnotation(contract.OptionOutput, []string{`{{ .Name }}_generated{{ .Ext }}`}),
+				model.NewAnnotation(contract.OptionOutput, []string{`{{ .Output.Name }}_generated{{ .Output.Ext }}`}),
 			},
 		},
 		{
@@ -36,7 +41,7 @@ func TestOutput(t *testing.T) {
 			position: model.Position{
 				Filename: "example.go",
 			},
-			expected: "example_generated.go",
+			expected: "pkg/example_generated.go",
 			annotations: []model.Annotation{
 				model.NewAnnotation(contract.OptionOutput, []string{`{{ filename_suffixed "generated" }}`}),
 			},
@@ -46,9 +51,9 @@ func TestOutput(t *testing.T) {
 			position: model.Position{
 				Filename: "example.go",
 			},
-			expected: "example.go.bak",
+			expected: "pkg/example.go.bak",
 			annotations: []model.Annotation{
-				model.NewAnnotation(contract.OptionOutput, []string{`{{ .Filename }}.bak`}),
+				model.NewAnnotation(contract.OptionOutput, []string{`{{ .Output.Filename }}.bak`}),
 			},
 		},
 		{
@@ -56,7 +61,7 @@ func TestOutput(t *testing.T) {
 			position: model.Position{
 				Filename: "example.go",
 			},
-			expected: "merged.go",
+			expected: "pkg/merged.go",
 			annotations: []model.Annotation{
 				model.NewAnnotation(contract.OptionMode, []string{"inplace"}),
 				model.NewAnnotation(contract.OptionOutput, []string{"merged.go"}),
@@ -67,7 +72,7 @@ func TestOutput(t *testing.T) {
 			position: model.Position{
 				Filename: "example.go",
 			},
-			expected: "generated.go",
+			expected: "pkg/generated.go",
 			annotations: []model.Annotation{
 				model.NewAnnotation(contract.OptionMode, []string{"inplace"}),
 			},
@@ -79,6 +84,14 @@ func TestOutput(t *testing.T) {
 				Position:    tt.position,
 				Annotations: tt.annotations,
 			}
+			transformer.Validate(pkg) // Ensure annotations are processed before generating output
+			err := transformer.Expand(&model.Type{
+				TypeNode: &model.TypeNode{
+					Package:  pkg,
+					Position: tt.position,
+				},
+			}, baserender.Scope{})
+			assert.NilError(t, err)
 			output := transformer.Output()
 			if output != tt.expected {
 				t.Errorf("expected %s, got %s", tt.expected, output)

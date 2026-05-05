@@ -239,6 +239,12 @@ func (p *Package) File(filename string) *dst.File {
 	return nil
 }
 
+// GetPackage returns the package associated with the TypeNode.
+// This method is part of the Node interface and allows access to the package information from any node in the AST.
+func (p *Package) GetPackage() *Package {
+	return p
+}
+
 // EnsureDir populates Dir when it is empty by inspecting the underlying decorator.Package.
 // The first available file path in GoFiles, CompiledGoFiles, or the syntax/Fset positions
 // is used to derive the absolute filesystem directory of the package. Returns the resulting

@@ -235,8 +235,8 @@ func expandTemplateStr(scope render.Scope, node model.Node, s string, data sourc
 		Funcs(map[string]any{
 			"filename_suffixed": func(suffix string) string {
 				output := toOutputTemplateData(path.Join(node.GetPackage().Dir, pos.Filename))
-				base := path.Join(output.Dir, output.Name)
-				return fmt.Sprintf("%s_%s%s", base, suffix, output.Ext)
+				// base := path.Join(output.Dir, output.Name)
+				return fmt.Sprintf("%s_%s%s", output.Name, suffix, output.Ext)
 			},
 		}).Parse(s)
 
