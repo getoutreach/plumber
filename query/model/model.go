@@ -291,9 +291,20 @@ func WithNamedArgs(namedArgs map[string]string) AnnotationOption {
 // WithImpliedBy returns an AnnotationOption that records the annotation that
 // caused this annotation to be created (e.g., the @macro or plumber:mixin
 // annotation it was expanded from). When implied is nil the option is a no-op.
-func WithImpliedBy(implied *Annotation) AnnotationOption {
+func WithImpliedBy(implied Annotation) AnnotationOption {
 	return func(a *Annotation) {
-		a.ImpliedBy = implied
+		a.ImpliedBy = &implied
+	}
+}
+
+// WithOptionalImpliedBy returns an AnnotationOption that records the annotation that
+// caused this annotation to be created (e.g., the @macro or plumber:mixin
+// annotation it was expanded from). When implied is nil the option is a no-op.
+func WithOptionalImpliedBy(implied *Annotation) AnnotationOption {
+	return func(a *Annotation) {
+		if implied != nil {
+			a.ImpliedBy = implied
+		}
 	}
 }
 

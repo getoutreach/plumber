@@ -150,7 +150,7 @@ func expandAnnotations(
 			a := model.NewAnnotation(
 				macroAnn.Name, macroAnn.Args,
 				model.WithNamedArgs(macroAnn.NamedArgs),
-				model.WithImpliedBy(&trigger),
+				model.WithImpliedBy(trigger),
 			)
 			expanded = append(expanded, a)
 		}
@@ -235,7 +235,6 @@ func expandTemplateStr(scope render.Scope, node model.Node, s string, data sourc
 		Funcs(map[string]any{
 			"filename_suffixed": func(suffix string) string {
 				output := toOutputTemplateData(path.Join(node.GetPackage().Dir, pos.Filename))
-				// base := path.Join(output.Dir, output.Name)
 				return fmt.Sprintf("%s_%s%s", output.Name, suffix, output.Ext)
 			},
 		}).Parse(s)

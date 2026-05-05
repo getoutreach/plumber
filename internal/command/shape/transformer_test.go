@@ -10,7 +10,6 @@ import (
 )
 
 func TestOutput(t *testing.T) {
-
 	pkg := &model.Package{Dir: "pkg"}
 
 	tests := []struct {

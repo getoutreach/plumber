@@ -17,7 +17,7 @@ func TestMacro(t *testing.T) {
 						PlumberMacro: &config.PlumberMacroConfig{
 							Name: "@derive",
 							Annotations: []config.AnnotationConfig{
-								{Name: "plumber:derive", Args: []string{"{name}Macro"}},
+								{Name: "plumber:derive", Args: []string{"{{ .Type.Name }}Macro"}},
 								{Name: "plumber:output", Args: []string{"generated.go"}},
 							},
 						},

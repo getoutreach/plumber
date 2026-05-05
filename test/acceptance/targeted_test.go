@@ -11,7 +11,7 @@ import (
 func TestShapeTargeted(t *testing.T) {
 	err := withFixture(
 		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.Config{
+			err := shape.RunTarget(&shape.Config{
 				Macros: []config.MacroConfig{
 					{
 						PlumberMacro: &config.PlumberMacroConfig{
@@ -41,7 +41,7 @@ func TestShapeTargeted(t *testing.T) {
 func TestShapeTargetedMacroNotFound(t *testing.T) {
 	err := withFixture(
 		func(_ FixtureContext) error {
-			return shape.Run(&shape.Config{
+			return shape.RunTarget(&shape.Config{
 				Target: &config.TargetConfig{
 					TypeFQN: "Worker",
 					Macro:   "@nonexistent",
@@ -57,7 +57,7 @@ func TestShapeTargetedMacroNotFound(t *testing.T) {
 func TestShapeTargetedTypeNotFound(t *testing.T) {
 	err := withFixture(
 		func(_ FixtureContext) error {
-			return shape.Run(&shape.Config{
+			return shape.RunTarget(&shape.Config{
 				Macros: []config.MacroConfig{
 					{
 						PlumberMacro: &config.PlumberMacroConfig{

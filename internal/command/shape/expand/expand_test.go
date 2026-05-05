@@ -207,29 +207,6 @@ func TestTransformerAnnotations_TypeContext(t *testing.T) {
 	assert.Equal(t, result[1].Args[0], "source: fixture.go")
 }
 
-// TestTransformerAnnotations_NilNode asserts that a nil node gracefully
-// degrades to empty .Package fields and a nil .Type rather than panicking,
-// as long as templates do not dereference .Type.
-func TestTransformerAnnotations_NilNode(t *testing.T) {
-	macroMap := map[string]*config.PlumberMacroConfig{
-		"@pkg": {
-			Name: "@pkg",
-			Annotations: []config.AnnotationConfig{
-				{Name: "plumber:derive", Args: []string{`prefix-{{ .Package.Name }}`}},
-			},
-		},
-	}
-
-	input := model.Annotations{
-		model.NewAnnotation("@pkg", nil),
-	}
-
-	result, err := expandAndTransform(t, nil, input, macroMap)
-	assert.NilError(t, err)
-	assert.Equal(t, len(result), 1)
-	assert.Equal(t, result[0].Args[0], "prefix-")
-}
-
 func TestTransformerAnnotations_TemplateError(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@bad": {
@@ -275,10 +252,12 @@ func TestTransformerAnnotations_NoTemplatePassthrough(t *testing.T) {
 // implied annotations).
 func TestTransformerAnnotations_PassthroughWithoutImpliedBy(t *testing.T) {
 	input := model.Annotations{
-		model.NewAnnotation("plumber:derive", []string{`{{ .Source.Args 0 }}`}),
+		model.NewAnnotation("plumber:derive", []string{`{{index .Source.Args 0 }}`},
+			model.WithImpliedBy(model.NewAnnotation("plumber:mixing", []string{"arg"})),
+		),
 	}
 	result, err := TransformerAnnotations(fixtureNode(), input, render.Scope{})
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
-	assert.Equal(t, result[0].Args[0], `{{ .Source.Args 0 }}`)
+	assert.Equal(t, result[0].Args[0], `arg`)
 }

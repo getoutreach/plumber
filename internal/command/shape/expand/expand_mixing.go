@@ -33,7 +33,7 @@ func Mixin(annotation model.Annotation, lastTransformer contract.Transformer, mi
 		a := model.NewAnnotation(
 			mixinAnnotation.Name, mixinAnnotation.Args,
 			model.WithNamedArgs(mixinAnnotation.NamedArgs),
-			model.WithImpliedBy(&trigger),
+			model.WithImpliedBy(trigger),
 		)
 		lastTransformer.Add(a)
 	}

@@ -124,6 +124,8 @@ func (t *BasicTransformer) Validate(packager contract.Packager) error {
 			t.Annotations.Append(model.NewAnnotation(
 				contract.OptionName,
 				t.Options.Args,
+				model.WithNamedArgs(t.Options.NamedArgs),
+				model.WithOptionalImpliedBy(t.Options.ImpliedBy),
 			))
 		}
 	}
@@ -175,14 +177,8 @@ func (t *BasicTransformer) Expand(node model.Node, scope baserender.Scope) error
 	// Path
 	if output := t.Annotations.Find(contract.OptionOutput); output != nil {
 		value := output.Value()
-		// if strings.HasPrefix(value, ".") {
-		// 	output.SetValue("./generated.go")
-		// }
 		if !strings.HasPrefix(value, "/") {
 			value = strings.TrimPrefix(value, "./")
-			if !strings.HasPrefix(value, node.GetPackage().Dir) {
-
-			}
 			value = path.Join(node.GetPackage().Dir, value)
 			output.SetValue(path.Clean(value))
 		}
