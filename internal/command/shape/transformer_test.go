@@ -80,11 +80,15 @@ func TestOutput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			transformer := &BasicTransformer{
+				Package:     pkg,
 				Position:    tt.position,
 				Annotations: tt.annotations,
 			}
 			transformer.Validate(pkg) // Ensure annotations are processed before generating output
-			err := transformer.Expand(&model.Type{
+			err := transformer.Expand(&contract.ShapingContext{
+				RepoModule: contract.ModuleInfo{},
+				Module:     contract.ModuleInfo{},
+			}, []*model.Package{pkg}, &model.Type{
 				TypeNode: &model.TypeNode{
 					Package:  pkg,
 					Position: tt.position,

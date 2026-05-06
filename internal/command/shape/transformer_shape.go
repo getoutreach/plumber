@@ -7,6 +7,7 @@ package shape
 import (
 	"fmt"
 
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	baserender "github.com/getoutreach/plumber/internal/render"
@@ -20,10 +21,10 @@ type Shaper struct {
 }
 
 // NewShaper creates a new Shaper transformer with the given position and annotation.
-func NewShaper(pos model.Position, a model.Annotation) *Shaper {
+func NewShaper(n contract.Node, a model.Annotation) *Shaper {
 	return &Shaper{
 		BasicTransformer: BasicTransformer{
-			Position:       pos,
+			Position:       n.GetPosition(),
 			Name:           "shape",
 			AllowedOptions: defaultOptions,
 			Options:        a,

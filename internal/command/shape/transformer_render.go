@@ -7,6 +7,7 @@ package shape
 import (
 	"fmt"
 
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	baserender "github.com/getoutreach/plumber/internal/render"
@@ -19,10 +20,10 @@ type RenderTransformer struct {
 }
 
 // NewRenderTransformer creates a new RenderTransformer with the given position and annotation.
-func NewRenderTransformer(pos model.Position, a model.Annotation) *RenderTransformer {
+func NewRenderTransformer(n contract.Node, a model.Annotation) *RenderTransformer {
 	return &RenderTransformer{
 		BasicTransformer: BasicTransformer{
-			Position:       pos,
+			Position:       n.GetPosition(),
 			Name:           "derive",
 			AllowedOptions: defaultOptions,
 			Options:        a,

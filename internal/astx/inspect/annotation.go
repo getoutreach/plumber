@@ -12,6 +12,70 @@ import (
 	"github.com/getoutreach/plumber/query/model"
 )
 
+// tokenizeAnnotationLine splits an annotation line into tokens, respecting
+// quoted segments (", ', `). Quoted content is not split on whitespace.
+// For example: `foo "bar baz" qux` → ["foo", "\"bar baz\"", "qux"]
+func tokenizeAnnotationLine(line string) []string {
+	var tokens []string
+	i := 0
+	for i < len(line) {
+		// Skip whitespace.
+		for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
+			i++
+		}
+		if i >= len(line) {
+			break
+		}
+		// Read one token.
+		var token strings.Builder
+		for i < len(line) && line[i] != ' ' && line[i] != '\t' {
+			ch := line[i]
+			if ch == '"' || ch == '\'' || ch == '`' {
+				// Read quoted segment including the delimiters.
+				quote := ch
+				token.WriteByte(ch)
+				i++
+				for i < len(line) && line[i] != quote {
+					token.WriteByte(line[i])
+					i++
+				}
+				if i < len(line) {
+					token.WriteByte(line[i]) // closing quote
+					i++
+				}
+			} else {
+				token.WriteByte(ch)
+				i++
+			}
+		}
+		if token.Len() > 0 {
+			tokens = append(tokens, token.String())
+		}
+	}
+	return tokens
+}
+
+// unquote strips matching outer quotes (", ', `) from a string if it is fully
+// wrapped in them. Strings with quotes only partially wrapping (e.g. "X".value)
+// are returned unchanged.
+func unquote(s string) string {
+	if len(s) < 2 {
+		return s
+	}
+	first := s[0]
+	if (first == '"' || first == '\'' || first == '`') && s[len(s)-1] == first {
+		// Verify the closing quote is truly the end — no unmatched inner quotes
+		// of the same kind. We check that removing the outer delimiters doesn't
+		// leave another occurrence of the quote char which would mean the first
+		// quote wasn't wrapping the entire token.
+		inner := s[1 : len(s)-1]
+		if !strings.ContainsRune(inner, rune(first)) {
+			return inner
+		}
+	}
+	return s
+}
+
 func ParseAnnotations(doc string) []model.Annotation {
 	var annotations []model.Annotation
 
@@ -38,7 +102,8 @@ func ParseAnnotations(doc string) []model.Annotation {
 		// Skip paragraph if any line doesn't look like an annotation.
 		allAnnotations := true
 		for _, line := range para {
-			if !isAnnotationToken(strings.Fields(line)[0]) {
+			tokens := tokenizeAnnotationLine(line)
+			if len(tokens) == 0 || !isAnnotationToken(tokens[0]) {
 				allAnnotations = false
 				break
 			}
@@ -47,17 +112,18 @@ func ParseAnnotations(doc string) []model.Annotation {
 			continue
 		}
 		for _, line := range para {
-			tokens := strings.Fields(line)
+			tokens := tokenizeAnnotationLine(line)
 			ann := model.Annotation{
 				Name:      tokens[0],
 				NamedArgs: make(map[string]string),
 			}
 			for _, token := range tokens[1:] {
-				if strings.Contains(token, "=") {
-					parts := strings.SplitN(token, "=", 2)
-					ann.NamedArgs[parts[0]] = parts[1]
+				if eqIdx := strings.Index(token, "="); eqIdx > 0 {
+					key := token[:eqIdx]
+					value := unquote(token[eqIdx+1:])
+					ann.NamedArgs[key] = value
 				} else {
-					ann.Args = append(ann.Args, token)
+					ann.Args = append(ann.Args, unquote(token))
 				}
 			}
 			annotations = append(annotations, ann)

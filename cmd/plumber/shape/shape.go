@@ -6,21 +6,32 @@
 package shape
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
 
+	"github.com/getoutreach/plumber/internal/command"
 	configs "github.com/getoutreach/plumber/internal/command/config"
 	"github.com/getoutreach/plumber/internal/command/shape"
 	"github.com/getoutreach/plumber/internal/command/shape/config"
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	shaperender "github.com/getoutreach/plumber/internal/command/shape/render"
+	"github.com/getoutreach/plumber/internal/command/shape/report/term"
+	"github.com/getoutreach/plumber/internal/command/shape/report/tui"
+	"github.com/getoutreach/plumber/internal/command/shape/structure"
+	"github.com/getoutreach/plumber/internal/command/template"
+	"github.com/samber/lo"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/mod/modfile"
 )
 
 // Run executes the shape command
-func Run(c *cli.Context, shapeConfig *shape.Config) error {
+func Run(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shape.Config) error {
 	args := c.Args().Slice()
-	err := shape.Run(shapeConfig, args)
+	err := shape.Run(ctx, shapeConfig, args)
 	if err != nil {
 		return fmt.Errorf("failed to run shape command: %w", err)
 	}
@@ -29,11 +40,11 @@ func Run(c *cli.Context, shapeConfig *shape.Config) error {
 }
 
 // Run executes the shape command
-func RunStructure(c *cli.Context, shapeConfig *shape.Config) error {
+func RunStructure(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shape.Config) error {
 	return nil
 }
 
-func RunTarget(c *cli.Context, shapeConfig *shape.Config) error {
+func RunTarget(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shape.Config) error {
 	// Parse single-type targeted mode flags
 	if err := parseTargetFlags(c, shapeConfig); err != nil {
 		return err
@@ -41,14 +52,14 @@ func RunTarget(c *cli.Context, shapeConfig *shape.Config) error {
 
 	args := c.Args().Slice()
 
-	err := shape.Run(shapeConfig, args)
+	err := shape.RunTarget(ctx, shapeConfig, args)
 	if err != nil {
 		return fmt.Errorf("failed to run shape command: %w", err)
 	}
 	return nil
 }
 
-func RunCommand(name string, run func(*cli.Context, *shape.Config) error) func(c *cli.Context) error {
+func RunCommand(name string, run func(*cli.Context, *contract.ShapingContext, *shape.Config) error) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
 		defer func() {
 			if r := recover(); r != nil {
@@ -79,8 +90,90 @@ func RunCommand(name string, run func(*cli.Context, *shape.Config) error) func(c
 
 		shapeConfig.Interactive = c.Bool("interactive")
 
-		return run(c, &shapeConfig)
+		if err := checkoutAndMergeIncludes(&shapeConfig); err != nil {
+			return fmt.Errorf("failed to checkout and merge includes: %w", err)
+		}
+
+		ctx, wait, err := prepareContext(&shapeConfig)
+		if err != nil {
+			return fmt.Errorf("failed to prepare context: %w", err)
+		}
+		defer wait()
+
+		return run(c, ctx, &shapeConfig)
 	}
+}
+
+func prepareContext(cfg *shape.Config) (shapingContext *contract.ShapingContext, cleanup func(), err error) {
+	templateCache := template.NewTemplateCache(cfg.Sources, cfg.Templates.Content, cfg.CacheDir, shaperender.EmbededTemplates)
+	reporter, wait := newReporter(cfg.Interactive)
+
+	baseDir := "./"
+	repoModule, err := loadRepoModuleInfo()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load repo module info: %w", err)
+	}
+	module, err := loadModuleInfo(repoModule, baseDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load module info: %w", err)
+	}
+
+	structureResolver, err := structure.NewStructureResolver(cfg.Structure, repoModule, module)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create structure resolver: %w", err)
+	}
+
+	ctx := contract.NewShapingContext(
+		context.Background(),
+		reporter,
+		templateCache,
+		structureResolver,
+	)
+	ctx.BaseDir = baseDir
+	ctx.RepoModule = repoModule
+	ctx.Module = module
+	return ctx, wait, err
+}
+
+// newReporter creates a reporter based on the interactive flag.
+// It returns the reporter and a wait function that should be deferred
+// to ensure proper cleanup (for the TUI reporter, this waits for the
+// bubbletea program to finish).
+func newReporter(interactive bool) (reporter contract.Reporter, cleanup func()) {
+	if interactive {
+		r := tui.NewReporter()
+		return r, r.Wait
+	}
+	return term.NewTerminalReporter(), func() {}
+}
+
+// checkoutAndMergeIncludes checks out template sources from git and merges
+// any config files found via git source includes into the shape config.
+func checkoutAndMergeIncludes(cfg *shape.Config) error {
+	includePaths, err := template.Checkout(cfg.Sources, cfg.CacheDir)
+	if err != nil {
+		return fmt.Errorf("failed to checkout templates: %w", err)
+	}
+
+	for _, p := range includePaths {
+		inc, err := command.ParseConfig[shape.FileConfig](p)
+		if err != nil {
+			return fmt.Errorf("failed to parse git include config %q: %w", p, err)
+		}
+		cfg.MergeShape(&inc.Shape)
+	}
+
+	if cfg.StructureName != "" {
+		s, ok := lo.Find(cfg.Structures, func(s *config.StructureConfig) bool {
+			return s.Structure.Name == cfg.StructureName
+		})
+		if !ok {
+			return fmt.Errorf("structure %q not found in config", cfg.StructureName)
+		}
+		cfg.Structure = &s.Structure
+	}
+
+	return nil
 }
 
 // parseTargetFlags reads --type, --macro, --macro-arg, --macro-named-arg flags
@@ -109,4 +202,90 @@ func parseTargetFlags(c *cli.Context, shapeConfig *shape.Config) error {
 	}
 
 	return nil
+}
+
+// loadRepoModuleInfo locates the nearest go.mod by walking up from the current
+// working directory and returns a ModuleInfo populated with the module path and
+// the directory containing go.mod.
+func loadRepoModuleInfo() (contract.ModuleInfo, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return contract.ModuleInfo{}, fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Walk up the directory tree to find the nearest go.mod.
+	for {
+		goModPath := filepath.Join(dir, "go.mod")
+		data, err := os.ReadFile(goModPath)
+		if err == nil {
+			f, err := modfile.Parse(goModPath, data, nil)
+			if err != nil {
+				return contract.ModuleInfo{}, fmt.Errorf("failed to parse %s: %w", goModPath, err)
+			}
+			modulePath := f.Module.Mod.Path
+			// Name is the last segment of the module path (e.g. "plumber" from
+			// "github.com/getoutreach/plumber").
+			name := modulePath
+			if idx := strings.LastIndex(modulePath, "/"); idx >= 0 {
+				name = modulePath[idx+1:]
+			}
+			return contract.ModuleInfo{
+				Name:           name,
+				NormalizedName: strings.ReplaceAll(name, "-", "_"),
+				Path:           modulePath,
+				RelativePath:   "",
+				Dir:            dir,
+			}, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return contract.ModuleInfo{}, fmt.Errorf("go.mod not found in any parent directory")
+		}
+		dir = parent
+	}
+}
+
+// loadModuleInfo derives a ModuleInfo for baseDir relative to the repository
+// root module. If baseDir points to a subdirectory, the module path is extended
+// with the relative path (e.g. "github.com/foo/bar" + "internal/pkg" →
+// "github.com/foo/bar/internal/pkg").
+func loadModuleInfo(repoModule contract.ModuleInfo, baseDir string) (contract.ModuleInfo, error) {
+	absBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		return contract.ModuleInfo{}, fmt.Errorf("failed to resolve base dir: %w", err)
+	}
+
+	// Determine the repo root directory by stripping the module's relative
+	// path (empty for the root) from the working directory.
+	cwd, err := os.Getwd()
+	if err != nil {
+		return contract.ModuleInfo{}, fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	relPath, err := filepath.Rel(cwd, absBase)
+	if err != nil {
+		return contract.ModuleInfo{}, fmt.Errorf("failed to compute relative path: %w", err)
+	}
+	relPath = filepath.ToSlash(relPath)
+	if relPath == "." {
+		relPath = ""
+	}
+
+	modulePath := repoModule.Path
+	if relPath != "" {
+		modulePath = repoModule.Path + "/" + relPath
+	}
+
+	name := modulePath
+	if idx := strings.LastIndex(modulePath, "/"); idx >= 0 {
+		name = modulePath[idx+1:]
+	}
+
+	return contract.ModuleInfo{
+		Name:           name,
+		NormalizedName: strings.ReplaceAll(name, "-", "_"),
+		Path:           modulePath,
+		RelativePath:   relPath,
+		Dir:            absBase,
+	}, nil
 }

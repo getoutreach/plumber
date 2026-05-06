@@ -9,7 +9,6 @@ package shape
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"path"
@@ -25,44 +24,15 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/expand"
 	"github.com/getoutreach/plumber/internal/command/shape/matcher"
-	shaperender "github.com/getoutreach/plumber/internal/command/shape/render"
-	"github.com/getoutreach/plumber/internal/command/shape/report/term"
-	"github.com/getoutreach/plumber/internal/command/shape/report/tui"
 	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/internal/render"
+	baserender "github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
 
-// newReporter creates a reporter based on the interactive flag.
-// It returns the reporter and a wait function that should be deferred
-// to ensure proper cleanup (for the TUI reporter, this waits for the
-// bubbletea program to finish).
-func newReporter(interactive bool) (reporter contract.Reporter, cleanup func()) {
-	if interactive {
-		r := tui.NewReporter()
-		return r, r.Wait
-	}
-	return term.NewTerminalReporter(), func() {}
-}
-
 // Run is the main entry point for the shape command, orchestrating the entire transformation process.
-func Run(cfg *Config, args []string) error {
-	if err := checkoutAndMergeIncludes(cfg); err != nil {
-		return err
-	}
-
-	templateCache := template.NewTemplateCache(cfg.Sources, cfg.Templates.Content, cfg.CacheDir, shaperender.EmbededTemplates)
-
-	reporter, wait := newReporter(cfg.Interactive)
-	defer wait()
-
-	ctx := &contract.ShapingContext{
-		Context:        context.Background(),
-		Reporter:       reporter,
-		TemplateLoader: templateCache,
-	}
-
+func Run(ctx *contract.ShapingContext, cfg *Config, args []string) error {
 	filenames, err := inspect.ScanFiles("./", args)
 	if err != nil {
 		return fmt.Errorf("failed to scan files: %w", err)
@@ -85,6 +55,10 @@ func Run(cfg *Config, args []string) error {
 		return err
 	}
 
+	if err := expandTransformations(ctx, cfg, pkgs, transformations); err != nil {
+		return err
+	}
+
 	if err := executeTransformations(ctx, cfg, pkgs, transformations); err != nil {
 		return err
 	}
@@ -94,22 +68,7 @@ func Run(cfg *Config, args []string) error {
 
 // RunTarget is the entry point for the shape target subcommand, which processes a single specified type with a named macro,
 // bypassing the full annotation scan.
-func RunTarget(cfg *Config, args []string) error {
-	if err := checkoutAndMergeIncludes(cfg); err != nil {
-		return err
-	}
-
-	templateCache := template.NewTemplateCache(cfg.Sources, cfg.Templates.Content, cfg.CacheDir, shaperender.EmbededTemplates)
-
-	reporter, wait := newReporter(cfg.Interactive)
-	defer wait()
-
-	ctx := &contract.ShapingContext{
-		Context:        context.Background(),
-		Reporter:       reporter,
-		TemplateLoader: templateCache,
-	}
-
+func RunTarget(ctx *contract.ShapingContext, cfg *Config, args []string) error {
 	filenames, err := inspect.ScanFiles("./", args)
 	if err != nil {
 		return fmt.Errorf("failed to scan files: %w", err)
@@ -161,7 +120,7 @@ func runTargeted(ctx *contract.ShapingContext, cfg *Config, pkgs model.Packages)
 		transformations = append(transformations, Transformation{
 			Node:        typ,
 			Transformer: t,
-			Path:        buildPath(t.Mode(), typ.GetPackage().Path, typ.GetPosition().Filename, t.Output()),
+			//Path:        buildPath(t.Mode(), t.GetPackage().Path, typ.GetPosition().Filename, t.Output()),
 		})
 	}
 
@@ -235,7 +194,6 @@ func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation,
 			transformations = append(transformations, Transformation{
 				Node:        node,
 				Transformer: t,
-				Path:        buildPath(t.Mode(), node.GetPackage().Path, node.GetPosition().Filename, t.Output()),
 			})
 		}
 	}
@@ -357,11 +315,22 @@ func renderTransformations(
 
 	for mode, transformations := range byMode {
 		byOutput := lo.GroupBy(transformations, func(t Transformation) string {
-			return t.Path.Filename
+			return t.Transformer.Output()
 		})
 
 		for filename, transformations := range byOutput {
-			manager := buildModeManager(cfg, mode, transformations[0].Path.Package, filename)
+			pkgPath, err := ctx.DeriveModulePath(path.Dir(filename))
+			if err != nil {
+				return nil, fmt.Errorf("failed to derive module path for output %q: %w", filename, err)
+			}
+			pkg, found := lo.Find(pkgs, func(p *model.Package) bool {
+				return p.Path == pkgPath
+			})
+			if !found {
+				return nil, fmt.Errorf("package not found for output %q", filename)
+			}
+
+			manager := buildModeManager(cfg, pkg, mode, filename)
 			if manager == nil {
 				return nil, fmt.Errorf("unsupported transformation mode: %q", mode)
 			}
@@ -466,6 +435,23 @@ func partitionByMode(transformations []Transformation) (inplace, generated []Tra
 	return
 }
 
+func expandTransformations(
+	ctx *contract.ShapingContext,
+	cfg *Config,
+	pkgs []*model.Package,
+	transformations []Transformation,
+) error {
+	scope := baserender.Scope{}
+	for _, t := range transformations {
+		if err := t.Transformer.Expand(ctx, pkgs, t.Node, scope); err != nil {
+			ctx.TransformerError(t.Transformer, t.Node, err)
+			return nil
+		}
+		ctx.TransformerAdded(t.Transformer, t.Node)
+	}
+	return nil
+}
+
 // executeTransformations runs all transformations in dependency-safe order:
 // in-place transformations first (each rendered and restored individually so that
 // subsequent transformations see the on-disk changes), then generated
@@ -494,7 +480,7 @@ func executeTransformations(
 
 	// Generated transformations grouped by output file, restoring after each group.
 	byOutput := lo.GroupBy(generated, func(t Transformation) string {
-		return t.Path.Filename
+		return t.Transformer.Output()
 	})
 	for _, batch := range byOutput {
 		outputs, err := renderTransformations(ctx, cfg, pkgs, batch)
@@ -520,6 +506,7 @@ func executeTransformations(
 			moList = append(moList, &ManagerOutput{
 				Output: &render.Output{
 					Filename: qo.Filename,
+					Package:  qo.Package,
 					Dst: &render.DstOutput{
 						File:    qo.File,
 						Package: qo.Package.Package,
@@ -561,12 +548,12 @@ func buildPath(mode, pkgPath, filename, output string) Pathinfo {
 	}
 }
 
-func buildModeManager(cfg *Config, mode, pkgPath, output string) Manager {
+func buildModeManager(cfg *Config, pkg *model.Package, mode, output string) Manager {
 	switch mode {
 	case render.ModeInPlace:
-		return NewInplaceManager(cfg, pkgPath, output)
+		return NewInplaceManager(cfg, pkg, output)
 	case render.ModeGenerated:
-		return NewGeneratorManager(cfg, pkgPath, output)
+		return NewGeneratorManager(cfg, pkg, output)
 	}
 	return nil
 }
@@ -603,17 +590,17 @@ func buildTransformers(cfg *Config, node model.Node) (transformers []Transformer
 	for _, annotation := range annotations {
 		switch annotation.Name {
 		case contract.TransformationShape:
-			if err := changeTransformer(NewShaper(node.GetPosition(), annotation)); err != nil {
+			if err := changeTransformer(NewShaper(node, annotation)); err != nil {
 				return nil, err
 			}
 			transformers = append(transformers, lastTransformer)
 		case contract.TransformationDerive:
-			if err := changeTransformer(NewDeriveTransformer(node.GetPosition(), annotation)); err != nil {
+			if err := changeTransformer(NewDeriveTransformer(node, annotation)); err != nil {
 				return nil, err
 			}
 			transformers = append(transformers, lastTransformer)
 		case contract.TransformationRender:
-			if err := changeTransformer(NewRenderTransformer(node.GetPosition(), annotation)); err != nil {
+			if err := changeTransformer(NewRenderTransformer(node, annotation)); err != nil {
 				return nil, err
 			}
 			transformers = append(transformers, lastTransformer)

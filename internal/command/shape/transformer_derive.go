@@ -7,6 +7,7 @@ package shape
 import (
 	"fmt"
 
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	baserender "github.com/getoutreach/plumber/internal/render"
@@ -19,10 +20,10 @@ type DeriveTransformer struct {
 }
 
 // NewDeriveTransformer creates a new DeriveTransformer with the given position and annotation.
-func NewDeriveTransformer(pos model.Position, a model.Annotation) *DeriveTransformer {
+func NewDeriveTransformer(n contract.Node, a model.Annotation) *DeriveTransformer {
 	return &DeriveTransformer{
 		BasicTransformer: BasicTransformer{
-			Position:       pos,
+			Position:       n.GetPosition(),
 			Name:           "derive",
 			AllowedOptions: defaultOptions,
 			Options:        a,

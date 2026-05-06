@@ -6,6 +6,7 @@
 package shape
 
 import (
+	"fmt"
 	"path"
 	"strings"
 
@@ -40,13 +41,15 @@ var defaultOptions = []string{
 // into generated code based on specified annotations and options.
 type Transformer interface {
 	contract.Annotable
-	Accepts(annotation string) bool
-	Add(annotation model.Annotation)
-	Validate(packager contract.Packager) error
-	Output() string
-	GetName() string
-	Mode() string
-	Expand(node model.Node, scope baserender.Scope) error
+	contract.Transformer
+	// Accepts(annotation string) bool
+	// Add(annotation model.Annotation)
+	// Validate(packager contract.Packager) error
+	// GetPosition() model.Position
+	// Output() string
+	// GetName() string
+	// Mode() string
+	Expand(ctx *contract.ShapingContext, pkgs []*model.Package, node model.Node, scope baserender.Scope) error
 	Render(context *render.Context, tp *model.Type, scope baserender.Scope, output string, opener gen.MemoryFileOpener) (string, error)
 }
 
@@ -66,7 +69,7 @@ type Node interface {
 type Transformation struct {
 	Node        model.Node
 	Transformer Transformer
-	Path        Pathinfo
+	//Path        Pathinfo
 }
 
 // Pathinfo represents the information about the output path for a generated file,
@@ -106,6 +109,7 @@ type Manager interface {
 // handling common annotation processing and output path generation logic for shape and derive transformers.
 type BasicTransformer struct {
 	Position       model.Position
+	Package        *model.Package
 	Name           string
 	AllowedOptions []string
 	Options        model.Annotation
@@ -114,6 +118,14 @@ type BasicTransformer struct {
 
 func (t *BasicTransformer) GetName() string {
 	return t.Name
+}
+
+func (t *BasicTransformer) GetPosition() model.Position {
+	return t.Position
+}
+
+func (t *BasicTransformer) GetPackage() *model.Package {
+	return t.Package
 }
 
 // Validate checks if the transformer has the required annotations and options,
@@ -167,7 +179,7 @@ func (t *BasicTransformer) Add(annotation model.Annotation) {
 	t.Annotations = append(t.Annotations, annotation)
 }
 
-func (t *BasicTransformer) Expand(node model.Node, scope baserender.Scope) error {
+func (t *BasicTransformer) Expand(ctx *contract.ShapingContext, pkgs []*model.Package, node model.Node, scope baserender.Scope) error {
 	annotations, err := expand.TransformerAnnotations(node, t.Annotations, scope)
 	if err != nil {
 		return err
@@ -187,6 +199,21 @@ func (t *BasicTransformer) Expand(node model.Node, scope baserender.Scope) error
 			output.SetValue(path.Clean(value))
 		}
 	}
+
+	dir := path.Dir(t.Output())
+
+	pkgPath, err := ctx.DeriveModulePath(dir)
+	if err != nil {
+		return fmt.Errorf("can't determinate package path based on dir: %q: %w", dir, err)
+	}
+
+	pkg, found := lo.Find(pkgs, func(p *model.Package) bool {
+		return p.Path == pkgPath
+	})
+	if !found {
+		return fmt.Errorf("can't find output package based on path: %s", dir)
+	}
+	t.Package = pkg
 
 	return nil
 }

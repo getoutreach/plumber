@@ -77,7 +77,8 @@ func TypesRenderer(currentPkgPath string, register *ModuleRegister) func(spec mo
 		if err != nil {
 			return "", fmt.Errorf("failed to parse FQN: %w", err)
 		}
-		fqn.WalkPackages(func(pkgPath, typeName string) (string, bool) {
+
+		fqn.Localize(func(pkgPath, typeName string) (string, bool) {
 			if pkgPath == currentPkgPath {
 				return "", true
 			}
@@ -90,6 +91,7 @@ func TypesRenderer(currentPkgPath string, register *ModuleRegister) func(spec mo
 		if fqn.IsPackageLess() {
 			return fqn.Unquote(), nil
 		}
+
 		return fqn.String(), nil
 	}
 }

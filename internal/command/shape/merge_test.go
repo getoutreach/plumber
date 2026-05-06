@@ -779,6 +779,350 @@ func (c *Container) Define() {
 	}
 }
 
+// --- Interface merging tests ---
+
+// TestMergeInterface_AddsMethods verifies that new methods from a generated interface
+// are appended to an existing interface.
+func TestMergeInterface_AddsMethods(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_iface_add_methods")
+
+	existingSrc := `package merge_iface_add_methods
+
+type Reader interface {
+	Read(p []byte) (n int, err error)
+}
+`
+	err := os.WriteFile(filepath.Join(dir, "iface.go"), []byte(existingSrc), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "iface.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_iface_add_methods
+
+type Reader interface {
+	Read(p []byte) (n int, err error)
+	Close() error
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	// Find the interface in the result and verify it has 2 methods
+	ifaceType := findInterfaceType(t, resultFiles[0], "Reader")
+	if ifaceType.Methods == nil || len(ifaceType.Methods.List) != 2 {
+		t.Fatalf("expected 2 methods, got %d", countMethods(ifaceType))
+	}
+}
+
+// TestMergeInterface_DeduplicatesMethods verifies that methods already present
+// in the existing interface are not duplicated.
+func TestMergeInterface_DeduplicatesMethods(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_iface_dedup")
+
+	existingSrc := `package merge_iface_dedup
+
+type Service interface {
+	Start() error
+	Stop() error
+}
+`
+	err := os.WriteFile(filepath.Join(dir, "iface.go"), []byte(existingSrc), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "iface.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	// Generated has Start (existing) and Health (new)
+	generatedSrc := `package merge_iface_dedup
+
+type Service interface {
+	Start() error
+	Health() bool
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	// Should have 3 methods: Start, Stop, Health
+	ifaceType := findInterfaceType(t, resultFiles[0], "Service")
+	if countMethods(ifaceType) != 3 {
+		t.Fatalf("expected 3 methods, got %d", countMethods(ifaceType))
+	}
+}
+
+// TestMergeInterface_EmbeddedInterfaces verifies that embedded interfaces are
+// merged and deduplicated by type expression.
+func TestMergeInterface_EmbeddedInterfaces(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_iface_embed")
+
+	existingSrc := `package merge_iface_embed
+
+import "io"
+
+type ReadCloser interface {
+	io.Reader
+}
+`
+	err := os.WriteFile(filepath.Join(dir, "iface.go"), []byte(existingSrc), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "iface.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	// Generated has io.Reader (existing) and io.Closer (new)
+	generatedSrc := `package merge_iface_embed
+
+import "io"
+
+type ReadCloser interface {
+	io.Reader
+	io.Closer
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	// Should have 2 entries: io.Reader, io.Closer
+	ifaceType := findInterfaceType(t, resultFiles[0], "ReadCloser")
+	if countMethods(ifaceType) != 2 {
+		t.Fatalf("expected 2 entries (embeds), got %d", countMethods(ifaceType))
+	}
+}
+
+// TestMergeInterface_MixedMethodsAndEmbeds verifies merging when an interface
+// has both methods and embedded interfaces.
+func TestMergeInterface_MixedMethodsAndEmbeds(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_iface_mixed")
+
+	existingSrc := `package merge_iface_mixed
+
+import "io"
+
+type Handler interface {
+	io.Closer
+	Handle(req []byte) error
+}
+`
+	err := os.WriteFile(filepath.Join(dir, "iface.go"), []byte(existingSrc), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "iface.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	// Generated adds io.Reader (new embed), Handle (dup method), Reset (new method)
+	generatedSrc := `package merge_iface_mixed
+
+import "io"
+
+type Handler interface {
+	io.Closer
+	io.Reader
+	Handle(req []byte) error
+	Reset()
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	// Should have 4 entries: io.Closer, Handle, io.Reader, Reset
+	ifaceType := findInterfaceType(t, resultFiles[0], "Handler")
+	if countMethods(ifaceType) != 4 {
+		t.Fatalf("expected 4 entries, got %d", countMethods(ifaceType))
+	}
+}
+
+// TestMergeInterface_NewInterfaceAdded verifies that a brand new interface
+// is added to the package when it doesn't exist.
+func TestMergeInterface_NewInterfaceAdded(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_iface_new")
+
+	existingSrc := `package merge_iface_new
+
+type Foo struct{}
+`
+	err := os.WriteFile(filepath.Join(dir, "types.go"), []byte(existingSrc), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "types.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_iface_new
+
+type Service interface {
+	Start() error
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "types.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a result file, got none")
+	}
+
+	// Verify the interface was added
+	ifaceType := findInterfaceType(t, resultFiles[0], "Service")
+	if countMethods(ifaceType) != 1 {
+		t.Fatalf("expected 1 method, got %d", countMethods(ifaceType))
+	}
+}
+
+// TestMergeInterface_GenerateOnceSkips verifies that generate:once skips
+// interface merging when the interface already exists.
+func TestMergeInterface_GenerateOnceSkips(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_iface_gen_once")
+
+	existingSrc := `package merge_iface_gen_once
+
+type Service interface {
+	Start() error
+}
+`
+	err := os.WriteFile(filepath.Join(dir, "iface.go"), []byte(existingSrc), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "iface.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_iface_gen_once
+
+// generate:once
+type Service interface {
+	Start() error
+	Stop() error
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+
+	// Should be empty — interface exists and generate:once is set
+	if len(resultFiles) != 0 {
+		t.Fatalf("expected no merged files (generate:once skipped), but got %d", len(resultFiles))
+	}
+}
+
+// --- Interface test helpers ---
+
+func findInterfaceType(t *testing.T, file *dst.File, name string) *dst.InterfaceType {
+	t.Helper()
+	// First try scope lookup (works for types that existed before merge).
+	if obj := file.Scope.Lookup(name); obj != nil {
+		if ts, ok := obj.Decl.(*dst.TypeSpec); ok {
+			if iface, ok := ts.Type.(*dst.InterfaceType); ok {
+				return iface
+			}
+		}
+	}
+	// Fallback: iterate decls (works for newly-added types not yet in scope).
+	for _, decl := range file.Decls {
+		gd, ok := decl.(*dst.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			ts, ok := spec.(*dst.TypeSpec)
+			if !ok || ts.Name.Name != name {
+				continue
+			}
+			if iface, ok := ts.Type.(*dst.InterfaceType); ok {
+				return iface
+			}
+		}
+	}
+	t.Fatalf("interface type %q not found in file", name)
+	return nil
+}
+
+func countMethods(iface *dst.InterfaceType) int {
+	if iface.Methods == nil {
+		return 0
+	}
+	return len(iface.Methods.List)
+}
+
 // TestMergeGenerateOnce_StructSkipsWhenExists verifies that a struct annotated
 // with generate:once skips field merging when the struct already exists.
 func TestMergeGenerateOnce_StructSkipsWhenExists(t *testing.T) {

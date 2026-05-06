@@ -82,6 +82,8 @@ type Transformer interface {
 	Accepts(annotation string) bool
 	Add(annotation model.Annotation)
 	Validate(packager Packager) error
+	GetPosition() model.Position
+	GetPackage() *model.Package
 	Output() string
 	GetName() string
 	Mode() string
@@ -96,6 +98,7 @@ type Annotable interface {
 type Node interface {
 	Annotable
 	GetPosition() model.Position
+	GetPackage() *model.Package
 }
 
 // ReporterEventType defines the type of events that can be reported by the Reporter interface
@@ -144,92 +147,27 @@ type TemplateLoader interface {
 	Load(names []string) ([]gen.RenderOptionsFunc, error)
 }
 
+// StructurePathResolver defines an interface for resolving structure paths according to structure path configuration
+type StructurePathResolver interface {
+	ResolvePath(path string) (string, error)
+}
+
 // ShapingContext provides context for a transformation, including a Reporter for emitting events during the transformation process.
 type ShapingContext struct {
 	context.Context
-	Reporter       Reporter
-	TemplateLoader TemplateLoader
+	Reporter              Reporter
+	TemplateLoader        TemplateLoader
+	StructurePathResolver StructurePathResolver
+	BaseDir               string
+	RepoModule            ModuleInfo
+	Module                ModuleInfo
 }
 
-func (ctx *ShapingContext) TransformerAdded(transformer Transformer, node model.Node) {
-	if ctx.Reporter != nil {
-		ctx.Reporter.Notify(ReporterEvent{
-			Kind:        EventTransformerAdded,
-			Transformer: transformer,
-			Node:        node,
-		})
-	}
-}
-
-func (ctx *ShapingContext) TransformerSkipped(transformer Transformer, node model.Node, message string) {
-	if ctx.Reporter != nil {
-		ctx.Reporter.Notify(ReporterEvent{
-			Kind:        EventTransformerSkipped,
-			Transformer: transformer,
-			Node:        node,
-			Message:     message,
-		})
-	}
-}
-
-func (ctx *ShapingContext) TransformerError(transformer Transformer, node model.Node, err error) {
-	if ctx.Reporter != nil {
-		ctx.Reporter.Notify(ReporterEvent{
-			Kind:        EventTransformerError,
-			Transformer: transformer,
-			Node:        node,
-			Error:       err,
-		})
-	}
-}
-
-func (ctx *ShapingContext) TransformerOutput(transformer Transformer, filename string) {
-	if ctx.Reporter != nil {
-		ctx.Reporter.Notify(ReporterEvent{
-			Kind:        EventTransformerOutput,
-			Transformer: transformer,
-			Path:        filename,
-		})
-	}
-}
-
-func (ctx *ShapingContext) TransformerInfo(transformer Transformer, message string) {
-	if ctx.Reporter != nil {
-		ctx.Reporter.Notify(ReporterEvent{
-			Kind:        EventTransformerInfo,
-			Transformer: transformer,
-			Message:     message,
-		})
-	}
-}
-
-func (ctx *ShapingContext) RestoredOutput(filename string, err error) {
-	if ctx.Reporter != nil {
-		ctx.Reporter.Notify(ReporterEvent{
-			Kind:  EventTransformerRestored,
-			Path:  filename,
-			Error: err,
-		})
-	}
-}
-
-func (ctx *ShapingContext) QueryExecuted(query, filename string) {
-	if ctx.Reporter != nil {
-		ctx.Reporter.Notify(ReporterEvent{
-			Kind:    EventQueryExecuted,
-			Message: query,
-			Path:    filename,
-		})
-	}
-}
-
-func (ctx *ShapingContext) QueryError(query, filename string, err error) {
-	if ctx.Reporter != nil {
-		ctx.Reporter.Notify(ReporterEvent{
-			Kind:    EventQueryError,
-			Message: query,
-			Path:    filename,
-			Error:   err,
-		})
-	}
+// ModuleInfo represents information about a Go module, including its name, normalized name, path, and relative path.
+type ModuleInfo struct {
+	Name           string
+	NormalizedName string
+	Path           string
+	RelativePath   string
+	Dir            string
 }

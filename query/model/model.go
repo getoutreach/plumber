@@ -431,6 +431,7 @@ func (n *CommentGroup) FilterAnnotations(expressions ...func(a Annotation) bool)
 	return &CommentGroup{
 		Annotations: aa,
 		Position:    n.Position,
+		Package:     n.Package,
 	}
 }
 

@@ -237,6 +237,20 @@ func TestFQNWalkPackages(t *testing.T) {
 			assert.Equal(t, "String", typeName)
 			return "MyString", true
 		})
+		assert.Equal(t, `MyString.String[string]`, fqn.String())
+	})
+
+	t.Run("its properly quoted", func(t *testing.T) {
+		fqn, err := ParseFQN(`"github.com/getoutreach/blueprint/pkg/blueprint/database/filter".String[string]`)
+		assert.NilError(t, err)
+		assert.Equal(t, `"github.com/getoutreach/blueprint/pkg/blueprint/database/filter".String[string]`, fqn.String())
+
+		fqn.TranslateModules(func(pkgPath, typeName string) (string, bool) {
+			assert.Equal(t, "github.com/getoutreach/blueprint/pkg/blueprint/database/filter", pkgPath)
+			assert.Equal(t, "String", typeName)
+			return "MyString", true
+		})
+		assert.Equal(t, `"MyString".String[string]`, fqn.String())
 	})
 
 	t.Run("replaces named type inside pointer", func(t *testing.T) {
@@ -351,5 +365,19 @@ func TestFQNMask(t *testing.T) {
 	t.Run("nil receiver is safe", func(t *testing.T) {
 		var fqn *FQN
 		assert.Equal(t, (*FQN)(nil), fqn.Mask("%s_Filter"))
+	})
+}
+
+func TestParseRelativeFQN(t *testing.T) {
+	t.Run("RelativePath", func(t *testing.T) {
+		fqn, err := ParseRelativeFQN("github.com/example/baz/foo", `"../bar".Type`)
+		assert.NilError(t, err)
+		assert.Equal(t, `"github.com/example/baz/bar".Type`, fqn.String())
+	})
+
+	t.Run("AbsolutePath", func(t *testing.T) {
+		fqn, err := ParseRelativeFQN("github.com/example/baz/foo", `"github.com/example/xx/yy".Type`)
+		assert.NilError(t, err)
+		assert.Equal(t, `"github.com/example/xx/yy".Type`, fqn.String())
 	})
 }

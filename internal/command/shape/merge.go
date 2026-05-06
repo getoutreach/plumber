@@ -35,6 +35,7 @@ const annotationGenerateOnce = "generate:once"
 // package. When empty, a default filename is derived from the package name. The same
 // output filename is used for every newly-added declaration, so when several missing
 // entities are added in one call they all land in the same created file.
+// nolint: gocritic,gocyclo //Why: switch is not an option
 func Merge(pkg *model.Package, file *dst.File, output string) ([]*dst.File, error) {
 	importMap := astx.BuildImportMap(file)
 
@@ -93,8 +94,35 @@ func Merge(pkg *model.Package, file *dst.File, output string) ([]*dst.File, erro
 							return nil, fmt.Errorf("failed to merge struct %q: %w", s.Name.Name, err)
 						}
 						recordFile(f)
+					} else if t, ok := s.Type.(*dst.InterfaceType); ok {
+						// Check generate:once: if the interface already exists, skip merging.
+						if hasGenerateOnce(d.Decs.Start) {
+							_, found := lo.Find(pkg.Types, func(t *model.Type) bool {
+								return t.Name == s.Name.Name
+							})
+							if found {
+								continue
+							}
+						}
+
+						currentType, found := lo.Find(pkg.Types, func(t *model.Type) bool {
+							return t.Name == s.Name.Name
+						})
+						if !found {
+							// Interface not found — append to the output file.
+							f, err := addTypeDecl(pkg, d, s, output, importMap)
+							if err != nil {
+								return nil, fmt.Errorf("failed to add type %q: %w", s.Name.Name, err)
+							}
+							recordFile(f)
+							continue
+						}
+						f, err := mergeInterface(currentType, t, importMap)
+						if err != nil {
+							return nil, fmt.Errorf("failed to merge interface %q: %w", s.Name.Name, err)
+						}
+						recordFile(f)
 					}
-					// Skip non-struct type specs silently (interfaces, etc.)
 				case *dst.ValueSpec:
 					if d.Tok == token.VAR {
 						f, err := mergeVar(pkg, s, output, importMap)
@@ -330,6 +358,120 @@ func mergeStruct(current *model.Type, generated *dst.StructType, importMap map[s
 	}
 
 	return file, nil
+}
+
+// mergeInterface takes the current model.Type (which has Interface set) and the generated
+// dst.InterfaceType, and merges methods and embedded interfaces from the generated interface
+// into the existing interface in the source file. Methods are deduplicated by name; embedded
+// interfaces are deduplicated by their type expression key.
+func mergeInterface(current *model.Type, generated *dst.InterfaceType, importMap map[string]string) (*dst.File, error) {
+	pkg := current.GetPackage()
+
+	file := pkg.File(current.Position.Filename)
+	if file == nil {
+		return nil, fmt.Errorf("file %q not found in package %q", current.Position.Filename, pkg.Path)
+	}
+	astObject := file.Scope.Lookup(current.Name)
+
+	if astObject == nil {
+		return nil, fmt.Errorf("AST node for type %q not found in file %q", current.Name, current.Position.Filename)
+	}
+
+	typeSpec, ok := astObject.Decl.(*dst.TypeSpec)
+	if !ok {
+		return nil, fmt.Errorf("AST node for type %q is not a type declaration in file %q", current.Name, current.Position.Filename)
+	}
+
+	if typeSpec.Type == nil {
+		return nil, fmt.Errorf("type %q has no underlying type in file %q", current.Name, current.Position.Filename)
+	}
+
+	ifaceType, ok := typeSpec.Type.(*dst.InterfaceType)
+	if !ok {
+		return nil, fmt.Errorf("type %q is not an interface in file %q", current.Name, current.Position.Filename)
+	}
+
+	// Separate existing entries into methods (named) and embeds (anonymous).
+	existingMethodNames := make(map[string]bool)
+	existingEmbeds := make(map[string]bool)
+	if ifaceType.Methods != nil {
+		for _, entry := range ifaceType.Methods.List {
+			if len(entry.Names) > 0 {
+				for _, n := range entry.Names {
+					existingMethodNames[n.Name] = true
+				}
+			} else {
+				existingEmbeds[embedKey(entry.Type)] = true
+			}
+		}
+	}
+
+	// Merge entries from generated interface; skip duplicates.
+	if generated.Methods != nil {
+		for _, entry := range generated.Methods.List {
+			if len(entry.Names) > 0 {
+				// Named method — deduplicate by name.
+				alreadyExists := lo.SomeBy(entry.Names, func(n *dst.Ident) bool {
+					return existingMethodNames[n.Name]
+				})
+				if alreadyExists {
+					continue
+				}
+			} else {
+				// Embedded interface — deduplicate by type expression.
+				if existingEmbeds[embedKey(entry.Type)] {
+					continue
+				}
+			}
+			astx.AnnotateFieldIdents(entry, importMap)
+			if ifaceType.Methods == nil {
+				ifaceType.Methods = &dst.FieldList{}
+			}
+			ifaceType.Methods.List = append(ifaceType.Methods.List, entry)
+			// Update tracking sets.
+			if len(entry.Names) > 0 {
+				for _, n := range entry.Names {
+					existingMethodNames[n.Name] = true
+				}
+			} else {
+				existingEmbeds[embedKey(entry.Type)] = true
+			}
+		}
+	}
+
+	return file, nil
+}
+
+// embedKey returns a normalized string key for a type expression used as an embedded
+// interface. It handles both the fully-decorated form (Ident with Path set, produced
+// by go/packages decorator) and the plain parsed form (SelectorExpr, produced by
+// decorator.Parse without type info).
+func embedKey(expr dst.Expr) string {
+	if expr == nil {
+		return ""
+	}
+	switch t := expr.(type) {
+	case *dst.Ident:
+		if t.Path != "" {
+			return t.Path + "." + t.Name
+		}
+		return t.Name
+	case *dst.SelectorExpr:
+		if x, ok := t.X.(*dst.Ident); ok {
+			pkg := x.Path
+			if pkg == "" {
+				pkg = x.Name
+			}
+			return pkg + "." + t.Sel.Name
+		}
+		return exprKey(expr)
+	case *dst.StarExpr:
+		return "*" + embedKey(t.X)
+	case *dst.IndexExpr:
+		return embedKey(t.X) + "[" + embedKey(t.Index) + "]"
+	default:
+		return exprKey(expr)
+	}
 }
 
 // fieldNames returns the effective names for a struct field.

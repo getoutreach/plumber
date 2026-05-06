@@ -109,3 +109,73 @@ func TestAnnotationsFromDecs_MultipleDecs(t *testing.T) {
 	assert.Equal(t, annotations[0].Name, "generate:once")
 	assert.Equal(t, annotations[1].Name, "plumber:provider")
 }
+
+func TestParseAnnotations_Quoted(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  string
+		want []model.Annotation
+	}{
+		{
+			name: "double-quoted arg with spaces",
+			doc:  `plumber.foo "X Y"`,
+			want: []model.Annotation{{
+				Name:      "plumber.foo",
+				Args:      []string{"X Y"},
+				NamedArgs: map[string]string{},
+			}},
+		},
+		{
+			name: "single-quoted arg with spaces",
+			doc:  `plumber.foo 'hello world'`,
+			want: []model.Annotation{{
+				Name:      "plumber.foo",
+				Args:      []string{"hello world"},
+				NamedArgs: map[string]string{},
+			}},
+		},
+		{
+			name: "backtick-quoted arg with spaces",
+			doc:  "plumber.foo `hello world`",
+			want: []model.Annotation{{
+				Name:      "plumber.foo",
+				Args:      []string{"hello world"},
+				NamedArgs: map[string]string{},
+			}},
+		},
+		{
+			name: "quotes not fully wrapping are preserved",
+			doc:  `plumber.foo "X".value`,
+			want: []model.Annotation{{
+				Name:      "plumber.foo",
+				Args:      []string{`"X".value`},
+				NamedArgs: map[string]string{},
+			}},
+		},
+		{
+			name: "named arg with quoted value",
+			doc:  `plumber.foo key="val with space"`,
+			want: []model.Annotation{{
+				Name:      "plumber.foo",
+				Args:      nil,
+				NamedArgs: map[string]string{"key": "val with space"},
+			}},
+		},
+		{
+			name: "mixed quoted and unquoted args",
+			doc:  `plumber.foo arg1 "arg two" key='val ue'`,
+			want: []model.Annotation{{
+				Name:      "plumber.foo",
+				Args:      []string{"arg1", "arg two"},
+				NamedArgs: map[string]string{"key": "val ue"},
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseAnnotations(tt.doc)
+			assert.DeepEqual(t, tt.want, got)
+		})
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/dave/dst/decorator"
 	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/genius/gen"
+	"github.com/getoutreach/plumber/query/model"
 )
 
 // PlaceholderName is the name used in templates to reference the context for rendering.
@@ -51,6 +52,7 @@ type DstOutput struct {
 type Output struct {
 	Filename string
 	Modules  *ModuleRegister
+	Package  *model.Package
 	Content  []byte
 	Dst      *DstOutput
 }

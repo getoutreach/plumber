@@ -12,6 +12,7 @@ import (
 	"go/printer"
 	"go/token"
 	"go/types"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -131,6 +132,26 @@ func ParseFQN(s string) (*FQN, error) {
 		return nil, fmt.Errorf("unexpected trailing input: %q", p.s[p.pos:])
 	}
 	return &FQN{Expression: expr}, nil
+}
+
+func ParseRelativeFQN(packagePath, s string, replacers ...func(pkgPath, typeName string) (replacement string, ok bool)) (*FQN, error) {
+	// Parse the FQN without package injection first, so we can detect any syntax errors before modifying the expression tree.
+	fqn, err := ParseFQN(s)
+	if err != nil {
+		return nil, err
+	}
+	fqn.TranslateModules(func(pkgPath, typeName string) (string, bool) {
+		if strings.HasPrefix(pkgPath, "../") {
+			return fmt.Sprintf("%q", path.Clean(path.Join(packagePath, pkgPath))), true
+		}
+		for _, replacer := range replacers {
+			if replacement, ok := replacer(pkgPath, typeName); ok {
+				return replacement, true
+			}
+		}
+		return pkgPath, false
+	})
+	return fqn, nil
 }
 
 func CraftFQN(pkgPath, typeName string) (*FQN, error) {
@@ -393,13 +414,23 @@ func (f *FQN) String() string {
 }
 
 // WalkPackages walks the FQN expression tree and calls fn for every remote-package
+func (f *FQN) WalkPackages(fn func(pkgPath, typeName string) (replacement string, ok bool)) {
+	f.Localize(fn)
+}
+
+// Localize walks the FQN expression tree and calls fn for every remote-package
 // type reference — an *ast.SelectorExpr whose X is an *ast.Ident carrying a
 // quoted import path (e.g. "github.com/google/uuid").
 //
 // fn receives the unquoted package path and the type name. The value it returns
 // replaces the original node; return nil to leave the node unchanged.
-func (f *FQN) WalkPackages(fn func(pkgPath, typeName string) (string, bool)) {
-	f.Expression = walkExpr(f.Expression, fn)
+func (f *FQN) Localize(fn func(pkgPath, typeName string) (replacement string, ok bool)) {
+	f.Expression = walkExpr(f.Expression, false, fn)
+}
+
+// TranslateModules walks the FQN expression tree and calls fn for every remote-package
+func (f *FQN) TranslateModules(fn func(pkgPath, typeName string) (replacement string, ok bool)) {
+	f.Expression = walkExpr(f.Expression, true, fn)
 }
 
 func (f *FQN) Wrap(o *FQN) *FQN {
@@ -512,31 +543,35 @@ func cloneExpr(expr ast.Expr) ast.Expr {
 
 // walkExpr recursively walks an ast.Expr, replacing remote-package SelectorExprs
 // via fn and returning the (possibly replaced) expression.
-func walkExpr(expr ast.Expr, fn func(pkgPath, typeName string) (string, bool)) ast.Expr {
+func walkExpr(expr ast.Expr, quote bool, fn func(pkgPath, typeName string) (string, bool)) ast.Expr {
 	switch e := expr.(type) {
 	case *ast.StarExpr:
-		e.X = walkExpr(e.X, fn)
+		e.X = walkExpr(e.X, quote, fn)
 	case *ast.ArrayType:
-		e.Elt = walkExpr(e.Elt, fn)
+		e.Elt = walkExpr(e.Elt, quote, fn)
 	case *ast.MapType:
-		e.Key = walkExpr(e.Key, fn)
-		e.Value = walkExpr(e.Value, fn)
+		e.Key = walkExpr(e.Key, quote, fn)
+		e.Value = walkExpr(e.Value, quote, fn)
 	case *ast.ChanType:
-		e.Value = walkExpr(e.Value, fn)
+		e.Value = walkExpr(e.Value, quote, fn)
 	case *ast.IndexExpr:
-		e.X = walkExpr(e.X, fn)
-		e.Index = walkExpr(e.Index, fn)
+		e.X = walkExpr(e.X, quote, fn)
+		e.Index = walkExpr(e.Index, quote, fn)
 	case *ast.IndexListExpr:
-		e.X = walkExpr(e.X, fn)
+		e.X = walkExpr(e.X, quote, fn)
 		for i, idx := range e.Indices {
-			e.Indices[i] = walkExpr(idx, fn)
+			e.Indices[i] = walkExpr(idx, quote, fn)
 		}
 	case *ast.SelectorExpr:
 		if ident, ok := e.X.(*ast.Ident); ok {
 			empty := false
 			if pkgPath, err := strconv.Unquote(ident.Name); err == nil { // && strings.Contains(pkgPath, "/")
 				if replacement, ok := fn(pkgPath, e.Sel.Name); ok {
-					ident.Name = replacement
+					if quote {
+						ident.Name = strconv.Quote(replacement)
+					} else {
+						ident.Name = replacement
+					}
 					if replacement == "" {
 						empty = true
 					}
