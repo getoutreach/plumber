@@ -133,6 +133,8 @@ func File(
 		return nil, fmt.Errorf("error during rendering: %w", err)
 	}
 
+	fmt.Println("!!!", o.Content)
+
 	o, err = Finalize(context, scope, []string{string(o.Content)}, output, gen.NewSystemFileOpener())
 	if err != nil {
 		return nil, fmt.Errorf("error during finalization: %w", err)

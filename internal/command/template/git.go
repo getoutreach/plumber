@@ -98,8 +98,12 @@ func checkoutGit(cfg *GitSourceConfig, cacheDir string) ([]string, error) {
 				expandError = append(expandError, fmt.Errorf("failed to get relative path for glob match %q in repo %s: %w", m, cfg.Repository, err))
 				return FileRef{}
 			}
-			name := path.Base(rel)
+
+			parts := strings.Split(f.Path, "*")
+
+			name := strings.TrimPrefix(rel, parts[0])
 			name = strings.TrimSuffix(name, path.Ext(name))
+
 			return FileRef{Name: name, Path: m}
 		})
 	})
