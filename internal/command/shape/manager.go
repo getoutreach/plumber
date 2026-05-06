@@ -22,7 +22,6 @@ import (
 // buildContext constructs the rendering context for a given transformation, populating it with the package path, module register,
 // type wrapper, and output path based on the provided configuration and package information.
 func buildContext(cfg *Config, modules *baserender.ModuleRegister, pkg *model.Package, output string) *render.Context {
-	//fmt.Println("!!!! BULDING context", pkg.Package.PkgPath, output)
 	context := &render.Context{
 		ContextCloner: baserender.NewRenderContext(modules, pkg, output),
 		Wrapper:       NewTypeWrapper(cfg),
@@ -242,17 +241,9 @@ func runTransformations(
 	ok = true
 	for _, t := range transformations {
 		err := func(t Transformation) error {
-			// if err := t.Transformer.Expand(ctx, pkgs, t.Node, scope); err != nil {
-			// 	ctx.TransformerError(t.Transformer, t.Node, err)
-			// 	return nil
-			// }
-
 			if err := inflateCustomScope(ctx, t.Transformer, pkgs, scope); err != nil {
 				return err
 			}
-
-			// ctx.TransformerAdded(t.Transformer, t.Node)
-
 			scope["Subject"] = view.Annotable{
 				Annotations: t.Transformer.GetAnnotations(),
 			}
