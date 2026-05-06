@@ -41,7 +41,7 @@ func Run(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shape.Config
 
 // Run executes the shape command
 func RunStructure(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shape.Config) error {
-	return nil
+	return shape.RunStructure(c, ctx, shapeConfig)
 }
 
 func RunTarget(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shape.Config) error {

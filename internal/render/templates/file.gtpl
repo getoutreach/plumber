@@ -20,3 +20,5 @@
         )
     {{end}}
 {{end}}
+{{define "plumber/file/package" -}}
+{{end}}
