@@ -26,6 +26,7 @@ type PlumberStructurePathConfig struct {
 	Description        string   `yaml:"description,omitempty"`
 	PackageDescription string   `yaml:"package_description,omitempty"`
 	Path               string   `yaml:"path,omitempty"`
+	Documentation      string   `yaml:"documentation,omitempty"`
 	Template           string   `yaml:"template,omitempty"`
 	Templates          []string `yaml:"templates,omitempty"`
 	Required           bool     `yaml:"required,omitempty"`

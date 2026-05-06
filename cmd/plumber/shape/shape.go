@@ -118,7 +118,7 @@ func prepareContext(cfg *shape.Config) (shapingContext *contract.ShapingContext,
 		return nil, nil, fmt.Errorf("failed to load module info: %w", err)
 	}
 
-	structureResolver, err := structure.NewStructureResolver(cfg.Structure, repoModule, module)
+	structureResolver, err := structure.NewResolver(cfg.Structure, repoModule, module)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create structure resolver: %w", err)
 	}

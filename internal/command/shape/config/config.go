@@ -79,6 +79,7 @@ type MacroConfig struct {
 type PlumberMacroConfig struct {
 	Name        string             `yaml:"name"`
 	Annotations []AnnotationConfig `yaml:"annotations,omitempty"`
+	Content     string             `yaml:"content,omitempty"` // optional content for the macro, which can be used in template rendering
 }
 
 // AnnotationConfig represents a configuration for filtering nodes based on specific annotation names.

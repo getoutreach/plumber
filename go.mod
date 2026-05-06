@@ -17,6 +17,7 @@ require (
 	github.com/pterm/pterm v0.12.83
 	github.com/samber/lo v1.50.0
 	github.com/sirupsen/logrus v1.9.4
+	golang.org/x/mod v0.34.0
 	golang.org/x/text v0.35.0
 	golang.org/x/tools v0.43.0
 	google.golang.org/protobuf v1.36.11
@@ -124,7 +125,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/crypto v0.49.0 // indirect
-	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect

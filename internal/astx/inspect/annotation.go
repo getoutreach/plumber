@@ -76,7 +76,15 @@ func unquote(s string) string {
 	return s
 }
 
+func ParseAnnotationsCommented(doc string) []model.Annotation {
+	return parseAnnotations(doc, true)
+}
+
 func ParseAnnotations(doc string) []model.Annotation {
+	return parseAnnotations(doc, false)
+}
+
+func parseAnnotations(doc string, commented bool) []model.Annotation {
 	var annotations []model.Annotation
 
 	// Split into paragraphs (groups of lines separated by blank lines).
@@ -85,6 +93,10 @@ func ParseAnnotations(doc string) []model.Annotation {
 	var current []string
 	for _, line := range strings.Split(doc, "\n") {
 		trimmed := strings.TrimSpace(line)
+		if commented {
+			trimmed = strings.TrimPrefix(trimmed, "//")
+			trimmed = strings.TrimSpace(trimmed)
+		}
 		if trimmed == "" {
 			if len(current) > 0 {
 				paragraphs = append(paragraphs, current)

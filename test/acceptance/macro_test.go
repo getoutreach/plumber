@@ -10,20 +10,22 @@ import (
 
 func TestMacro(t *testing.T) {
 	err := withFixture(
-		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.Config{
-				Macros: []config.MacroConfig{
-					{
-						PlumberMacro: &config.PlumberMacroConfig{
-							Name: "@derive",
-							Annotations: []config.AnnotationConfig{
-								{Name: "plumber:derive", Args: []string{"{{ .Type.Name }}Macro"}},
-								{Name: "plumber:output", Args: []string{"generated.go"}},
-							},
+		&shape.Config{
+			Macros: []config.MacroConfig{
+				{
+					PlumberMacro: &config.PlumberMacroConfig{
+						Name: "@derive",
+						Annotations: []config.AnnotationConfig{
+							{Name: "plumber:derive", Args: []string{"{{ .Type.Name }}Macro"}},
+							{Name: "plumber:output", Args: []string{"generated.go"}},
 						},
 					},
 				},
-			}, []string{"./..."})
+			},
+		},
+		func(ctx FixtureContext) error {
+			shapingContext := ctx.ShapingContext
+			err := shape.Run(shapingContext, ctx.Cfg, []string{"./..."})
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "macro/generated.go", "macro/generated.go.golden")
 			return nil
@@ -35,20 +37,21 @@ func TestMacro(t *testing.T) {
 
 func TestMacroTemplate(t *testing.T) {
 	err := withFixture(
-		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.Config{
-				Macros: []config.MacroConfig{
-					{
-						PlumberMacro: &config.PlumberMacroConfig{
-							Name: "@tderive",
-							Annotations: []config.AnnotationConfig{
-								{Name: "plumber:derive", Args: []string{`{{ index .Source.Args 0 }}`}},
-								{Name: "plumber:output", Args: []string{"generated.go"}},
-							},
+		&shape.Config{
+			Macros: []config.MacroConfig{
+				{
+					PlumberMacro: &config.PlumberMacroConfig{
+						Name: "@tderive",
+						Annotations: []config.AnnotationConfig{
+							{Name: "plumber:derive", Args: []string{`{{ index .Source.Args 0 }}`}},
+							{Name: "plumber:output", Args: []string{"generated.go"}},
 						},
 					},
 				},
-			}, []string{"./..."})
+			},
+		},
+		func(ctx FixtureContext) error {
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "macrotemplate/generated.go", "macrotemplate/generated.go.golden")
 			return nil

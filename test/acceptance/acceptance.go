@@ -8,6 +8,7 @@
 package acceptance_test
 
 import (
+	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -15,8 +16,15 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strings"
 	"testing"
 
+	"github.com/getoutreach/plumber/internal/command/discovery/render"
+	"github.com/getoutreach/plumber/internal/command/shape"
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/command/shape/report/term"
+	"github.com/getoutreach/plumber/internal/command/shape/structure"
+	"github.com/getoutreach/plumber/internal/command/template"
 	"gotest.tools/v3/assert"
 )
 
@@ -24,10 +32,12 @@ import (
 var fixtures embed.FS
 
 type FixtureContext struct {
-	BaseDir string
+	BaseDir        string
+	ShapingContext *contract.ShapingContext
+	Cfg            *shape.Config
 }
 
-func withFixture(fn func(ctx FixtureContext) error, files ...string) error {
+func withFixture(cfg *shape.Config, fn func(ctx FixtureContext) error, files ...string) error {
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current working directory: %w", err)
@@ -57,6 +67,18 @@ func withFixture(fn func(ctx FixtureContext) error, files ...string) error {
 		return err
 	}
 
+	mod := strings.TrimPrefix(baseDir, wd)
+	mod = path.Join("github.com/getoutreach/plumber/test/acceptance", mod)
+
+	shapingContext := newShapingContext(cfg)
+	shapingContext.Module = contract.ModuleInfo{
+		Path: mod,
+		Name: path.Base(mod),
+		Dir:  path.Join(wd, baseDir),
+	}
+
+	c := FixtureContext{BaseDir: baseDir, ShapingContext: shapingContext, Cfg: cfg}
+
 	for _, file := range files {
 		dirName := path.Dir(file)
 		if err := os.MkdirAll(dirName, 0o777); err != nil {
@@ -84,14 +106,12 @@ func withFixture(fn func(ctx FixtureContext) error, files ...string) error {
 		}
 	}
 
-	return fn(FixtureContext{BaseDir: baseDir})
+	return fn(c)
 }
 
 func (ctx FixtureContext) AssertContent(t *testing.T, filename, expected string) {
 	content, err := os.ReadFile(filename)
 	assert.NilError(t, err)
-
-	fmt.Println(os.Getwd())
 
 	expectedContent, err := fixtures.ReadFile(path.Join("fixture", "@golden", expected))
 	assert.NilError(t, err)
@@ -101,4 +121,15 @@ func (ctx FixtureContext) AssertContent(t *testing.T, filename, expected string)
 	content = re.ReplaceAll(content, []byte("testrun-acceptance/"))
 
 	assert.Equal(t, string(expectedContent), string(content))
+}
+
+func newShapingContext(cfg *shape.Config) *contract.ShapingContext {
+	tl := template.NewTemplateCache(cfg.Templates.Sources, cfg.Templates.Content, "/tmp", render.EmbededTemplates)
+
+	ctx := contract.NewShapingContext(
+		context.Background(), term.NewTerminalReporter(), tl, &structure.NoopResolver{})
+	ctx.Module = contract.ModuleInfo{
+		Path: "github.com",
+	}
+	return ctx
 }

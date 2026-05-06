@@ -10,8 +10,6 @@ import (
 )
 
 func TestOutput(t *testing.T) {
-	pkg := &model.Package{Dir: "pkg"}
-
 	tests := []struct {
 		name        string
 		position    model.Position
@@ -77,6 +75,9 @@ func TestOutput(t *testing.T) {
 			},
 		},
 	}
+
+	pkg := &model.Package{Dir: "pkg", Path: "github.com/example/repo/pkg"}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			transformer := &BasicTransformer{
@@ -86,8 +87,16 @@ func TestOutput(t *testing.T) {
 			}
 			transformer.Validate(pkg) // Ensure annotations are processed before generating output
 			err := transformer.Expand(&contract.ShapingContext{
-				RepoModule: contract.ModuleInfo{},
-				Module:     contract.ModuleInfo{},
+				RepoModule: contract.ModuleInfo{
+					// Name: "repo",
+					// Path: "github.com/example/repo",
+					// Dir:  "/",
+				},
+				Module: contract.ModuleInfo{
+					Name: "pkg",
+					Path: "github.com/example/repo/pkg",
+					Dir:  "pkg",
+				},
 			}, []*model.Package{pkg}, &model.Type{
 				TypeNode: &model.TypeNode{
 					Package:  pkg,

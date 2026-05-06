@@ -176,7 +176,8 @@ func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.Ren
 			}
 			return ""
 		},
-		"type": TypesRenderer(context.GetPkgPath(), context.GetModules()),
+		"comment_wrap": commentWrap,
+		"type":         TypesRenderer(context.GetPkgPath(), context.GetModules()),
 		"type_set": func(name string) (string, error) {
 			fqn, err := astx.CraftFQN(context.GetPkgPath(), name)
 			if err != nil {
@@ -237,4 +238,12 @@ func GenericFunctions() template.FuncMap {
 
 func WithGenericFuncMap(context Context) (opt gen.RenderOptionsFunc) {
 	return gen.WithFuncMap(GenericFunctions())
+}
+
+func commentWrap(s string) string {
+	parts := strings.Split(strings.TrimSpace(s), "\n")
+	for i, part := range parts {
+		parts[i] = "// " + part
+	}
+	return strings.Join(parts, "\n")
 }

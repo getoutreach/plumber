@@ -144,7 +144,7 @@ type Reporter interface {
 // TemplateLoader resolves template names into render option functions.
 // This is implemented by template.TemplateCache.
 type TemplateLoader interface {
-	Load(names []string) ([]gen.RenderOptionsFunc, error)
+	Load(name string, names ...string) ([]gen.RenderOptionsFunc, error)
 }
 
 // StructurePathResolver defines an interface for resolving structure paths according to structure path configuration

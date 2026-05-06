@@ -13,6 +13,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/getoutreach/plumber/internal/astx/inspect"
 	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
@@ -143,6 +144,11 @@ func expandAnnotations(
 			continue
 		}
 
+		var annotations model.Annotations
+		if macro.Content != "" {
+			annotations = inspect.ParseAnnotationsCommented(macro.Content)
+		}
+
 		// Capture a stable pointer to the triggering annotation that subsequent
 		// expansion outputs can reference via ImpliedBy. We allocate a copy so the
 		// referent's lifetime is independent of the input slice's storage.
@@ -155,6 +161,7 @@ func expandAnnotations(
 			)
 			expanded = append(expanded, a)
 		}
+		expanded = append(expanded, annotations...)
 	}
 	return expanded, nil
 }

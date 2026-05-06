@@ -191,7 +191,7 @@ func (t *BasicTransformer) Expand(ctx *contract.ShapingContext, pkgs []*model.Pa
 		value := output.Value()
 		if !strings.HasPrefix(value, "/") {
 			dir := path.Dir(t.Position.Filename)
-			if dir == "" {
+			if dir == "" || dir == "." {
 				dir = node.GetPackage().Dir
 			}
 			value = strings.TrimPrefix(value, "./")
@@ -208,10 +208,11 @@ func (t *BasicTransformer) Expand(ctx *contract.ShapingContext, pkgs []*model.Pa
 	}
 
 	pkg, found := lo.Find(pkgs, func(p *model.Package) bool {
+		fmt.Println(p.Path)
 		return p.Path == pkgPath
 	})
 	if !found {
-		return fmt.Errorf("can't find output package based on path: %s", dir)
+		return fmt.Errorf("can't find output package based on path: %s, derived package path: %s", dir, pkgPath)
 	}
 	t.Package = pkg
 

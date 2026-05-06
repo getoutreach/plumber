@@ -26,7 +26,6 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/matcher"
 	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/internal/render"
-	baserender "github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
 )
@@ -327,7 +326,7 @@ func renderTransformations(
 				return p.Path == pkgPath
 			})
 			if !found {
-				return nil, fmt.Errorf("package not found for output %q", filename)
+				return nil, fmt.Errorf("package not found for output %q considered: %q", filename, pkgPath)
 			}
 
 			manager := buildModeManager(cfg, pkg, mode, filename)
@@ -441,7 +440,7 @@ func expandTransformations(
 	pkgs []*model.Package,
 	transformations []Transformation,
 ) error {
-	scope := baserender.Scope{}
+	scope := render.Scope{}
 	for _, t := range transformations {
 		if err := t.Transformer.Expand(ctx, pkgs, t.Node, scope); err != nil {
 			ctx.TransformerError(t.Transformer, t.Node, err)

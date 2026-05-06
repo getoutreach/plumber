@@ -10,22 +10,23 @@ import (
 
 func TestGenerated(t *testing.T) {
 	err := withFixture(
-		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.Config{
-				Mixins: []config.MixinConfig{
-					{
-						PlumberMixin: &config.PlumberMixinConfig{
-							Name: "mixing.model.filtrable",
-							Annotations: []config.AnnotationConfig{
-								{
-									Name: "plumber:filter",
-									Args: []string{"annotation.has", "is:filtrable"},
-								},
+		&shape.Config{
+			Mixins: []config.MixinConfig{
+				{
+					PlumberMixin: &config.PlumberMixinConfig{
+						Name: "mixing.model.filtrable",
+						Annotations: []config.AnnotationConfig{
+							{
+								Name: "plumber:filter",
+								Args: []string{"annotation.has", "is:filtrable"},
 							},
 						},
 					},
 				},
-			}, []string{"./..."})
+			},
+		},
+		func(ctx FixtureContext) error {
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "generated/generated.go", "generated/generated.go.golden")
 			return nil

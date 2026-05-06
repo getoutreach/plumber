@@ -90,7 +90,7 @@ func ResolveRefs(
 			opts = append(opts, gen.WithTemplateContent(ref.Content))
 		} else {
 			// Name reference — resolve from cache
-			resolved, err := cache.Load([]string{ref.Name})
+			resolved, err := cache.Load(ref.Name)
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve template %q: %w", ref.Name, err)
 			}
@@ -129,9 +129,13 @@ func NewTemplateCache(sources []*SourceConfig, content []ContentConfig, cacheDir
 // Load resolves the given template names into render option functions,
 // returning cached results when available and resolving (then caching)
 // any names seen for the first time.
-func (tc *TemplateCache) Load(names []string) ([]gen.RenderOptionsFunc, error) {
+func (tc *TemplateCache) Load(name string, names ...string) ([]gen.RenderOptionsFunc, error) {
+	names = append([]string{name}, names...)
 	var opts []gen.RenderOptionsFunc
 	for _, name := range names {
+		if name == "" {
+			continue
+		}
 		if cached, ok := tc.cache[name]; ok {
 			opts = append(opts, cached...)
 			continue

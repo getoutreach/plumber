@@ -33,7 +33,7 @@ func buildContext(cfg *Config, modules *baserender.ModuleRegister, pkg *model.Pa
 // loading any necessary templates based on the transformer's annotations and the shaping context's template loader.
 func transformationContext(context *render.Context, ctx *contract.ShapingContext, t *Transformation) (*render.Context, error) {
 	names := t.Transformer.GetAnnotations().FindAll(contract.OptionTemplate).FlatArgs()
-	opts, err := ctx.TemplateLoader.Load(names)
+	opts, err := ctx.TemplateLoader.Load("", names...)
 	if err != nil {
 		return context, err
 	}

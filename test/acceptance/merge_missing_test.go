@@ -13,8 +13,9 @@ import (
 // if necessary, instead of failing with a "type not found" error.
 func TestMergeMissingType(t *testing.T) {
 	err := withFixture(
+		&shape.Config{},
 		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.Config{}, []string{"./..."})
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "mergemissing/merged.go", "mergemissing/merged.go.golden")
 			return nil

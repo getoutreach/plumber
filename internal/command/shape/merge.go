@@ -417,11 +417,9 @@ func mergeInterface(current *model.Type, generated *dst.InterfaceType, importMap
 				if alreadyExists {
 					continue
 				}
-			} else {
+			} else if existingEmbeds[embedKey(entry.Type)] {
 				// Embedded interface — deduplicate by type expression.
-				if existingEmbeds[embedKey(entry.Type)] {
-					continue
-				}
+				continue
 			}
 			astx.AnnotateFieldIdents(entry, importMap)
 			if ifaceType.Methods == nil {

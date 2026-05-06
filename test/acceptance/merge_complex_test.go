@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/getoutreach/plumber/internal/command/shape"
+	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/command/template"
 	"gotest.tools/v3/assert"
 )
@@ -53,18 +54,21 @@ func (s *ServiceBlended) Switch(str string) {
 }
 {{end}}`
 
-	err := withFixture(
-		func(ctx FixtureContext) error {
-			err := shape.Run(&shape.Config{
-				Templates: template.TemplatesFileConfig{
-					Content: []template.ContentConfig{
-						{
-							Name:    "mergecomplex-override",
-							Content: contentTemplate,
-						},
-					},
+	cfg := &shape.Config{
+		Macros: []config.MacroConfig{},
+		Templates: template.TemplatesFileConfig{
+			Content: []template.ContentConfig{
+				{
+					Name:    "mergecomplex-override",
+					Content: contentTemplate,
 				},
-			}, []string{"./..."})
+			},
+		},
+	}
+
+	err := withFixture(cfg,
+		func(ctx FixtureContext) error {
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "mergecomplex/blended.go", "mergecomplex/blended.go.golden")
 			return nil
