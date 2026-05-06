@@ -94,6 +94,9 @@ func Render(
 	ctx := gen.NewContext("neco")
 
 	scope["Modules"] = context.GetModules()
+	if scope["File"] == nil {
+		scope["File"] = Scope{}
+	}
 
 	scope = DefaultScope(context, scope, output)
 
@@ -132,8 +135,6 @@ func File(
 	if err != nil {
 		return nil, fmt.Errorf("error during rendering: %w", err)
 	}
-
-	fmt.Println("!!!", o.Content)
 
 	o, err = Finalize(context, scope, []string{string(o.Content)}, output, gen.NewSystemFileOpener())
 	if err != nil {

@@ -20,5 +20,5 @@ func Finalize(
 		),
 	)
 	scope["Content"] = strings.Join(parts, "\n\n\n")
-	return Render(context, "plumber/file/package", scope, output, opener, opts...)
+	return Render(context, "plumber/file/content", scope, output, opener, opts...)
 }

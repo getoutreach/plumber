@@ -164,7 +164,18 @@ func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.Ren
 	}
 	functions := template.FuncMap{
 		"extend": extend,
-
+		"file_description": func(s string) string {
+			if f, ok := scope["File"].(Scope); ok {
+				f["Description"] = s
+			}
+			return ""
+		},
+		"file_package_description": func(s string) string {
+			if f, ok := scope["File"].(Scope); ok {
+				f["PackageDescription"] = s
+			}
+			return ""
+		},
 		"type": TypesRenderer(context.GetPkgPath(), context.GetModules()),
 		"type_set": func(name string) (string, error) {
 			fqn, err := astx.CraftFQN(context.GetPkgPath(), name)
