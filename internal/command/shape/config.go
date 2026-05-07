@@ -46,6 +46,7 @@ func (c *FileConfig) Merge(includes ...*FileConfig) {
 func (c *Config) MergeShape(other *Config) {
 	c.Sources = append(c.Sources, other.Sources...)
 	c.Templates.Content = append(c.Templates.Content, other.Templates.Content...)
+	c.Templates.Global = append(c.Templates.Global, other.Templates.Global...)
 	c.Macros = append(c.Macros, other.Macros...)
 	c.Mixins = append(c.Mixins, other.Mixins...)
 	c.Matchers = append(c.Matchers, other.Matchers...)

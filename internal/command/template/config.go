@@ -10,6 +10,7 @@ package template
 type TemplatesFileConfig struct {
 	Sources []*SourceConfig `yaml:"sources,omitempty"`
 	Content []ContentConfig `yaml:"content,omitempty"`
+	Global  []ContentConfig `yaml:"global,omitempty"`
 }
 
 // TemplatesContentConfig represents the root-level template configuration in a plumber config file.
@@ -66,4 +67,5 @@ type ContentConfig struct {
 func (c *TemplatesFileConfig) Merge(other *TemplatesFileConfig) {
 	c.Sources = append(c.Sources, other.Sources...)
 	c.Content = append(c.Content, other.Content...)
+	c.Global = append(c.Global, other.Global...)
 }
