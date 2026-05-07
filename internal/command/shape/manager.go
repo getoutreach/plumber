@@ -96,6 +96,10 @@ func managerRender(
 		return nil, contract.ErrTransformerRender
 	}
 
+	for _, t := range transformations {
+		ctx.TransformerOutput(t.Transformer, output)
+	}
+
 	o, err := render.Finalize(context, scope, contents, output, opener)
 	if err != nil {
 		return nil, fmt.Errorf("error during finalization: %w", err)

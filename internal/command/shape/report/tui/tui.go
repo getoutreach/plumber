@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
@@ -29,7 +30,7 @@ import (
 // ---------------------------------------------------------------------------
 var (
 	// ColorActive is the header background for the currently processing transformer.
-	ColorActive = lipgloss.Color("#27AE60")
+	ColorActive = lipgloss.Color("#757b78")
 	// ColorSuccess is the header background for a successfully completed transformer.
 	ColorSuccess = lipgloss.Color("#2ECC71")
 	// ColorError is the header background for a transformer that encountered an error.
@@ -82,7 +83,7 @@ const (
 func (s status) String() string {
 	switch s {
 	case statusActive:
-		return "OK"
+		return "CONSIDERED"
 	case statusSuccess:
 		return "SUCCESS"
 	case statusError:
@@ -132,6 +133,11 @@ type panel struct {
 	// status header line. Used for restored-output blocks which do not belong
 	// to any single transformer.
 	headerless bool
+	// committed indicates the panel has been printed to the terminal
+	// scrollback (via tea.Println) and must no longer be included in the
+	// live View() output. Once a panel is committed it is effectively
+	// frozen — no further updates should be applied to it.
+	committed bool
 }
 
 // annotationKV is a flat key/value representation of an annotation used by the
@@ -194,27 +200,54 @@ type eventMsg struct {
 }
 
 // quitMsg signals that no further events will be sent and the program should
-// terminate after rendering its final frame.
+// transition into review mode so the user can scroll through the full
+// transcript before exiting.
 type quitMsg struct{}
 
 // ---------------------------------------------------------------------------
 // Model
 // ---------------------------------------------------------------------------
 
+// phase represents the lifecycle stage of the TUI program. The TUI starts in
+// phaseLive while transformers are still running and transitions to
+// phaseReview once Wait() is called so the user can scroll through the full
+// transcript inside an alternate-screen viewport.
+type phase int
+
+// constants for the TUI phases. The TUI starts in phaseLive and transitions to
+const (
+	// phaseLive is the streaming phase: the TUI runs inline (no alt screen),
+	// completed panels are committed to the terminal scrollback via
+	// tea.Println, and only the active (still-uncommitted) panel is shown in
+	// the live area.
+	phaseLive phase = iota
+	// phaseReview is the post-run review phase: the TUI takes over the
+	// alternate screen and presents the full transcript inside a scrollable
+	// viewport. The user exits with q or ctrl+c.
+	phaseReview
+)
+
 // tuiModel implements tea.Model. It owns the ordered list of panels and the
-// index lookup used to update an existing panel when a follow-up event arrives.
+// index lookup used to update an existing panel when a follow-up event
+// arrives. After all transformers have completed, the model transitions into
+// review mode and renders the full transcript through the embedded viewport.
 type tuiModel struct {
 	panels   []*panel
 	byKey    map[contract.Transformer]int
 	finished bool
 	width    int
+	height   int
+	phase    phase
+	viewport viewport.Model
 }
 
 // newModel constructs an empty model with initialised lookup maps.
 func newModel() *tuiModel {
 	return &tuiModel{
-		byKey: make(map[contract.Transformer]int),
-		width: 80,
+		byKey:  make(map[contract.Transformer]int),
+		width:  80,
+		height: 24,
+		phase:  phaseLive,
 	}
 }
 
@@ -224,33 +257,101 @@ func (m *tuiModel) Init() tea.Cmd {
 }
 
 // Update processes incoming bubbletea messages, mutating the panel list in
-// response to reporter events and quitting when signalled.
+// response to reporter events while in the live phase, and delegating
+// scrolling key handling to the embedded viewport while in the review phase.
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
+		if m.phase == phaseReview {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = m.reviewBodyHeight()
+			m.viewport.SetContent(m.renderTranscript())
+		}
 		return m, nil
 	case tea.KeyMsg:
-		// Allow the user to abort early with Ctrl+C / q.
 		switch msg.String() {
 		case "ctrl+c", "q":
+			// In live phase, ctrl+c/q aborts the run early and behaves like a
+			// completion signal: commit any panels still in the live area and
+			// switch to review mode so the user can still scroll through the
+			// transcript before exiting. In review phase, the same key
+			// terminates the program.
+			if m.phase == phaseReview {
+				return m, tea.Quit
+			}
 			m.finished = true
-			return m, tea.Quit
+			return m, tea.Sequence(m.flushAll(), m.enterReviewCmd())
+		}
+		// In review phase forward all other keys to the viewport so its
+		// default key map (up/down, pgup/pgdn, home/end) takes effect.
+		if m.phase == phaseReview {
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			return m, cmd
+		}
+	case tea.MouseMsg:
+		if m.phase == phaseReview {
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			return m, cmd
 		}
 	case eventMsg:
-		m.applyEvent(msg.event)
-		return m, nil
+		if m.phase == phaseReview {
+			// Late-arriving events after the user has begun reviewing are
+			// dropped — the transcript is considered immutable in review.
+			return m, nil
+		}
+		c := m.applyEvent(msg.event)
+		return m, c
 	case quitMsg:
 		m.finished = true
-		return m, tea.Quit
+		// Flush any uncommitted panels first, then transition to review so
+		// scrollback contains the full record while the alt-screen viewport
+		// also presents it.
+		return m, tea.Sequence(m.flushAll(), m.enterReviewCmd())
 	}
 	return m, nil
+}
+
+// commitPanel marks the panel as committed and returns a command that prints
+// it to the terminal scrollback above the live area. Committed panels are
+// excluded from subsequent View() output so the same content is never
+// rendered twice.
+func (m *tuiModel) commitPanel(p *panel) tea.Cmd {
+	if p == nil || p.committed {
+		return nil
+	}
+	p.committed = true
+	return tea.Println(renderPanel(p, m.width))
+}
+
+// flushAll commits every panel that has not yet been printed to scrollback,
+// preserving the original panel order. Used at shutdown so no transformer
+// blocks are lost when bubbletea tears down its live area.
+func (m *tuiModel) flushAll() tea.Cmd {
+	var cmds []tea.Cmd
+	for _, p := range m.panels {
+		if cmd := m.commitPanel(p); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Sequence(cmds...)
 }
 
 // applyEvent mutates the model to reflect a single reporter event, creating a
 // new panel for the transformer if one does not yet exist and otherwise
 // updating the existing panel's status or appending log lines as appropriate.
-func (m *tuiModel) applyEvent(e contract.ReporterEvent) {
+// Panels that reach a terminal status (success, error, skipped) are committed
+// to the terminal scrollback so they are not lost when the live area shrinks
+// or the program exits; the returned command carries any required tea.Println
+// invocations.
+// nolint: cyclop,funlen //Why: tui
+func (m *tuiModel) applyEvent(e contract.ReporterEvent) tea.Cmd {
 	switch e.Kind {
 	case contract.EventTransformerAdded:
 		m.ensurePanel(e)
@@ -260,6 +361,7 @@ func (m *tuiModel) applyEvent(e contract.ReporterEvent) {
 		if e.Message != "" {
 			p.logs = append(p.logs, "skipped: "+e.Message)
 		}
+		return m.commitPanel(p)
 	case contract.EventTransformerError:
 		p := m.ensurePanel(e)
 		p.status = statusError
@@ -271,6 +373,7 @@ func (m *tuiModel) applyEvent(e contract.ReporterEvent) {
 				p.logs = append(p.logs, "error: "+e.Error.Error())
 			}
 		}
+		return m.commitPanel(p)
 	case contract.EventTransformerInfo:
 		p := m.ensurePanel(e)
 		if e.Message != "" {
@@ -284,35 +387,63 @@ func (m *tuiModel) applyEvent(e contract.ReporterEvent) {
 		if e.Path != "" {
 			p.logs = append(p.logs, "output: "+e.Path)
 		}
+		if p.status == statusSuccess {
+			return m.commitPanel(p)
+		}
 	case contract.EventTransformerRestored:
 		// Restored events are not bound to a specific transformer. Render
 		// each restored event as its own headerless panel whose body is a
 		// pair of key/value rows styled identically to annotation rows.
+		// Restored panels are inherently terminal and have no further
+		// updates, so commit them to scrollback immediately.
 		annotations := []annotationKV{
 			{Name: "restored", Value: e.Path},
 		}
 		if e.Error != nil {
 			annotations = append(annotations, annotationKV{Name: "error", Value: e.Error.Error()})
 		}
-		m.panels = append(m.panels, &panel{
+		p := &panel{
 			headerless:  true,
 			annotations: annotations,
-		})
+		}
+		m.panels = append(m.panels, p)
+		return m.commitPanel(p)
 	case contract.EventQueryExecuted:
 		if len(m.panels) == 0 {
-			return
+			return nil
 		}
-		p := m.panels[len(m.panels)-1]
+		p := m.lastLivePanel()
+		if p == nil {
+			return nil
+		}
 		p.logs = append(p.logs, "query: "+e.Message)
 	case contract.EventQueryError:
 		if len(m.panels) == 0 {
-			return
+			return nil
 		}
-		p := m.panels[len(m.panels)-1]
+		p := m.lastLivePanel()
+		if p == nil {
+			return nil
+		}
 		if e.Error != nil {
 			p.logs = append(p.logs, "query error: "+e.Error.Error())
 		}
 	}
+	return nil
+}
+
+// lastLivePanel returns the most recently appended panel that has not yet
+// been committed to scrollback. Query events attach to the panel currently
+// being shown in the live area; once a panel is frozen it must not be
+// mutated, otherwise the committed copy in scrollback would diverge from
+// the in-memory state.
+func (m *tuiModel) lastLivePanel() *panel {
+	for i := len(m.panels) - 1; i >= 0; i-- {
+		if !m.panels[i].committed {
+			return m.panels[i]
+		}
+	}
+	return nil
 }
 
 // ensurePanel returns the panel associated with the event's transformer,
@@ -340,18 +471,73 @@ func (m *tuiModel) ensurePanel(e contract.ReporterEvent) *panel {
 	return p
 }
 
-// View renders all panels stacked vertically in the order they were created.
-// Each panel is expanded to the full terminal width tracked from the most
-// recent tea.WindowSizeMsg so panels and headers visually fill the screen.
-// A leading blank line is emitted before the first panel so the output is
-// visually separated from any preceding terminal content (prompt, command,
-// etc.).
+// View renders the current frame for either the live phase or the review
+// phase. During the live phase only the still-uncommitted panels are shown
+// (committed panels live in the terminal scrollback). During the review
+// phase the embedded viewport renders the full transcript with a footer
+// describing the available scroll keys.
 func (m *tuiModel) View() string {
-	if len(m.panels) == 0 {
+	if m.phase == phaseReview {
+		return m.viewport.View() + "\n" + m.reviewFooter()
+	}
+	live := make([]*panel, 0, len(m.panels))
+	for _, p := range m.panels {
+		if !p.committed {
+			live = append(live, p)
+		}
+	}
+	if len(live) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("\n")
+	for i, p := range live {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(renderPanel(p, m.width))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// ---------------------------------------------------------------------------
+// Review mode
+// ---------------------------------------------------------------------------
+
+// reviewFooter is the always-visible status bar shown beneath the review
+// viewport. It documents the active scroll keys and the exit shortcut so the
+// user knows how to navigate the transcript.
+func (m *tuiModel) reviewFooter() string {
+	pct := 0
+	if m.viewport.TotalLineCount() > 0 {
+		pct = int(m.viewport.ScrollPercent() * 100)
+	}
+	hint := fmt.Sprintf(" review — ↑/↓ pgup/pgdn home/end scroll · q to exit · %3d%% ", pct)
+	return reviewFooterStyle.Width(m.width).Render(hint)
+}
+
+// reviewBodyHeight is the vertical space (in lines) available for the
+// viewport body, leaving exactly one line at the bottom for the footer. A
+// minimum of one line is always returned so the viewport never collapses to
+// zero height.
+func (m *tuiModel) reviewBodyHeight() int {
+	h := m.height - 1
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+// renderTranscript builds the full multi-panel transcript shown by the
+// review viewport. Every panel — including those already committed to
+// scrollback during the live phase — is rendered so the user can scroll
+// through the entire record without leaving the program.
+func (m *tuiModel) renderTranscript() string {
+	if len(m.panels) == 0 {
+		return ""
+	}
+	var b strings.Builder
 	for i, p := range m.panels {
 		if i > 0 {
 			b.WriteString("\n")
@@ -360,6 +546,39 @@ func (m *tuiModel) View() string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// enterReviewCmd transitions the program from the live phase into the
+// review phase: it switches the bubbletea program into the alternate screen
+// buffer (so the live transcript and the user's prior shell session remain
+// untouched), seeds the viewport with the rendered transcript, and primes
+// the viewport dimensions from the most recent window-size observation.
+//
+// When there are no panels to review (e.g. the run produced no transformer
+// events), the command short-circuits to tea.Quit so the user is not left
+// staring at an empty review screen.
+//
+// The returned tea.Cmd is meant to be appended to the end of any commit
+// sequence so the alt-screen switch happens after all panels have been
+// committed to scrollback.
+func (m *tuiModel) enterReviewCmd() tea.Cmd {
+	if len(m.panels) == 0 {
+		return tea.Quit
+	}
+	return tea.Sequence(
+		func() tea.Msg {
+			m.phase = phaseReview
+			m.viewport = viewport.New(m.width, m.reviewBodyHeight())
+			m.viewport.SetContent(m.renderTranscript())
+			// Force a follow-up window-size observation so the viewport
+			// re-syncs against the real terminal dimensions after the
+			// alternate screen takes effect. Returning nil keeps the
+			// sequence flowing to tea.EnterAltScreen which will itself
+			// trigger a fresh tea.WindowSizeMsg.
+			return nil
+		},
+		tea.EnterAltScreen,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +624,15 @@ var logStyle = lipgloss.NewStyle().
 // background extends across the whole visible width of the line, giving the
 // panel a clear, well-defined body.
 var panelLineStyle = lipgloss.NewStyle().Background(ColorPanelBg)
+
+// reviewFooterStyle styles the always-visible footer shown beneath the
+// review viewport. It uses the panel border colour as its background so the
+// footer reads as a clearly distinct status bar separated from the panel
+// content above it.
+var reviewFooterStyle = lipgloss.NewStyle().
+	Background(ColorBorder).
+	Foreground(ColorHeaderText).
+	Bold(true)
 
 // renderPanel produces the multi-line string representation of a single panel,
 // with each line prefixed by the configured vertical bar glyph. Both the
@@ -553,15 +781,20 @@ type Reporter struct {
 	once    sync.Once
 }
 
-// NewReporter creates and starts a new TUI reporter. The program runs in
-// inline mode (rather than the alternate screen buffer) so that the final
-// rendered panels remain visible in the terminal scrollback after the program
-// exits. The bubbletea program runs in a separate goroutine; call Wait()
-// after all transformations complete to flush the final frame and shut down
-// the renderer.
+// NewReporter creates and starts a new TUI reporter. The program initially
+// runs in inline mode (rather than the alternate screen buffer) so that
+// completed transformer panels stream into the terminal scrollback as they
+// finish. Once Wait() is called the program transitions into a full-screen
+// review phase backed by a scrollable viewport so the user can scroll
+// through the entire transcript before pressing q to exit. Mouse-wheel
+// scrolling is enabled in review mode where the host terminal supports it.
+//
+// The bubbletea program runs in a separate goroutine; call Wait() after all
+// transformations complete to enter review mode and block until the user
+// dismisses it.
 func NewReporter() *Reporter {
 	m := newModel()
-	prog := tea.NewProgram(m)
+	prog := tea.NewProgram(m, tea.WithMouseCellMotion())
 	r := &Reporter{
 		program: prog,
 		model:   m,

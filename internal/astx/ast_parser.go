@@ -114,13 +114,29 @@ func NewParser(paths []string, options ...ParserOption) (*Parser, error) {
 		BuildFlags: opts.BuildFlags,
 	}
 
-	pkgs, err := decorator.Load(cfg, dirs...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load packages: %w", err)
+	if len(dirs) == 0 {
+		return nil, fmt.Errorf("no valid package directories found from paths: %v", paths)
 	}
 
-	if len(pkgs) == 0 {
-		return nil, fmt.Errorf("no packages found for paths: %v", paths)
+	pkgs, err := decorator.Load(cfg, dirs...)
+
+	if len(pkgs) == 0 || err != nil {
+		if len(dirs) > 0 {
+			for i, dir := range dirs {
+				pkgs, err = decorator.Load(cfg, dir)
+				if err != nil {
+					return nil, fmt.Errorf("failed to load package in dir %q: %w", dir, err)
+				}
+				fmt.Printf("Dir[%d]: %s = %d packages\n", i, dir, len(pkgs))
+				if len(pkgs) == 0 {
+					return nil, fmt.Errorf("no packages found in dir[%d] %q", i, dir)
+				}
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to load packages: %w", err)
+		}
+		return nil, fmt.Errorf("no packages found for pathsx: %v, dirs: %v", paths, dirs)
 	}
 
 	// Check for errors in packages
