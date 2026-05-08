@@ -23,7 +23,6 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/report/tui"
 	"github.com/getoutreach/plumber/internal/command/shape/structure"
 	"github.com/getoutreach/plumber/internal/command/template"
-	"github.com/samber/lo"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/mod/modfile"
 )
@@ -118,7 +117,7 @@ func prepareContext(cfg *shape.Config) (shapingContext *contract.ShapingContext,
 		return nil, nil, fmt.Errorf("failed to load module info: %w", err)
 	}
 
-	structureResolver, err := structure.NewResolver(cfg.Structure, repoModule, module)
+	structureResolver, err := structure.NewResolver(cfg.StructureDefinitions, repoModule, module)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create structure resolver: %w", err)
 	}
@@ -163,15 +162,11 @@ func checkoutAndMergeIncludes(cfg *shape.Config) error {
 		cfg.MergeShape(&inc.Shape)
 	}
 
-	if cfg.StructureName != "" {
-		s, ok := lo.Find(cfg.Structures, func(s *config.StructureConfig) bool {
-			return s.Structure.Name == cfg.StructureName
-		})
-		if !ok {
-			return fmt.Errorf("structure %q not found in config", cfg.StructureName)
-		}
-		cfg.Structure = &s.Structure
+	defs, err := config.ResolveStructureDefinitions(cfg.StructureConfig, cfg.Structures)
+	if err != nil {
+		return fmt.Errorf("resolving structure definitions: %w", err)
 	}
+	cfg.StructureDefinitions = defs
 
 	return nil
 }

@@ -16,35 +16,37 @@ import (
 	"github.com/samber/lo"
 )
 
-// StructurePathResolver defines the interface for resolving structure paths according to the provided configuration.
-const (
-	// StructurePathPrefix is the prefix used to identify structure paths in the shape command configuration.
-	StructurePathPrefix = "structure:"
-)
+// StructurePathPrefix is the prefix used to identify structure paths in the shape command configuration.
+const StructurePathPrefix = "structure:"
 
-// Resolver resolves structure paths according to the provided configuration.
+// Resolver resolves structure paths by searching across multiple structure definitions.
+// The first matching path name across all structures wins.
 type Resolver struct {
-	config     *config.PlumberStructureConfig
-	repoModule contract.ModuleInfo
-	module     contract.ModuleInfo
+	definitions *config.StructureDefinitions
+	repoModule  contract.ModuleInfo
+	module      contract.ModuleInfo
 }
 
-// NewResolver creates a new Resolver with the given structure name.
+// NewResolver creates a new Resolver for the given structure definitions.
+// If definitions is nil or empty, a NoopResolver is returned.
 func NewResolver(
-	structureConfig *config.PlumberStructureConfig, repoModule, module contract.ModuleInfo) (contract.StructurePathResolver, error) {
-	if structureConfig == nil {
+	definitions *config.StructureDefinitions, repoModule, module contract.ModuleInfo,
+) (contract.StructurePathResolver, error) {
+	if definitions == nil || len(definitions.Structures) == 0 {
 		return &NoopResolver{}, nil
 	}
 
-	err := expand.Structure(structureConfig, repoModule, module)
-	if err != nil {
-		return nil, fmt.Errorf("failed to expand structure paths: %w", err)
+	for i := range definitions.Structures {
+		err := expand.Structure(&definitions.Structures[i], repoModule, module)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand structure %q paths: %w", definitions.Structures[i].Name, err)
+		}
 	}
 
 	return &Resolver{
-		config:     structureConfig,
-		repoModule: repoModule,
-		module:     module,
+		definitions: definitions,
+		repoModule:  repoModule,
+		module:      module,
 	}, nil
 }
 
@@ -56,24 +58,30 @@ func (r *NoopResolver) ResolvePath(p string) (string, error) {
 }
 
 func (r *Resolver) ResolvePath(p string) (string, error) {
-	if strings.HasPrefix(p, StructurePathPrefix) {
-		p = strings.TrimPrefix(p, StructurePathPrefix)
-		sp, found := lo.Find(r.config.Paths, func(pt config.StructurePathConfig) bool {
-			return pt.Path.Name == p
-		})
-		if found {
-			return path.Join(r.module.Path, r.config.Path, sp.Path.Path), nil
-		}
-
-		names := lo.Map(r.config.Paths, func(pt config.StructurePathConfig, _ int) string {
-			return pt.Path.Name
-		})
-
-		// If not found, return an error or the original path. Here we choose to return the original path.
-		return p, fmt.Errorf("structure path '%s' not found in configuration. Available paths: %v", p, names)
+	if !strings.HasPrefix(p, StructurePathPrefix) {
+		return p, nil
 	}
 
-	// For demonstration purposes, this resolver simply returns the path as-is.
-	// In a real implementation, this would contain logic to resolve the path according to the structure configuration.
-	return p, nil
+	name := strings.TrimPrefix(p, StructurePathPrefix)
+
+	// Search across all structures, first match wins.
+	for _, s := range r.definitions.Structures {
+		sp, found := lo.Find(s.Paths, func(pt config.StructurePathConfig) bool {
+			return pt.Path.Name == name
+		})
+		if found {
+			return path.Join(r.module.Path, s.Path, sp.Path.Path), nil
+		}
+	}
+
+	// Collect all available path names for the error message.
+	var allNames []string
+	for _, s := range r.definitions.Structures {
+		names := lo.Map(s.Paths, func(pt config.StructurePathConfig, _ int) string {
+			return s.Name + "/" + pt.Path.Name
+		})
+		allNames = append(allNames, names...)
+	}
+
+	return name, fmt.Errorf("structure path '%s' not found in any structure definition. Available paths: %v", name, allNames)
 }

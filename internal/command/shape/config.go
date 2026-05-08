@@ -21,19 +21,19 @@ type FileConfig struct {
 // Config holds specific configuration options for the shape command, such as working directory,
 // cache directory, template sources, mixins, and type wrappers.
 type Config struct {
-	WorkingDir    string                         `yaml:"workingDir,omitempty"`
-	StructureName string                         `yaml:"structure,omitempty"`
-	Structure     *config.PlumberStructureConfig `yaml:"-"`
-	CacheDir      string                         `yaml:"cacheDir,omitempty"`
-	Sources       []*template.SourceConfig       `yaml:"sources,omitempty"`
-	Templates     template.TemplatesFileConfig   `yaml:"templates,omitempty"`
-	Macros        []config.MacroConfig           `yaml:"macros,omitempty"`
-	Mixins        []config.MixinConfig           `yaml:"mixins,omitempty"`
-	Matchers      []config.MatcherConfig         `yaml:"matchers,omitempty"`
-	Type          config.TypeConfig              `yaml:"type,omitempty"`
-	Structures    []*config.StructureConfig      `yaml:"structures,omitempty"`
-	Target        *config.TargetConfig           `yaml:"-"`
-	Interactive   bool                           `yaml:"-"`
+	WorkingDir           string                              `yaml:"workingDir,omitempty"`
+	StructureConfig      config.StructureConfig              `yaml:"structure,omitempty"`
+	StructureDefinitions *config.StructureDefinitions        `yaml:"-"`
+	CacheDir             string                              `yaml:"cacheDir,omitempty"`
+	Sources              []*template.SourceConfig            `yaml:"sources,omitempty"`
+	Templates            template.TemplatesFileConfig        `yaml:"templates,omitempty"`
+	Macros               []config.MacroConfig                `yaml:"macros,omitempty"`
+	Mixins               []config.MixinConfig                `yaml:"mixins,omitempty"`
+	Matchers             []config.MatcherConfig              `yaml:"matchers,omitempty"`
+	Type                 config.TypeConfig                   `yaml:"type,omitempty"`
+	Structures           []*config.StructureDefinitionConfig `yaml:"structures,omitempty"`
+	Target               *config.TargetConfig                `yaml:"-"`
+	Interactive          bool                                `yaml:"-"`
 }
 
 func (c *FileConfig) Merge(includes ...*FileConfig) {

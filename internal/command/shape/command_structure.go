@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path"
 
+	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
@@ -15,10 +16,19 @@ import (
 )
 
 func RunStructure(c *cli.Context, ctx *contract.ShapingContext, cfg *Config) error {
-	if cfg.Structure == nil {
-		return errors.New("structure configuration is required for RunStructure")
+	if cfg.StructureDefinitions == nil || len(cfg.StructureDefinitions.Structures) == 0 {
+		return errors.New("structure definitions are required for RunStructure")
 	}
-	for _, pathConfig := range cfg.Structure.Paths {
+	for _, s := range cfg.StructureDefinitions.Structures {
+		if err := runSingleStructure(ctx, cfg, s); err != nil {
+			return fmt.Errorf("processing structure %q: %w", s.Name, err)
+		}
+	}
+	return nil
+}
+
+func runSingleStructure(ctx *contract.ShapingContext, cfg *Config, s config.PlumberStructureConfig) error {
+	for _, pathConfig := range s.Paths {
 		var (
 			p     = pathConfig.Path
 			scope = render.Scope{
@@ -30,11 +40,11 @@ func RunStructure(c *cli.Context, ctx *contract.ShapingContext, cfg *Config) err
 			}
 		)
 		if p.Required {
-			module, err := ctx.DeriveModulePath(path.Join(ctx.Module.Dir, cfg.Structure.Path, p.Path))
+			module, err := ctx.DeriveModulePath(path.Join(ctx.Module.Dir, s.Path, p.Path))
 			if err != nil {
 				return err
 			}
-			output := path.Join(ctx.Module.Dir, cfg.Structure.Path, p.Path, path.Base(p.Path)+".go")
+			output := path.Join(ctx.Module.Dir, s.Path, p.Path, path.Base(p.Path)+".go")
 
 			rc := render.NewRenderContext(
 				render.NewModuleRegister(),
