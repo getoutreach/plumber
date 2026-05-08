@@ -49,7 +49,7 @@ func Run(ctx *contract.ShapingContext, cfg *Config, args []string) error {
 		return err
 	}
 
-	transformations, err := collectTransformations(cfg, pkgs)
+	transformations, err := collectTransformations(ctx, cfg, pkgs)
 	if err != nil {
 		return err
 	}
@@ -173,7 +173,7 @@ func checkoutAndMergeIncludes(cfg *Config) error {
 
 // collectTransformations walks all annotated nodes and package-level comments
 // to build the full list of transformations to execute.
-func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation, error) {
+func collectTransformations(ctx *contract.ShapingContext, cfg *Config, pkgs model.Packages) ([]Transformation, error) {
 	var transformingNodes []model.Node
 
 	err := inspect.Walk(pkgs, inspect.WithAnnotations(
@@ -205,7 +205,7 @@ func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation,
 		appendTransformer(node, ts)
 	}
 
-	if err := collectCommentTransformations(cfg, pkgs, appendTransformer); err != nil {
+	if err := collectCommentTransformations(ctx, cfg, pkgs, appendTransformer); err != nil {
 		return nil, fmt.Errorf("failed to collect comment transformations: %w", err)
 	}
 
@@ -217,7 +217,7 @@ func collectTransformations(cfg *Config, pkgs model.Packages) ([]Transformation,
 //   - Single type: plumber:context "pkg/path".TypeName — targets a single type by FQN.
 //   - Package matcher: plumber:context pkg/path matcher=<name> — targets all types in the
 //     package that match the named matcher's rules.
-func collectCommentTransformations(cfg *Config, pkgs model.Packages, appendTransformer func(node model.Node, ts []Transformer)) error {
+func collectCommentTransformations(ctx *contract.ShapingContext, cfg *Config, pkgs model.Packages, appendTransformer func(node model.Node, ts []Transformer)) error {
 	for _, pkg := range pkgs {
 		for _, comment := range pkg.Comments {
 			m := comment.Annotations.Find(contract.OptionContext)
@@ -235,21 +235,43 @@ func collectCommentTransformations(cfg *Config, pkgs model.Packages, appendTrans
 				continue
 			}
 
-			// Single-FQN mode (existing behavior).
-			fqn, err := astx.ParseFQN(m.Value())
+			var resolveErr error
+			fqn, err := astx.ParseRelativeFQN(pkg.Package.PkgPath, m.Value(), func(pkgPath, typeName string) (replacement string, ok bool) {
+				resolvedPath, err := ctx.StructurePathResolver.ResolvePath(pkgPath)
+				if err != nil {
+					resolveErr = err
+					return "", false
+				}
+				return resolvedPath, resolvedPath != pkgPath
+			})
+			if resolveErr != nil {
+				return fmt.Errorf("failed to resolve package path for context annotation %q: %w", m.Value(), resolveErr)
+			}
+
+			fmt.Println("FOJND!!!", fqn.String())
+
 			if err != nil {
 				return fmt.Errorf("failed to parse model FQN %q: %w", m.Value(), err)
 			}
 			t := pkgs.TypeByFQN(fqn)
 			if t == nil {
-				return fmt.Errorf("model type %q not found in packages", fqn)
+				return fmt.Errorf("model type %s not found in packages", fqn)
 			}
-			ts, err := buildTransformers(cfg, comment.FilterAnnotations(func(a model.Annotation) bool {
+
+			filtered := comment.FilterAnnotations(func(a model.Annotation) bool {
 				return a.Name != contract.OptionContext
-			}))
+			})
+
+			ts, err := buildTransformers(cfg, filtered)
 			if err != nil {
 				return fmt.Errorf("failed to build transformers for node %q: %w", t.GetPosition(), err)
 			}
+
+			if len(ts) == 0 {
+				return fmt.Errorf("no transformers built for node %q with context annotation", t.GetPosition())
+			}
+
+			fmt.Println("!!!!!!!!!!", ts)
 			appendTransformer(t, ts)
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Masterminds/sprig/v3"
 	"github.com/getoutreach/plumber/internal/astx/inspect"
 	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/render"
@@ -240,6 +241,7 @@ func expandTemplateStr(scope render.Scope, node model.Node, s string, data sourc
 	tmpl, err := template.New(name).
 		Option("missingkey=error").
 		Funcs(render.GenericFunctions()).
+		Funcs(sprig.TxtFuncMap()).
 		Funcs(map[string]any{
 			"filename_suffixed": func(suffix string) string {
 				output := toOutputTemplateData(path.Join(node.GetPackage().Dir, pos.Filename))

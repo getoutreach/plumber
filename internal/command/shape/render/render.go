@@ -56,3 +56,10 @@ func (c *Context) Clone() *Context {
 		Wrapper:       c.Wrapper,
 	}
 }
+
+func contentError(o *render.Output, err error) (string, error) {
+	if err != nil || o == nil {
+		return "", err
+	}
+	return string(o.Content), err
+}

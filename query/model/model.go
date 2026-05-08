@@ -146,6 +146,7 @@ type (
 		Name         string          `json:"name,omitempty" yaml:"name,omitempty"`
 		FallbackName string          `json:"fallbackName,omitempty" yaml:"fallbackName,omitempty"`
 		Doc          string          `json:"doc,omitempty" yaml:"doc,omitempty"`
+		Embedded     bool            `json:"embedded,omitempty" yaml:"embedded,omitempty"`
 		Annotations  Annotations     `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 		Type         *TypeDefinition `json:"type" yaml:"type"`
 		Tags         []Tag

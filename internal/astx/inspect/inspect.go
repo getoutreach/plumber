@@ -397,6 +397,7 @@ func buildVar(pkg *decorator.Package, v *types.Var) *model.Var {
 		Type: &model.TypeDefinition{
 			Spec: model.NewTypeSpec(astx.FQNFromGoType(t), t),
 		},
+		Embedded: v.Embedded(),
 	}
 }
 

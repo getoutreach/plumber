@@ -147,11 +147,61 @@ func ignored(ignores *Ignores) func(groups ...string) bool {
 	}
 }
 
-func moduleInclude(context Context) func(modulePath string) (string, error) {
+func moduleInclude(context Context) func(modulePath ...string) (string, error) {
 	modules := context.GetModules()
-	return func(modulePath string) (string, error) {
-		modules.Register(modulePath, !strings.Contains(modulePath, "/"))
+	return func(modulePath ...string) (string, error) {
+		if len(modulePath) == 0 {
+			return "", fmt.Errorf("module path is required")
+		}
+		p := modulePath[0]
+		alias := ""
+		if len(modulePath) > 1 {
+			alias = modulePath[1]
+		}
+
+		if alias == "." {
+			modules.Dot(p)
+			return "", nil
+		}
+
+		modules.Register(p, astx.IsStandardType(p))
 		return "", nil
+	}
+}
+
+// ModuleRef represents a reference to a module that has been registered for inclusion during rendering, containing the module path and its registration details.
+type ModuleRef struct {
+	Path string
+	Reg  ModuleRegistration
+}
+
+func (r ModuleRef) Type(name string) (model.TypeSpec, error) {
+	fqn, err := astx.CraftFQN(r.Path, name)
+	if err != nil {
+		return model.TypeSpec{}, fmt.Errorf("failed to craft FQN for type %q in module %q: %w", name, r.Path, err)
+	}
+	return model.TypeSpec{FQN: fqn.String()}, nil
+}
+
+func module(context Context) func(modulePath ...string) (ModuleRef, error) {
+	modules := context.GetModules()
+	return func(modulePath ...string) (ModuleRef, error) {
+		if len(modulePath) == 0 {
+			return ModuleRef{}, fmt.Errorf("module path is required")
+		}
+		p := modulePath[0]
+		alias := ""
+		if len(modulePath) > 1 {
+			alias = modulePath[1]
+		}
+
+		if alias == "." {
+			modules.Dot(p)
+			return ModuleRef{}, nil
+		}
+
+		reg := modules.Register(p, astx.IsStandardType(p))
+		return ModuleRef{Path: p, Reg: reg}, nil
 	}
 }
 
@@ -217,6 +267,7 @@ func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.Ren
 		"fragment_start": fragmentStart(scope),
 		"fragment_end":   fragmentEnd(scope),
 		"module_include": moduleInclude(context),
+		"module":         module(context),
 	}
 	maps.Copy(functions, GenericFunctions())
 	return gen.WithFuncMap(functions), dispose

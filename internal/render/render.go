@@ -13,7 +13,6 @@ import (
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
-	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/query/model"
 )
@@ -105,11 +104,8 @@ func Render(
 
 	features := gen.Features{
 		gen.FeatureFunc(func(ctx *gen.Context, wr *gen.Writer) error {
-			c := view.Base{
-				Scope: scope,
-			}
 			return ctx.Write(wr, output, func(ctx *gen.Context, w io.Writer) error {
-				return gen.RenderContent(ctx, template, w, c,
+				return gen.RenderContent(ctx, template, w, context.DataFactory(scope),
 					fm,
 					gen.WithRenderOptions(context.GetRenderOptions()...),
 				)

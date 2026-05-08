@@ -4,6 +4,7 @@
 package render
 
 import (
+	"github.com/getoutreach/plumber/internal/command/shape/render/view"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/query/model"
 )
@@ -14,12 +15,13 @@ type (
 	// and options for the rendering process.
 	//nolint: revive //Why: There is already Context Interface defined
 	RenderContext struct {
-		RenderOptions []gen.RenderOptionsFunc
-		Modules       *ModuleRegister
-		PkgPath       string
-		Package       *model.Package
-		Output        string
-		Templates     []string
+		RenderOptions   []gen.RenderOptionsFunc
+		Modules         *ModuleRegister
+		PkgPath         string
+		Package         *model.Package
+		Output          string
+		Templates       []string
+		DataFactoryFunc func(scope Scope) any
 	}
 
 	// Context defines the interface for accessing rendering context information and options.
@@ -33,6 +35,8 @@ type (
 		ContextRenderOptions() []gen.RenderOptionsFunc
 		WithPriorityRenderOptions(opts ...gen.RenderOptionsFunc)
 		WithRenderOptions(opts ...gen.RenderOptionsFunc)
+		WithDataFactoryFunc(f func(scope Scope) any)
+		DataFactory(scope Scope) any
 		Context() ContextCloner
 	}
 
@@ -91,6 +95,19 @@ func (c *RenderContext) Context() ContextCloner {
 	return c
 }
 
+func (c *RenderContext) DataFactory(scope Scope) any {
+	if c.DataFactoryFunc != nil {
+		return c.DataFactoryFunc(scope)
+	}
+	return view.Base{
+		Scope: scope,
+	}
+}
+
+func (c *RenderContext) WithDataFactoryFunc(f func(scope Scope) any) {
+	c.DataFactoryFunc = f
+}
+
 func (c *RenderContext) ContextRenderOptions() []gen.RenderOptionsFunc {
 	opts := make([]gen.RenderOptionsFunc, 0, len(c.RenderOptions)+1)
 	opts = append(opts, c.RenderOptions...)
@@ -104,11 +121,12 @@ func (c *RenderContext) ContextRenderOptions() []gen.RenderOptionsFunc {
 
 func (c *RenderContext) Clone() ContextCloner {
 	return &RenderContext{
-		RenderOptions: append([]gen.RenderOptionsFunc{}, c.RenderOptions...),
-		Modules:       c.Modules,
-		PkgPath:       c.PkgPath,
-		Package:       c.Package,
-		Output:        c.Output,
-		Templates:     append([]string{}, c.Templates...),
+		RenderOptions:   append([]gen.RenderOptionsFunc{}, c.RenderOptions...),
+		Modules:         c.Modules,
+		PkgPath:         c.PkgPath,
+		Package:         c.Package,
+		Output:          c.Output,
+		Templates:       append([]string{}, c.Templates...),
+		DataFactoryFunc: c.DataFactoryFunc,
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/command/shape/render/view"
+	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	baserender "github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
@@ -21,18 +22,30 @@ import (
 
 // buildContext constructs the rendering context for a given transformation, populating it with the package path, module register,
 // type wrapper, and output path based on the provided configuration and package information.
-func buildContext(cfg *Config, modules *baserender.ModuleRegister, pkg *model.Package, output string) *render.Context {
+func buildContext(cfg *Config, ctx *contract.ShapingContext, modules *baserender.ModuleRegister, pkg *model.Package, output string) (*render.Context, error) {
 	context := &render.Context{
 		ContextCloner: baserender.NewRenderContext(modules, pkg, output),
 		Wrapper:       NewTypeWrapper(cfg),
 	}
-	return context
+	names := lo.Map(cfg.Templates.Global, func(t template.ContentConfig, _ int) string {
+		return t.Name
+	})
+
+	opts, err := ctx.TemplateLoader.Load("", names...)
+	if err != nil {
+		return context, err
+	}
+	context.WithPriorityRenderOptions(opts...)
+
+	return context, nil
 }
 
 // transformationContext is a helper function that builds the rendering context for a given transformation,
 // loading any necessary templates based on the transformer's annotations and the shaping context's template loader.
-func transformationContext(context *render.Context, ctx *contract.ShapingContext, t *Transformation) (*render.Context, error) {
+func transformationContext(cfg *Config, context *render.Context, ctx *contract.ShapingContext, t *Transformation) (*render.Context, error) {
+	// load annotations templates
 	names := t.Transformer.GetAnnotations().FindAll(contract.OptionTemplate).FlatArgs()
+
 	opts, err := ctx.TemplateLoader.Load("", names...)
 	if err != nil {
 		return context, err
@@ -85,7 +98,10 @@ func managerRender(
 	// previously inflated.
 	pkg.EnsureDir()
 
-	context := buildContext(cfg, baserender.NewModuleRegister(), pkg, output)
+	context, err := buildContext(cfg, ctx, baserender.NewModuleRegister(), pkg, output)
+	if err != nil {
+		return nil, err
+	}
 
 	var contents []string
 
@@ -170,7 +186,10 @@ func (m *InplaceManager) Render(
 			var (
 				opener = gen.NewBufferFileOpener()
 			)
-			context := buildContext(m.cfg, modules, m.Package, m.output)
+			context, err := buildContext(m.cfg, ctx, modules, m.Package, m.output)
+			if err != nil {
+				return err
+			}
 
 			var content string
 
@@ -269,7 +288,7 @@ func runTransformations(
 				ignores = render.NewIgnores(t.Transformer.GetAnnotations().FindAll(contract.OptionIgnore).Values())
 			}
 
-			ctxPtr, err := transformationContext(state.WithIgnores(ignores), ctx, &t)
+			ctxPtr, err := transformationContext(cfg, state.WithIgnores(ignores), ctx, &t)
 			if err != nil {
 				return fmt.Errorf("error building transformation context for transformer %q: %w", t.Transformer.GetName(), err)
 			}

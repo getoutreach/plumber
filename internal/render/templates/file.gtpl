@@ -1,5 +1,6 @@
-{{define "plumber/file/comment"}}{{ if eq $.Scope.Mode "generated"}}// Generated file by plumber shape function. DON'T edit manually.
+{{define "plumber/file/comment"}}{{ if eq $.Scope.Mode "generated"}}// Generated file by plumber shape function. DON'T edit manually outside of designated areas.
 {{end}}{{end}}
+
 {{define "plumber/file/package_description" -}}
 {{ if $.Scope.File.PackageDescription -}}
 // Package {{ $.Scope.Package.Name }} {{ $.Scope.File.PackageDescription }}
@@ -32,7 +33,9 @@
     {{ .Scope.Content }}
     {{ placeholder "footer" }}
 {{end}}
+
 {{define "plumber/file/copyright"}}{{end}}
+
 {{define "plumber/file/imports" -}}
     {{ if $.Scope.Modules.Imports -}}
         import (
