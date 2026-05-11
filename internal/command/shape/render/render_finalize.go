@@ -5,6 +5,9 @@
 package render
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/internal/render"
 )
@@ -13,11 +16,24 @@ func Finalize(
 	context *Context, scope render.Scope, parts []string, output string, opener gen.FileOpener, opts ...gen.WriterOption,
 ) (*render.Output, error) {
 	context = context.Clone()
+
+	for _, i := range context.GetModules().Imports {
+		fmt.Printf("Import: %s\n", i)
+	}
+
 	context.WithPriorityRenderOptions(
 		withRenderFuncMap(context, output),
 		gen.WithFS(EmbededTemplates,
 			"templates/command/command_derive.gtpl",
 		),
 	)
-	return render.Finalize(context, scope, parts, output, opener, opts...)
+	o, err := render.Finalize(context, scope, parts, output, opener, opts...)
+
+	if strings.Contains(output, "plumber_inplace_helper.go") {
+		fmt.Println("-----------------------------")
+		fmt.Println(string(o.Content))
+		fmt.Println("-----------------------------")
+	}
+
+	return o, err
 }

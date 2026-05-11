@@ -88,7 +88,7 @@ These refine the behaviour of the active transformation.
 | `plumber:receiver` | `<ReceiverType>` | Override the receiver type for generated methods. |
 | `plumber:comment` | `<text>` | Append a comment to the generated declaration. |
 | `plumber:context` | `<pkg/Type>` | Used in **package-level comments** to point the transformation at a specific model type (fully qualified). |
-| `plumber:scope` | `"<Name>" type="<FQN>"` | Inject a resolved type into the template scope under `.Scope.Custom.<Name>`. Can be specified multiple times. |
+| `plumber:scope` | `"<Name>" type="<FQN>" \| value="<VALUE>"` | Inject a resolved type into the template scope under `.Scope.Custom.<Name>`. Can be specified multiple times. |
 | `plumber:depends_on` | `<FQN>` | Skip the entire transformation when the referenced type cannot be resolved in the inspected packages. Can be specified multiple times — every dependency must resolve. |
 
 ---

@@ -44,8 +44,9 @@ func typesRendererWithWrapper(
 	currentPkgPath string,
 	register *render.ModuleRegister,
 	wrapper TypeWrapperProvider,
+	pathResolver render.PathResolverFunc,
 ) func(o any, spec model.TypeSpec, subjects ...any) (string, error) {
-	c := render.TypesRenderer(currentPkgPath, register)
+	c := render.TypesRenderer(currentPkgPath, register, pathResolver)
 	return func(o any, spec model.TypeSpec, subjects ...any) (string, error) {
 		if n, ok := o.(model.AnnotationProvider); ok {
 			wn := n.GetAnnotations().Find(contract.OptionFieldWrapper)
@@ -168,7 +169,7 @@ func filterElement(element any, a model.Annotation) (bool, error) {
 
 func withRenderFuncMap(context *Context, output string) (opt gen.RenderOptionsFunc) {
 	functions := template.FuncMap{
-		"type_wrap":       typesRendererWithWrapper(context.GetPkgPath(), context.GetModules(), context.Wrapper),
+		"type_wrap":       typesRendererWithWrapper(context.GetPkgPath(), context.GetModules(), context.Wrapper, context.GetPathResolver()),
 		"ignored":         ignored(context.Ignores),
 		"expand_name":     expand.Name,
 		"comment":         comment,

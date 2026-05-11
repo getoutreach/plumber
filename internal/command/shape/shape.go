@@ -399,6 +399,7 @@ func restoreOutputs(ctx *contract.ShapingContext, output []*ManagerOutput) error
 			if o.Output.Dst != nil {
 				continue
 			}
+			fmt.Println("Re-parsing file ", o.Output.Filename)
 			content, pkg, err := parser.GetParsedFile(o.Output.Filename)
 			if err != nil {
 				return fmt.Errorf("failed to parse generated file %q: %w", o.Output.Filename, err)

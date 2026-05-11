@@ -11,6 +11,11 @@ import (
 
 // Context interface
 type (
+	// PathResolverFunc is a function that resolves a path (e.g. structure:-prefixed)
+	// to an actual Go import path. It returns the resolved path and an error if
+	// resolution fails. When the path does not need resolving the input is returned unchanged.
+	PathResolverFunc = func(string) (string, error)
+
 	// RenderContext is the main context struct used during rendering, containing all necessary information
 	// and options for the rendering process.
 	//nolint: revive //Why: There is already Context Interface defined
@@ -22,6 +27,7 @@ type (
 		Output          string
 		Templates       []string
 		DataFactoryFunc func(scope Scope) any
+		PathResolver    PathResolverFunc
 	}
 
 	// Context defines the interface for accessing rendering context information and options.
@@ -37,6 +43,7 @@ type (
 		WithRenderOptions(opts ...gen.RenderOptionsFunc)
 		WithDataFactoryFunc(f func(scope Scope) any)
 		DataFactory(scope Scope) any
+		GetPathResolver() PathResolverFunc
 		Context() ContextCloner
 	}
 
@@ -108,6 +115,10 @@ func (c *RenderContext) WithDataFactoryFunc(f func(scope Scope) any) {
 	c.DataFactoryFunc = f
 }
 
+func (c *RenderContext) GetPathResolver() PathResolverFunc {
+	return c.PathResolver
+}
+
 func (c *RenderContext) ContextRenderOptions() []gen.RenderOptionsFunc {
 	opts := make([]gen.RenderOptionsFunc, 0, len(c.RenderOptions)+1)
 	opts = append(opts, c.RenderOptions...)
@@ -128,5 +139,6 @@ func (c *RenderContext) Clone() ContextCloner {
 		Output:          c.Output,
 		Templates:       append([]string{}, c.Templates...),
 		DataFactoryFunc: c.DataFactoryFunc,
+		PathResolver:    c.PathResolver,
 	}
 }

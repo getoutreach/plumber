@@ -18,6 +18,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
+	"github.com/samber/lo"
 )
 
 func Name(v string, t *model.Type) any {
@@ -145,15 +146,25 @@ func expandAnnotations(
 			continue
 		}
 
-		var annotations model.Annotations
-		if macro.Content != "" {
-			annotations = inspect.ParseAnnotationsCommented(macro.Content)
-		}
-
 		// Capture a stable pointer to the triggering annotation that subsequent
 		// expansion outputs can reference via ImpliedBy. We allocate a copy so the
 		// referent's lifetime is independent of the input slice's storage.
 		trigger := ann
+
+		var annotations model.Annotations
+		if macro.Content != "" {
+			annotations = inspect.ParseAnnotationsCommented(macro.Content)
+			annotations = lo.Map(annotations, func(a model.Annotation, _ int) model.Annotation {
+				// We want to preserve the original Args and NamedArgs of the macro annotation on the
+				// implied annotations so that they can be used as template data in the deferred expansion stage.
+				return model.NewAnnotation(
+					a.Name, a.Args,
+					model.WithNamedArgs(a.NamedArgs),
+					model.WithImpliedBy(trigger),
+				)
+			})
+		}
+
 		for _, macroAnn := range macro.Annotations {
 			a := model.NewAnnotation(
 				macroAnn.Name, macroAnn.Args,
@@ -234,6 +245,11 @@ func expandTemplateStr(scope render.Scope, node model.Node, s string, data sourc
 		"Type":    data.Type,
 		"Source":  data.Source,
 	}
+
+	if data.Source != nil {
+		fmt.Println("SOURCE", data.Source.NamedArgs)
+	}
+
 	maps.Copy(payload, scope)
 
 	pos.Filename = path.Base(pos.Filename)

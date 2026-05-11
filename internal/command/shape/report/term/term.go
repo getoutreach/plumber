@@ -25,7 +25,10 @@ func NewTerminalReporter() *TerminalReporter {
 	}
 }
 
-func PrintTransformer(t contract.Transformer) {
+func PrintTransformer(t contract.Transformer, node contract.Node) {
+	if node != nil {
+		fmt.Printf("  position: %s:%d\n", node.GetPosition().Filename, node.GetPosition().Line)
+	}
 	fmt.Printf("  with annotations:\n")
 	for _, annotation := range t.GetAnnotations() {
 		println("   ", annotation.Name)
@@ -44,7 +47,7 @@ func (r *TerminalReporter) Notify(event contract.ReporterEvent) {
 		}
 		r.transformers[event.Transformer] = struct{}{}
 		println("Transformer added:", event.Transformer.GetName())
-		PrintTransformer(event.Transformer)
+		PrintTransformer(event.Transformer, event.Node)
 	case contract.EventTransformerSkipped:
 		println("Transformer skipped:", event.Transformer.GetName(), "-", event.Message)
 	case contract.EventTransformerError:
@@ -52,6 +55,7 @@ func (r *TerminalReporter) Notify(event contract.ReporterEvent) {
 			r.Notify(contract.ReporterEvent{
 				Kind:        contract.EventTransformerAdded,
 				Transformer: event.Transformer,
+				Node:        event.Node,
 			})
 		}
 		var syntaxErr *contract.SyntaxError

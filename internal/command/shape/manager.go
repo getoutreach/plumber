@@ -7,6 +7,7 @@ package shape
 import (
 	"fmt"
 	"path"
+	"strings"
 
 	"github.com/dave/dst/decorator"
 	"github.com/getoutreach/plumber/internal/astx"
@@ -23,8 +24,11 @@ import (
 // buildContext constructs the rendering context for a given transformation, populating it with the package path, module register,
 // type wrapper, and output path based on the provided configuration and package information.
 func buildContext(cfg *Config, ctx *contract.ShapingContext, modules *baserender.ModuleRegister, pkg *model.Package, output string) (*render.Context, error) {
+	rc := baserender.NewRenderContext(modules, pkg, output)
+	rc.PathResolver = ctx.StructurePathResolver.ResolvePath
+
 	context := &render.Context{
-		ContextCloner: baserender.NewRenderContext(modules, pkg, output),
+		ContextCloner: rc,
 		Wrapper:       NewTypeWrapper(cfg),
 	}
 	names := lo.Map(cfg.Templates.Global, func(t template.ContentConfig, _ int) string {
@@ -214,6 +218,10 @@ func (m *InplaceManager) Render(
 					Err:     fmt.Errorf("failed to parse generated content for transformation %q: %w", t.Transformer.GetName(), err),
 				}
 			}
+			out := t.Transformer.Output()
+			if strings.Contains(out, "adapter") {
+				fmt.Println("!!!!!!!!!!!! adapter")
+			}
 
 			mergedFiles, err := Merge(m.Package, f, t.Transformer.Output())
 			if err != nil {
@@ -355,20 +363,27 @@ func inflateCustomScope(ctx *contract.ShapingContext, transformer Transformer, p
 			return fmt.Errorf("plumber:scope annotation requires a name argument")
 		}
 		name := sa.Args[0]
-		fqnStr, ok := sa.NamedArgs["type"]
-		if !ok {
-			return fmt.Errorf("plumber:scope annotation %q requires a type= named argument", name)
-		}
-		fqn, err := resolveFQN(ctx, transformer, fqnStr)
-		if err != nil {
-			return fmt.Errorf("failed to resolve FQN %q for plumber:scope %q: %w", fqnStr, name, err)
+		fqnStr, hasType := sa.NamedArgs["type"]
+		value, hasValue := sa.NamedArgs["value"]
+
+		switch {
+		case hasType:
+			fqn, err := resolveFQN(ctx, transformer, fqnStr)
+			if err != nil {
+				return fmt.Errorf("failed to resolve FQN %q for plumber:scope %q: %w", fqnStr, name, err)
+			}
+
+			resolved := model.Packages(pkgs).TypeByFQN(fqn)
+			if resolved == nil {
+				return fmt.Errorf("type %q not found in packages for plumber:scope %q", fqnStr, name)
+			}
+			custom[name] = resolved
+		case hasValue:
+			custom[name] = value
+		default:
+			return fmt.Errorf("plumber:scope annotation %q requires either a type= or value= named argument", name)
 		}
 
-		resolved := model.Packages(pkgs).TypeByFQN(fqn)
-		if resolved == nil {
-			return fmt.Errorf("type %q not found in packages for plumber:scope %q", fqnStr, name)
-		}
-		custom[name] = resolved
 	}
 	scope["Custom"] = custom
 	return nil

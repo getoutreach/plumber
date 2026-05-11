@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html/template"
 	"maps"
+	"path"
 	"strings"
 
 	"github.com/getoutreach/plumber/internal/astx"
@@ -71,11 +72,30 @@ func (i *Ignores) Ignored(groups ...string) bool {
 	return exists
 }
 
-func TypesRenderer(currentPkgPath string, register *ModuleRegister) func(spec model.TypeSpec) (string, error) {
+func TypesRenderer(currentPkgPath string, register *ModuleRegister, pathResolver PathResolverFunc) func(spec model.TypeSpec) (string, error) {
 	return func(spec model.TypeSpec) (string, error) {
 		fqn, err := astx.ParseFQN(spec.FQN)
 		if err != nil {
 			return "", fmt.Errorf("failed to parse FQN: %w", err)
+		}
+
+		// Resolve any structure:-prefixed package paths before localizing.
+		if pathResolver != nil {
+			var resolveErr error
+			fqn.TranslateModules(func(pkgPath, typeName string) (string, bool) {
+				resolved, err := pathResolver(pkgPath)
+				if err != nil {
+					resolveErr = err
+					return pkgPath, false
+				}
+				if resolved != pkgPath {
+					return resolved, true
+				}
+				return pkgPath, false
+			})
+			if resolveErr != nil {
+				return "", fmt.Errorf("failed to resolve path in FQN: %w", resolveErr)
+			}
 		}
 
 		fqn.Localize(func(pkgPath, typeName string) (string, bool) {
@@ -141,46 +161,15 @@ func fragmentEnd(scope Scope) func() string {
 	}
 }
 
-func ignored(ignores *Ignores) func(groups ...string) bool {
-	return func(groups ...string) bool {
-		return ignores.Ignored(groups...)
-	}
-}
-
 func moduleInclude(context Context) func(modulePath ...string) (string, error) {
-	modules := context.GetModules()
 	return func(modulePath ...string) (string, error) {
-		if len(modulePath) == 0 {
-			return "", fmt.Errorf("module path is required")
+		m, err := module(context)(modulePath...)
+		if err != nil {
+			return "", err
 		}
-		p := modulePath[0]
-		alias := ""
-		if len(modulePath) > 1 {
-			alias = modulePath[1]
-		}
-
-		if alias == "." {
-			modules.Dot(p)
-			return "", nil
-		}
-
-		modules.Register(p, astx.IsStandardType(p))
+		m.use()
 		return "", nil
 	}
-}
-
-// ModuleRef represents a reference to a module that has been registered for inclusion during rendering, containing the module path and its registration details.
-type ModuleRef struct {
-	Path string
-	Reg  ModuleRegistration
-}
-
-func (r ModuleRef) Type(name string) (model.TypeSpec, error) {
-	fqn, err := astx.CraftFQN(r.Path, name)
-	if err != nil {
-		return model.TypeSpec{}, fmt.Errorf("failed to craft FQN for type %q in module %q: %w", name, r.Path, err)
-	}
-	return model.TypeSpec{FQN: fqn.String()}, nil
 }
 
 func module(context Context) func(modulePath ...string) (ModuleRef, error) {
@@ -195,14 +184,51 @@ func module(context Context) func(modulePath ...string) (ModuleRef, error) {
 			alias = modulePath[1]
 		}
 
+		if strings.HasPrefix(p, "../") {
+			p = path.Clean(path.Join(context.GetPkgPath(), p))
+		}
+
+		resolve := context.GetPathResolver()
+		p, err := resolve(p)
+		if err != nil {
+			return ModuleRef{}, fmt.Errorf("failed to resolve path: %w", err)
+		}
+
 		if alias == "." {
 			modules.Dot(p)
+			fmt.Println("!!!!!! dot")
 			return ModuleRef{}, nil
 		}
 
-		reg := modules.Register(p, astx.IsStandardType(p))
-		return ModuleRef{Path: p, Reg: reg}, nil
+		return ModuleRef{
+			Path: p,
+			use: func() ModuleRegistration {
+				return modules.Register(p, astx.IsStandardType(p))
+			}}, nil
 	}
+}
+
+// ModuleRef represents a reference to a module that has been registered for inclusion during rendering, containing the module path and its registration details.
+type ModuleRef struct {
+	Path string
+	use  func() ModuleRegistration
+}
+
+func (r ModuleRef) Type(name string) (model.TypeSpec, error) {
+	r.use() // Ensure the module is registered for import
+	fqn, err := astx.CraftFQN(r.Path, name)
+	if err != nil {
+		return model.TypeSpec{}, fmt.Errorf("failed to craft FQN for type %q in module %q: %w", name, r.Path, err)
+	}
+	return model.TypeSpec{FQN: fqn.String()}, nil
+}
+
+func (r ModuleRef) Ident(name string) string {
+	reg := r.use() // Ensure the module is registered for import
+	if reg.ID != "" && reg.ID != "." {
+		return fmt.Sprintf("%s.%s", reg.ID, name)
+	}
+	return name
 }
 
 func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.RenderOptionsFunc, dispose func()) {
@@ -227,7 +253,7 @@ func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.Ren
 			return ""
 		},
 		"comment_wrap": commentWrap,
-		"type":         TypesRenderer(context.GetPkgPath(), context.GetModules()),
+		"type":         TypesRenderer(context.GetPkgPath(), context.GetModules(), context.GetPathResolver()),
 		"type_set": func(name string) (string, error) {
 			fqn, err := astx.CraftFQN(context.GetPkgPath(), name)
 			if err != nil {
