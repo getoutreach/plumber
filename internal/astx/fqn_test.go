@@ -5,6 +5,7 @@
 package astx
 
 import (
+	"fmt"
 	"go/types"
 	"testing"
 
@@ -26,6 +27,28 @@ var (
 func namedType(pkg *types.Package, name string, underlying types.Type) *types.Named {
 	obj := types.NewTypeName(0, pkg, name, nil)
 	return types.NewNamed(obj, underlying, nil)
+}
+
+// genericType creates a generic named type with the given type parameters and
+// instantiates it with the provided type arguments.
+func genericType(pkg *types.Package, name string, underlying types.Type, tparamNames []string, targs []types.Type) *types.Named {
+	obj := types.NewTypeName(0, pkg, name, nil)
+	named := types.NewNamed(obj, underlying, nil)
+
+	// Create type parameter list.
+	tparams := make([]*types.TypeParam, len(tparamNames))
+	for i, n := range tparamNames {
+		tp := types.NewTypeName(0, nil, n, nil)
+		tparams[i] = types.NewTypeParam(tp, types.NewInterfaceType(nil, nil))
+	}
+	named.SetTypeParams(tparams)
+
+	// Instantiate with the given type arguments.
+	inst, err := types.Instantiate(nil, named, targs, false)
+	if err != nil {
+		panic(fmt.Sprintf("genericType: Instantiate failed: %v", err))
+	}
+	return inst.(*types.Named)
 }
 
 func TestFQNFromGoType(t *testing.T) {
@@ -99,6 +122,26 @@ func TestFQNFromGoType(t *testing.T) {
 			typ:      types.NewChan(types.RecvOnly, types.Typ[types.Int]),
 			expected: `<-chan int`,
 		},
+		{
+			name:     "generic type with single basic type arg",
+			typ:      genericType(pkgFoo, "Container", types.Typ[types.Int], []string{"T"}, []types.Type{types.Typ[types.String]}),
+			expected: `"github.com/example/foo".Container[string]`,
+		},
+		{
+			name:     "generic type with multiple type args",
+			typ:      genericType(pkgFoo, "Pair", types.Typ[types.Int], []string{"K", "V"}, []types.Type{types.Typ[types.String], types.Typ[types.Int]}),
+			expected: `"github.com/example/foo".Pair[string, int]`,
+		},
+		{
+			name:     "generic type with named type arg",
+			typ:      genericType(pkgFoo, "Wrapper", types.Typ[types.Int], []string{"T"}, []types.Type{typeUUID}),
+			expected: `"github.com/example/foo".Wrapper["github.com/google/uuid".UUID]`,
+		},
+		{
+			name:     "pointer to generic type",
+			typ:      types.NewPointer(genericType(pkgFoo, "List", types.Typ[types.Int], []string{"T"}, []types.Type{types.Typ[types.String]})),
+			expected: `*"github.com/example/foo".List[string]`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -131,6 +174,9 @@ func TestParseFQN(t *testing.T) {
 		{"send-only chan", `chan<- int`},
 		{"recv-only chan", `<-chan int`},
 		{"generic type", `"github.com/getoutreach/plumber/example/contract".Filtrable["github.com/getoutreach/plumber/example/contract".Name]`},
+		{"bare generic single arg", `MyType[string]`},
+		{"bare generic multiple args", `MyType[string, int]`},
+		{"bare generic with named arg", `Container["github.com/google/uuid".UUID]`},
 	}
 
 	for _, tt := range tests {
@@ -380,4 +426,151 @@ func TestParseRelativeFQN(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Equal(t, `"github.com/example/xx/yy".Type`, fqn.String())
 	})
+}
+
+func TestFQNInstanceOf(t *testing.T) {
+	mustParse := func(s string) *FQN {
+		fqn, err := ParseFQN(s)
+		if err != nil {
+			t.Fatalf("ParseFQN(%q) failed: %v", s, err)
+		}
+		return fqn
+	}
+
+	tests := []struct {
+		name     string
+		fqn      string
+		pattern  string
+		expected bool
+	}{
+		{
+			name:     "exact match bare ident",
+			fqn:      "string",
+			pattern:  "string",
+			expected: true,
+		},
+		{
+			name:     "exact match qualified type",
+			fqn:      `"github.com/google/uuid".UUID`,
+			pattern:  `"github.com/google/uuid".UUID`,
+			expected: true,
+		},
+		{
+			name:     "bare ident mismatch",
+			fqn:      "string",
+			pattern:  "int",
+			expected: false,
+		},
+		{
+			name:     "bare generic with wildcard single arg",
+			fqn:      `String[string]`,
+			pattern:  `String["plumber".Any]`,
+			expected: true,
+		},
+		{
+			name:     "bare generic exact match",
+			fqn:      `String[string]`,
+			pattern:  `String[string]`,
+			expected: true,
+		},
+		{
+			name:     "bare generic type arg mismatch",
+			fqn:      `String[string]`,
+			pattern:  `String[int]`,
+			expected: false,
+		},
+		{
+			name:     "bare generic base name mismatch",
+			fqn:      `String[string]`,
+			pattern:  `Foo["plumber".Any]`,
+			expected: false,
+		},
+		{
+			name:     "qualified generic with wildcard",
+			fqn:      `"github.com/example/foo".Container[string]`,
+			pattern:  `"github.com/example/foo".Container["plumber".Any]`,
+			expected: true,
+		},
+		{
+			name:     "qualified generic with named type arg and wildcard",
+			fqn:      `"github.com/example/foo".Container["github.com/google/uuid".UUID]`,
+			pattern:  `"github.com/example/foo".Container["plumber".Any]`,
+			expected: true,
+		},
+		{
+			name:     "multi arg generic all wildcards",
+			fqn:      `"pkg".Pair[string, int]`,
+			pattern:  `"pkg".Pair["plumber".Any, "plumber".Any]`,
+			expected: true,
+		},
+		{
+			name:     "multi arg generic partial wildcard",
+			fqn:      `"pkg".Pair[string, int]`,
+			pattern:  `"pkg".Pair[string, "plumber".Any]`,
+			expected: true,
+		},
+		{
+			name:     "multi arg generic partial wildcard mismatch",
+			fqn:      `"pkg".Pair[string, int]`,
+			pattern:  `"pkg".Pair[int, "plumber".Any]`,
+			expected: false,
+		},
+		{
+			name:     "multi arg arity mismatch",
+			fqn:      `"pkg".Pair[string, int]`,
+			pattern:  `"pkg".Pair["plumber".Any]`,
+			expected: false,
+		},
+		{
+			name:     "pointer to generic with wildcard",
+			fqn:      `*String[string]`,
+			pattern:  `*String["plumber".Any]`,
+			expected: true,
+		},
+		{
+			name:     "slice of generic with wildcard",
+			fqn:      `[]String[string]`,
+			pattern:  `[]String["plumber".Any]`,
+			expected: true,
+		},
+		{
+			name:     "map with wildcard value type",
+			fqn:      `map[string]"pkg".Container[int]`,
+			pattern:  `map[string]"pkg".Container["plumber".Any]`,
+			expected: true,
+		},
+		{
+			name:     "non-generic does not match generic pattern",
+			fqn:      `String`,
+			pattern:  `String["plumber".Any]`,
+			expected: false,
+		},
+		{
+			name:     "generic does not match non-generic pattern",
+			fqn:      `String[string]`,
+			pattern:  `String`,
+			expected: false,
+		},
+		{
+			name:     "interface matches interface",
+			fqn:      `interface{}`,
+			pattern:  `interface{}`,
+			expected: true,
+		},
+		{
+			name:     "nested generic with wildcard",
+			fqn:      `"pkg".Outer["pkg".Inner[string]]`,
+			pattern:  `"pkg".Outer["plumber".Any]`,
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := mustParse(tt.fqn)
+			pattern := mustParse(tt.pattern)
+			got := f.InstanceOf(pattern)
+			assert.Equal(t, tt.expected, got, "FQN(%q).InstanceOf(%q)", tt.fqn, tt.pattern)
+		})
+	}
 }

@@ -7,9 +7,9 @@ package shape
 import (
 	"fmt"
 	"path"
-	"strings"
 
 	"github.com/dave/dst/decorator"
+	"github.com/dave/dst/decorator/resolver/goast"
 	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/render"
@@ -211,18 +211,15 @@ func (m *InplaceManager) Render(
 				return fmt.Errorf("error during finalization: %w", err)
 			}
 
-			f, err := decorator.Parse(o.Content)
+			dec := decorator.NewDecoratorWithImports(nil, m.Package.Package.PkgPath, goast.New())
+
+			f, err := dec.Parse(o.Content)
 			if err != nil {
 				return &contract.SyntaxError{
 					Content: string(o.Content),
 					Err:     fmt.Errorf("failed to parse generated content for transformation %q: %w", t.Transformer.GetName(), err),
 				}
 			}
-			out := t.Transformer.Output()
-			if strings.Contains(out, "adapter") {
-				fmt.Println("!!!!!!!!!!!! adapter")
-			}
-
 			mergedFiles, err := Merge(m.Package, f, t.Transformer.Output())
 			if err != nil {
 				return fmt.Errorf("failed to merge generated content for transformation %q: %w", t.Transformer.GetName(), err)

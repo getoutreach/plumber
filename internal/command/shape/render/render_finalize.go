@@ -29,7 +29,7 @@ func Finalize(
 	)
 	o, err := render.Finalize(context, scope, parts, output, opener, opts...)
 
-	if strings.Contains(output, "plumber_inplace_helper.go") {
+	if false && strings.Contains(output, "plumber_inplace_helper.go") {
 		fmt.Println("-----------------------------")
 		fmt.Println(string(o.Content))
 		fmt.Println("-----------------------------")

@@ -231,6 +231,15 @@ func (r ModuleRef) Ident(name string) string {
 	return name
 }
 
+func (r ModuleRef) FQN(name string) (string, error) {
+	// We don't want to call "use" here since we don't want to register the module for import
+	fqn, err := astx.CraftFQN(r.Path, name)
+	if err != nil {
+		return "", fmt.Errorf("failed to craft FQN for type %q in module %q: %w", name, r.Path, err)
+	}
+	return fqn.String(), nil
+}
+
 func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.RenderOptionsFunc, dispose func()) {
 	var tp *model.Type
 	dispose = func() {

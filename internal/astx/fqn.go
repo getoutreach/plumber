@@ -17,6 +17,13 @@ import (
 	"strings"
 )
 
+const (
+	// PlumberAnyPkg is the package path used in the "plumber".Any wildcard sentinel.
+	PlumberAnyPkg = "plumber"
+	// PlumberAnyType is the type name used in the "plumber".Any wildcard sentinel.
+	PlumberAnyType = "Any"
+)
+
 // typeToAST converts a types.Type into its ast.Expr representation.
 // Named types with a package are represented as a SelectorExpr where
 // the X ident carries the quoted package path, e.g.
@@ -29,15 +36,28 @@ func typeToAST(t types.Type) ast.Expr {
 
 	case *types.Named:
 		obj := t.Obj()
+		var base ast.Expr
 		if pkg := obj.Pkg(); pkg != nil {
-			return &ast.SelectorExpr{
-				// Store the full package path as a quoted string inside the Ident
-				// so it serialises as "pkg/path".TypeName
+			base = &ast.SelectorExpr{
 				X:   &ast.Ident{Name: strconv.Quote(pkg.Path())},
 				Sel: &ast.Ident{Name: obj.Name()},
 			}
+		} else {
+			base = &ast.Ident{Name: obj.Name()}
 		}
-		return &ast.Ident{Name: obj.Name()}
+		// Handle generic type arguments (e.g. Container[string] or Pair[K, V]).
+		if args := t.TypeArgs(); args != nil && args.Len() > 0 {
+			if args.Len() == 1 {
+				base = &ast.IndexExpr{X: base, Index: typeToAST(args.At(0))}
+			} else {
+				indices := make([]ast.Expr, args.Len())
+				for i := 0; i < args.Len(); i++ {
+					indices[i] = typeToAST(args.At(i))
+				}
+				base = &ast.IndexListExpr{X: base, Indices: indices}
+			}
+		}
+		return base
 
 	case *types.Pointer:
 		return &ast.StarExpr{X: typeToAST(t.Elem())}
@@ -355,7 +375,12 @@ func (p *fqnParser) parse() (ast.Expr, error) {
 			}
 			return nil, fmt.Errorf("unexpected end of input")
 		}
-		return &ast.Ident{Name: name}, nil
+		base := &ast.Ident{Name: name}
+		// Generic instantiation for bare (unpackaged) types: Ident[TypeArg, ...]
+		if p.peek() == '[' {
+			return p.parseTypeArgs(base)
+		}
+		return base, nil
 	}
 }
 
@@ -467,6 +492,120 @@ func (f *FQN) Mask(maskFmt string) *FQN {
 		return f
 	}
 	return &FQN{Expression: clone}
+}
+
+// InstanceOf reports whether f matches the pattern other, treating
+// "plumber".Any in other as a wildcard that matches any type at that
+// position. This allows generic type patterns like String["plumber".Any]
+// to match any instantiation such as String[string] or String[int].
+func (f *FQN) InstanceOf(other *FQN) bool {
+	return exprInstanceOf(f.Expression, other.Expression)
+}
+
+// isPlumberAny reports whether expr is the "plumber".Any wildcard sentinel.
+func isPlumberAny(expr ast.Expr) bool {
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	pkg, err := strconv.Unquote(ident.Name)
+	if err != nil {
+		return false
+	}
+	return pkg == PlumberAnyPkg && sel.Sel.Name == PlumberAnyType
+}
+
+// exprInstanceOf recursively compares two ast.Expr trees. It returns true when
+// a and b are structurally identical, with the exception that any position in b
+// occupied by the "plumber".Any sentinel matches any expression in a.
+func exprInstanceOf(a, b ast.Expr) bool {
+	// Wildcard in the pattern matches anything.
+	if isPlumberAny(b) {
+		return true
+	}
+
+	switch av := a.(type) {
+	case *ast.Ident:
+		bv, ok := b.(*ast.Ident)
+		return ok && av.Name == bv.Name
+
+	case *ast.SelectorExpr:
+		bv, ok := b.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		ai, aOK := av.X.(*ast.Ident)
+		bi, bOK := bv.X.(*ast.Ident)
+		return aOK && bOK && ai.Name == bi.Name && av.Sel.Name == bv.Sel.Name
+
+	case *ast.StarExpr:
+		bv, ok := b.(*ast.StarExpr)
+		return ok && exprInstanceOf(av.X, bv.X)
+
+	case *ast.ArrayType:
+		bv, ok := b.(*ast.ArrayType)
+		if !ok {
+			return false
+		}
+		// Both must be slices (Len == nil) or arrays with same length.
+		if (av.Len == nil) != (bv.Len == nil) {
+			return false
+		}
+		if av.Len != nil {
+			al, aOK := av.Len.(*ast.BasicLit)
+			bl, bOK := bv.Len.(*ast.BasicLit)
+			if !aOK || !bOK || al.Value != bl.Value {
+				return false
+			}
+		}
+		return exprInstanceOf(av.Elt, bv.Elt)
+
+	case *ast.MapType:
+		bv, ok := b.(*ast.MapType)
+		return ok && exprInstanceOf(av.Key, bv.Key) && exprInstanceOf(av.Value, bv.Value)
+
+	case *ast.ChanType:
+		bv, ok := b.(*ast.ChanType)
+		return ok && av.Dir == bv.Dir && exprInstanceOf(av.Value, bv.Value)
+
+	case *ast.IndexExpr:
+		bv, ok := b.(*ast.IndexExpr)
+		return ok && exprInstanceOf(av.X, bv.X) && exprInstanceOf(av.Index, bv.Index)
+
+	case *ast.IndexListExpr:
+		bv, ok := b.(*ast.IndexListExpr)
+		if !ok || len(av.Indices) != len(bv.Indices) {
+			return false
+		}
+		if !exprInstanceOf(av.X, bv.X) {
+			return false
+		}
+		for i := range av.Indices {
+			if !exprInstanceOf(av.Indices[i], bv.Indices[i]) {
+				return false
+			}
+		}
+		return true
+
+	case *ast.InterfaceType:
+		_, ok := b.(*ast.InterfaceType)
+		return ok
+
+	case *ast.StructType:
+		_, ok := b.(*ast.StructType)
+		return ok
+
+	case *ast.FuncType:
+		_, ok := b.(*ast.FuncType)
+		return ok
+
+	default:
+		return false
+	}
 }
 
 // maskIdent walks the expression tree to locate the leaf type identifier and

@@ -436,14 +436,6 @@ func (n *CommentGroup) FilterAnnotations(expressions ...func(a Annotation) bool)
 	}
 }
 
-func NewTypeSpec(fqn *astx.FQN, t types.Type) TypeSpec {
-	return TypeSpec{
-		TypeKind: buildTypeKind(fqn, t),
-		FQN:      fqn.String(),
-		Type:     t,
-	}
-}
-
 func (t TypeKind) Indirect() *TypeKind {
 	if t.Kind == "pointer" {
 		return t.Elem
