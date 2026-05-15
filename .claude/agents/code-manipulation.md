@@ -48,9 +48,13 @@ internal/command/
 │   └── inspect.go              — Run(): scan → inspect → format (JSON/YAML)
 └── shape/
     ├── config.go               — Config, ShapeConfig, MacroConfig, MixinConfig, WrapperConfig, IncludeConfig, …
+    ├── config/
+    │   ├── config.go           — TargetConfig, TypeConfig, WrapperConfig, MixinConfig, MacroConfig, MatcherConfig, …
+    │   └── handler.go          — HandlerConfig, PlumberHandlerConfig
     ├── contract/contract.go    — annotation name constants + template/source config types
-    ├── shape.go                — Run(): scan → inspect → expand.Macros → walk annotations → build transformers → render → restore
+    ├── shape.go                — Run(): scan → inspect → expand.Macros → walk annotations → build transformers → render → restore → execute handlers
     ├── transformer.go          — Transformer interface; DeriveTransformer, ShapeTransformer, BasicTransformer
+    ├── handler/handler.go      — Registry (NotificationCollector), Notification, Execute() — handler command expansion + sh -c execution
     ├── manager.go              — GeneratorManager (generated mode), InplaceManager (inplace mode)
     ├── merge.go                — inplace merge dispatcher: routes TypeSpec, FuncDecl, ValueSpec
     ├── merge_func.go           — function/method merge: params, body, receiver lookup
@@ -128,6 +132,7 @@ There are also **macro annotations** in the form `// @<name>` (see below).
 | `plumber:context`      | `<pkg/Type>` | Package-level annotation: point at a specific model type |
 | `plumber:scope`        | `"<Name>" type="<FQN>"` | Inject a resolved `*model.Type` into `.Scope.Custom.<Name>` |
 | `plumber:depends_on`   | `<FQN>` | Skip transformation when FQN does not resolve in inspected packages (silent, no error). May repeat. |
+| `plumber:notify`       | `<handler> [key=value ...]` | Trigger a named handler at end of shape run. Named args aggregated across all notifications targeting the same handler and passed to the handler command template. |
 | `plumber:query`        | `"<regex>" scope="<scope>" [receiver="<var>"]` | Populate annotated slice variable with matching entities |
 
 ### Custom scope (`plumber:scope`)
@@ -157,6 +162,39 @@ transformation context, `dependsOnSatisfied(transformer, pkgs)` collects every
 `plumber:depends_on` annotation, parses each value with `astx.ParseFQN`, and resolves
 it via `model.Packages(pkgs).TypeByFQN`. Returns `false` (skip) on the first unresolved
 dependency, `true` when all resolve. Malformed FQNs produce an error.
+
+### Notifications and handlers (`plumber:notify`)
+
+`plumber:notify` triggers a named handler at the end of the shape run. The first positional
+argument is the handler name; named arguments are aggregated across all notifications
+targeting the same handler and made available to the handler's command template.
+
+**Implementation:**
+
+1. `OptionNotify` constant defined in `contract/contract.go`, added to `defaultOptions`
+   in `transformer.go` so all transformers accept it.
+2. **Collection:** In `runTransformations()` (`manager.go`), after each successful
+   transformer render, `collectNotifications()` reads all `plumber:notify` annotations,
+   extracts the handler name from `Args[0]` and forwards `NamedArgs` to
+   `ctx.Notifications.Notify()`.
+3. **Registry:** `handler.Registry` (`handler/handler.go`) implements `contract.NotificationCollector`.
+   It stores notifications as `[]Notification{Handler, NamedArgs}`. Created in
+   `prepareContext()` (`cmd/plumber/shape/shape.go`) with handler configs from YAML and
+   set on `ctx.Notifications`.
+4. **Execution:** After `executeTransformations()` returns, `executeHandlers()` in `shape.go`
+   calls `Registry.Execute(ctx)`:
+   - Groups notifications by handler name
+   - For each configured handler with matching notifications:
+     - Aggregates named args into `map[string][]string` (all values, no dedup)
+     - Template-expands `command` with `.Source.NamedArgs` scope (sprig + generic functions)
+     - Executes via `sh -c`, fails on error
+5. **Reporter events:** Four handler event types (`handler.triggered`, `handler.executing`,
+   `handler.completed`, `handler.error`) with convenience methods on `ShapingContext`.
+   Terminal reporter logs them; TUI reporter creates dedicated handler panels.
+
+**Config:** `handlers` key under `plumber.shape`, each entry is `plumber.handler` with
+`name` and `command` fields. Defined in `config/handler.go` (`HandlerConfig`,
+`PlumberHandlerConfig`). Merged via `MergeShape()` like other config arrays.
 
 ### Mixin annotations
 
@@ -457,6 +495,10 @@ plumber.shape:              ← ShapeConfig
                 type: '<FQN>'
                 matches:
                   - rule: 'fqn:<FQN>'   # or kind:<kind>
+  handlers:
+    - plumber.handler:
+        name: <handler-name>          ← e.g. "goverter"
+        command: '<command-template>'  ← Go text/template with .Source.NamedArgs
 
 plumber.inspect:            ← InspectConfig
   format: json|yaml
@@ -471,7 +513,7 @@ within the checked-out repo that are parsed and merged into the running config
 
 Merge strategy (in `Config.Merge` / `ShapeConfig.MergeShape`): included configs are
 **appended** to the root — no key is overwritten.  Sources, templates content, macros,
-mixins, and wrappers are all appended.  Append order follows glob expansion order.
+mixins, wrappers, and handlers are all appended.  Append order follows glob expansion order.
 
 ---
 
@@ -526,6 +568,10 @@ group by mode, then by output filename
         │
         └─► InplaceManager.Render() → render.Finalize() → decorator.Parse()
                   → Merge() (merge into existing DST) → restoreOutput() → write file
+        │
+        ▼
+executeHandlers()    — collect plumber:notify annotations → group by handler name
+                       → template-expand command → sh -c execution
 ```
 
 ---
@@ -586,4 +632,5 @@ file, so golden files use `testrun-acceptance/` as a stable placeholder.
 | Add a new template | `internal/render/templates/` (embedded) or via `plumber.shape.yaml` template sources |
 | Add a new template source | `contract/contract.go` (`PlumberTemplateSourceConfig`) + `templates/templates.go` (`Load`/`Checkout`) |
 | Add a new query pattern | `query.go` (`collectQueryTargets`, `executeQuery`, `inflateVariable`); for new entity types, extend `matchEntity` / type compatibility checks |
+| Add a new handler | `config/handler.go` (`HandlerConfig`) + `plumber.shape.yaml` (`handlers` section); triggered by `plumber:notify` annotations. Handler command template has `.Source.NamedArgs` context. Implementation in `handler/handler.go` (`Registry`) |
 | Debug generation output | Add `plumber inspect ./...` first to see the model that shape will operate on |

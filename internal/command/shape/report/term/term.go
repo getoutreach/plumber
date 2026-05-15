@@ -79,6 +79,21 @@ func (r *TerminalReporter) Notify(event contract.ReporterEvent) {
 		println("Query executed:", event.Message)
 	case contract.EventQueryError:
 		println("Query error:", event.Error.Error())
+	case contract.EventHandlerTriggered:
+		println("Handler triggered:", event.Message)
+		if event.Transformer != nil {
+			fmt.Printf("  from transformer: %s\n", event.Transformer.GetName())
+		}
+	case contract.EventHandlerExecuting:
+		println("Executing handler:", event.Message, "-", event.Path)
+	case contract.EventHandlerCompleted:
+		println("Handler completed:", event.Message)
+	case contract.EventHandlerError:
+		if event.Error != nil {
+			println("Handler error:", event.Message, "-", event.Error.Error())
+		} else {
+			println("Handler error:", event.Message)
+		}
 	default:
 		println("Unknown event type:", string(event.Kind))
 	}

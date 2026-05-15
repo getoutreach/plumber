@@ -88,6 +88,7 @@ These refine the active transformation:
 | `plumber:context` | `<pkg/Type>` | Package-level: point transformation at a specific model type. |
 | `plumber:scope` | `"<Name>" type="<FQN>" \| value="<VALUE>"` | Inject a resolved type into template scope as `.Scope.Custom.<Name>`. |
 | `plumber:depends_on` | `<FQN>` | Silently skip the transformation when the FQN cannot be resolved in the inspected packages. May appear multiple times — all dependencies must resolve. |
+| `plumber:notify` | `<handler> [key=value ...]` | Trigger a named handler at the end of the shape run. Named arguments are aggregated across all notifications targeting the same handler. |
 
 ## Modes
 
@@ -240,12 +241,17 @@ plumber.shape:
                 matches:
                   - rule: 'fqn:"time".Time'
                   - rule: 'kind:interface'
+
+  handlers:
+    - plumber.handler:
+        name: goverter
+        command: "goverter gen {{ .Source.NamedArgs.path | join \" \" }}"
 ```
 
 ### Config hierarchy
 
 `includes` expands globs and merges by appending: sources, templates, macros, mixins,
-wrappers. Git sources can declare their own `includes` for co-located config.
+wrappers, handlers. Git sources can declare their own `includes` for co-located config.
 
 Template sources can also be defined at root level under `plumber.templates:` — these are
 shared across all commands (shape, discovery). Shape-specific sources under `plumber.shape.sources`
@@ -350,6 +356,35 @@ var Getters = []func() string{}
 ```
 
 Populates with `r.GetAlpha`, `r.GetBeta`, etc.
+
+## Notifications and handlers
+
+`plumber:notify` triggers a named handler command at the end of the shape run. This is
+useful for running post-generation tools (e.g., `goverter`, `protoc`) on generated output.
+
+```go
+// plumber:shape
+// plumber:template converter
+// plumber:notify goverter path="internal/converters"
+type Converter struct { ... }
+```
+
+The first positional argument is the handler name. Named arguments are aggregated across
+all `plumber:notify` annotations targeting the same handler.
+
+### Handler config
+
+```yaml
+plumber.shape:
+  handlers:
+    - plumber.handler:
+        name: goverter
+        command: "goverter gen {{ .Source.NamedArgs.path | join \" \" }}"
+```
+
+The command is a Go `text/template` with access to `.Source.NamedArgs` (`map[string][]string`).
+Sprig and plumber generic functions are available. Commands execute via `sh -c`; failures
+cause the shape command to fail.
 
 ## Key rules for agents
 

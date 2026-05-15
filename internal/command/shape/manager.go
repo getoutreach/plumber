@@ -310,6 +310,8 @@ func runTransformations(
 			ctx.TransformerError(t.Transformer, t.Node, err)
 			continue
 		}
+		// Collect plumber:notify annotations and forward them to the notification registry.
+		collectNotifications(ctx, t)
 		// Output was expanded
 		output = t.Transformer.Output()
 	}
@@ -404,4 +406,24 @@ func resolveFQN(ctx *contract.ShapingContext, transformer Transformer, fqnStr st
 		return nil, fmt.Errorf("resolveFQN: failed to parse FQN %q: %w", fqnStr, err)
 	}
 	return fqn, nil
+}
+
+// collectNotifications checks the transformer for plumber:notify annotations and
+// forwards each one to the notification registry on the ShapingContext. Each
+// notification's first positional argument is the handler name; named arguments
+// are passed through as-is.
+func collectNotifications(ctx *contract.ShapingContext, t Transformation) {
+	if ctx.Notifications == nil {
+		return
+	}
+	notifyAnnotations := t.Transformer.GetAnnotations().FindAll(contract.OptionNotify)
+	for _, na := range notifyAnnotations {
+		if len(na.Args) == 0 {
+			ctx.TransformerInfo(t.Transformer, "plumber:notify annotation missing handler name, skipping")
+			continue
+		}
+		handlerName := na.Args[0]
+		ctx.HandlerTriggered(handlerName, t.Transformer, t.Node)
+		ctx.Notifications.Notify(handlerName, na.NamedArgs)
+	}
 }

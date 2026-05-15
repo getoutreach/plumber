@@ -90,6 +90,7 @@ These refine the behaviour of the active transformation.
 | `plumber:context` | `<pkg/Type>` | Used in **package-level comments** to point the transformation at a specific model type (fully qualified). |
 | `plumber:scope` | `"<Name>" type="<FQN>" \| value="<VALUE>"` | Inject a resolved type into the template scope under `.Scope.Custom.<Name>`. Can be specified multiple times. |
 | `plumber:depends_on` | `<FQN>` | Skip the entire transformation when the referenced type cannot be resolved in the inspected packages. Can be specified multiple times — every dependency must resolve. |
+| `plumber:notify` | `<handler> [key=value ...]` | Trigger a named handler at the end of the shape run. Named arguments are aggregated across all notifications targeting the same handler and passed to the handler's command template. |
 
 ---
 
@@ -142,6 +143,101 @@ Each `plumber:scope` annotation requires:
 
 The FQN must reference a type that is present in the inspected packages. Multiple
 `plumber:scope` annotations can appear on the same transformation.
+
+---
+
+### Notifications and handlers (`plumber:notify`)
+
+`plumber:notify` triggers a named handler command at the end of the shape run. This is
+useful for running post-generation tools (e.g., `goverter`, `protoc`, linters) that
+operate on generated output.
+
+```go
+// plumber:shape
+// plumber:template converter
+// plumber:notify goverter path="internal/converters"
+type Converter struct { ... }
+```
+
+The first positional argument is the **handler name**. Named arguments (`key=value`) are
+collected across all `plumber:notify` annotations targeting the same handler and made
+available as aggregated slices in the handler's command template.
+
+Multiple transformers can notify the same handler — their named arguments are aggregated:
+
+```go
+// plumber:derive
+// plumber:notify goverter path="internal/adapters"
+type AdapterA struct { ... }
+
+// plumber:derive
+// plumber:notify goverter path="internal/models"
+type ModelB struct { ... }
+```
+
+Both `path` values (`"internal/adapters"`, `"internal/models"`) are collected and available
+to the handler command template as `.Source.NamedArgs.path` (a `[]string`).
+
+#### Defining handlers in config
+
+Handlers are defined in `plumber.shape.yaml` under the `handlers` key:
+
+```yaml
+plumber.shape:
+  handlers:
+    - plumber.handler:
+        name: goverter
+        command: "goverter gen {{ .Source.NamedArgs.path | join \" \" }}"
+```
+
+| Field | Description |
+|---|---|
+| `name` | Handler identifier referenced by `plumber:notify` annotations. |
+| `command` | Go `text/template` string expanded with the aggregated named arguments and executed via `sh -c`. |
+
+#### Command template context
+
+The handler command template has access to:
+
+| Field | Type | Description |
+|---|---|---|
+| `.Source.NamedArgs` | `map[string][]string` | All named arguments aggregated from every `plumber:notify` targeting this handler. Each key maps to a slice of all collected values (duplicates are preserved). |
+
+Standard [sprig](https://masterminds.github.io/sprig/) template functions and plumber
+generic functions are available in the template.
+
+#### Example
+
+Given:
+
+```go
+// plumber:shape
+// plumber:notify goverter path="./internal/convert" path="./pkg/api"
+type ConvertService struct { ... }
+
+// plumber:derive
+// plumber:notify goverter path="./internal/models"
+type Model struct { ... }
+```
+
+And config:
+
+```yaml
+plumber.shape:
+  handlers:
+    - plumber.handler:
+        name: goverter
+        command: "goverter gen {{ .Source.NamedArgs.path | join \" \" }}"
+```
+
+After all transformations complete, the handler executes:
+
+```shell
+sh -c "goverter gen ./internal/convert ./pkg/api ./internal/models"
+```
+
+Handler execution errors cause the shape command to fail. Handler events are reported
+through the reporter system (terminal logs or TUI panels) for visibility.
 
 ---
 
@@ -468,6 +564,15 @@ plumber.shape:
                   - rule: 'fqn:"time".Time'
                   - rule: 'kind:interface'
 
+  # ---------- handlers ----------
+  # Handlers are commands executed at the end of the shape run when triggered
+  # by plumber:notify annotations. The command is a Go text/template with
+  # access to aggregated named arguments from all notifications.
+  handlers:
+    - plumber.handler:
+        name: goverter
+        command: "goverter gen {{ .Source.NamedArgs.path | join \" \" }}"
+
 # Inspect command config (used when running plumber inspect with the same file).
 plumber.inspect:
   format: json
@@ -486,6 +591,7 @@ When `shape` loads a config file it:
    - `plumber.shape.macros`
    - `plumber.shape.mixins`
    - `plumber.shape.type.wrappers`
+   - `plumber.shape.handlers`
 
 This allows large projects to split macro, mixin, and wrapper definitions into per-module
 files under a `plumber.d/` directory.

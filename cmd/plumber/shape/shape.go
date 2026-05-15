@@ -18,6 +18,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape"
 	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/command/shape/handler"
 	shaperender "github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/command/shape/report/term"
 	"github.com/getoutreach/plumber/internal/command/shape/report/tui"
@@ -131,6 +132,7 @@ func prepareContext(cfg *shape.Config) (shapingContext *contract.ShapingContext,
 	ctx.BaseDir = baseDir
 	ctx.RepoModule = repoModule
 	ctx.Module = module
+	ctx.Notifications = handler.NewRegistry(cfg.Handlers)
 	return ctx, wait, err
 }
 

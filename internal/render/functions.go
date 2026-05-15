@@ -184,7 +184,7 @@ func module(context Context) func(modulePath ...string) (ModuleRef, error) {
 			alias = modulePath[1]
 		}
 
-		if strings.HasPrefix(p, "../") {
+		if strings.HasPrefix(p, "../") || strings.HasPrefix(p, "./") {
 			p = path.Clean(path.Join(context.GetPkgPath(), p))
 		}
 

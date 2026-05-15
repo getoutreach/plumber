@@ -229,14 +229,15 @@ const (
 // the user can scroll through both completed and in-progress panels at any
 // time during the run as well as after it finishes.
 type tuiModel struct {
-	panels       []*panel
-	byKey        map[contract.Transformer]int
-	finished     bool
-	width        int
-	height       int
-	phase        phase
-	viewport     viewport.Model
-	viewportInit bool
+	panels        []*panel
+	byKey         map[contract.Transformer]int
+	handlerPanels map[string]int
+	finished      bool
+	width         int
+	height        int
+	phase         phase
+	viewport      viewport.Model
+	viewportInit  bool
 	// userScrolled becomes true once the user manually scrolls away from
 	// the bottom of the viewport. While true the model stops auto-scrolling
 	// to the tail when new content is appended, so the user's chosen
@@ -248,10 +249,11 @@ type tuiModel struct {
 // newModel constructs an empty model with initialised lookup maps.
 func newModel() *tuiModel {
 	return &tuiModel{
-		byKey:  make(map[contract.Transformer]int),
-		width:  80,
-		height: 24,
-		phase:  phaseLive,
+		byKey:         make(map[contract.Transformer]int),
+		handlerPanels: make(map[string]int),
+		width:         80,
+		height:        24,
+		phase:         phaseLive,
 	}
 }
 
@@ -447,6 +449,36 @@ func (m *tuiModel) applyEvent(e contract.ReporterEvent) {
 		p := m.panels[len(m.panels)-1]
 		if e.Error != nil {
 			p.logs = append(p.logs, "query error: "+e.Error.Error())
+		}
+	case contract.EventHandlerTriggered:
+		// Log the trigger on the originating transformer's panel if available.
+		if e.Transformer != nil {
+			if idx, ok := m.byKey[e.Transformer]; ok {
+				p := m.panels[idx]
+				p.logs = append(p.logs, "notify: "+e.Message)
+			}
+		}
+	case contract.EventHandlerExecuting:
+		// Create a new panel for the handler execution.
+		p := &panel{
+			name:   "handler: " + e.Message,
+			status: statusActive,
+			logs:   []string{"command: " + e.Path},
+		}
+		m.handlerPanels[e.Message] = len(m.panels)
+		m.panels = append(m.panels, p)
+	case contract.EventHandlerCompleted:
+		if idx, ok := m.handlerPanels[e.Message]; ok {
+			p := m.panels[idx]
+			p.status = statusSuccess
+		}
+	case contract.EventHandlerError:
+		if idx, ok := m.handlerPanels[e.Message]; ok {
+			p := m.panels[idx]
+			p.status = statusError
+			if e.Error != nil {
+				p.logs = append(p.logs, "error: "+e.Error.Error())
+			}
 		}
 	}
 }

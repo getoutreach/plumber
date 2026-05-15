@@ -56,6 +56,12 @@ const (
 	// times; every dependency must resolve for the transformation to run.
 	// Usage: plumber:depends_on "pkg/path".TypeName
 	OptionDependsOn = "plumber:depends_on"
+	// OptionNotify triggers a named handler with optional named arguments at the end
+	// of the shape run. The first positional argument is the handler name; named
+	// arguments are aggregated across all notifications targeting the same handler
+	// and passed to the handler command template.
+	// Usage: plumber:notify goverter path="generated/converters"
+	OptionNotify = "plumber:notify"
 
 	// TransformationDerive specifies a macro to derive a new type from the annotated node, allowing for custom type
 	// transformations and generation based on the original node's structure and annotations.
@@ -122,6 +128,15 @@ const (
 	EventQueryExecuted ReporterEventType = "query.executed"
 	// EventQueryError is emitted when an error occurs during query execution.
 	EventQueryError ReporterEventType = "query.error"
+	// EventHandlerTriggered is emitted when a plumber:notify annotation is processed, indicating
+	// that a handler has been triggered by a transformer.
+	EventHandlerTriggered ReporterEventType = "handler.triggered"
+	// EventHandlerExecuting is emitted when a handler command is about to be executed.
+	EventHandlerExecuting ReporterEventType = "handler.executing"
+	// EventHandlerCompleted is emitted when a handler command finishes successfully.
+	EventHandlerCompleted ReporterEventType = "handler.completed"
+	// EventHandlerError is emitted when a handler command fails.
+	EventHandlerError ReporterEventType = "handler.error"
 )
 
 // ReporterEvent represents an event that can be reported by the Reporter interface,
@@ -158,6 +173,7 @@ type ShapingContext struct {
 	Reporter              Reporter
 	TemplateLoader        TemplateLoader
 	StructurePathResolver StructurePathResolver
+	Notifications         NotificationCollector
 	BaseDir               string
 	RepoModule            ModuleInfo
 	Module                ModuleInfo
@@ -170,4 +186,13 @@ type ModuleInfo struct {
 	Path           string
 	RelativePath   string
 	Dir            string
+}
+
+// NotificationCollector collects handler notifications emitted by plumber:notify annotations
+// during transformer execution. Implementations aggregate named arguments per handler name
+// and execute the corresponding handler commands after all transformations complete.
+type NotificationCollector interface {
+	// Notify records a notification for the given handler name with the provided named arguments.
+	Notify(handlerName string, namedArgs map[string]string)
+	Execute(*ShapingContext) error
 }

@@ -114,6 +114,48 @@ func (c *ShapingContext) QueryError(query, filename string, err error) {
 	}
 }
 
+func (c *ShapingContext) HandlerTriggered(handlerName string, transformer Transformer, node model.Node) {
+	if c.Reporter != nil {
+		c.Reporter.Notify(ReporterEvent{
+			Kind:        EventHandlerTriggered,
+			Message:     handlerName,
+			Transformer: transformer,
+			Node:        node,
+		})
+	}
+}
+
+func (c *ShapingContext) HandlerExecuting(handlerName string, command string) {
+	if c.Reporter != nil {
+		c.Reporter.Notify(ReporterEvent{
+			Kind:    EventHandlerExecuting,
+			Message: handlerName,
+			Path:    command,
+		})
+	}
+}
+
+func (c *ShapingContext) HandlerCompleted(handlerName string, command string) {
+	if c.Reporter != nil {
+		c.Reporter.Notify(ReporterEvent{
+			Kind:    EventHandlerCompleted,
+			Message: handlerName,
+			Path:    command,
+		})
+	}
+}
+
+func (c *ShapingContext) HandlerError(handlerName string, command string, err error) {
+	if c.Reporter != nil {
+		c.Reporter.Notify(ReporterEvent{
+			Kind:    EventHandlerError,
+			Message: handlerName,
+			Path:    command,
+			Error:   err,
+		})
+	}
+}
+
 func (c *ShapingContext) DeriveModulePath(dir string) (string, error) {
 	if dir == "." {
 		return c.Module.Path, nil

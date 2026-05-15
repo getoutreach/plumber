@@ -35,6 +35,7 @@ var defaultOptions = []string{
 	contract.OptionReceiver,
 	contract.OptionScope,
 	contract.OptionDependsOn,
+	contract.OptionNotify,
 }
 
 // Transformer defines the interface for transforming annotated nodes in the AST, such as struct types,

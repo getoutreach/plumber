@@ -8,6 +8,7 @@
 package model
 
 import (
+	"fmt"
 	"go/types"
 	"path/filepath"
 
@@ -523,4 +524,8 @@ func basicTypeKind(b *types.Basic) Kind {
 
 func (k Kind) String() string {
 	return string(k)
+}
+
+func (p Position) String() string {
+	return fmt.Sprintf("%s:%d at %d col", p.Filename, p.Line, p.Column)
 }

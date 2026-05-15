@@ -62,6 +62,11 @@ func Run(ctx *contract.ShapingContext, cfg *Config, args []string) error {
 		return err
 	}
 
+	// Execute handlers that were triggered by plumber:notify annotations.
+	if err := executeHandlers(ctx, cfg); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -124,7 +129,11 @@ func runTargeted(ctx *contract.ShapingContext, cfg *Config, pkgs model.Packages)
 	}
 
 	// Render and restore using the same interleaved pipeline as Run.
-	return executeTransformations(ctx, cfg, pkgs, transformations)
+	if err := executeTransformations(ctx, cfg, pkgs, transformations); err != nil {
+		return err
+	}
+
+	return executeHandlers(ctx, cfg)
 }
 
 // resolveTargetType resolves the target type from the given FQN string.
@@ -262,9 +271,13 @@ func collectCommentTransformations(ctx *contract.ShapingContext, cfg *Config, pk
 				return a.Name != contract.OptionContext
 			})
 
+			for _, a := range filtered.Annotations {
+				fmt.Println(a)
+			}
+
 			ts, err := buildTransformers(cfg, filtered)
 			if err != nil {
-				return fmt.Errorf("failed to build transformers for node %q: %w", t.GetPosition(), err)
+				return fmt.Errorf("failed to build transformers for node %q: %w", comment.GetPosition(), err)
 			}
 
 			if len(ts) == 0 {
@@ -578,6 +591,16 @@ func buildModeManager(cfg *Config, pkg *model.Package, mode, output string) Mana
 		return NewGeneratorManager(cfg, pkg, output)
 	}
 	return nil
+}
+
+// executeHandlers executes any handlers that were triggered by plumber:notify
+// annotations during the run. The context's Notifications collector must be a
+// *handler.Registry for execution to proceed.
+func executeHandlers(ctx *contract.ShapingContext, cfg *Config) error {
+	if ctx.Notifications == nil {
+		return nil
+	}
+	return ctx.Notifications.Execute(ctx)
 }
 
 // buildTransformers constructs the list of transformers to apply to a given node based on its annotations and the provided configuration.
