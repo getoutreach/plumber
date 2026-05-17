@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/query/model"
 	"gotest.tools/v3/assert"
 )
@@ -97,23 +96,19 @@ func (n *testNode) GetPackage() *model.Package        { return n.pkg }
 func (n *testNode) GetPosition() model.Position       { return n.position }
 func (n *testNode) GetDoc() string                    { return n.doc }
 
-// stubTransformer is a minimal Transformer for testing. It only implements enough
-// to be used as a key in dedup comparisons.
-type stubTransformer struct {
-	BasicTransformer
-}
-
-func (s *stubTransformer) Render(_, _, _, _, _ interface{}) (string, error) {
-	return "", nil
-}
-
-func newStubTransformer(name string) Transformer {
-	return &Shaper{BasicTransformer: BasicTransformer{Name: name}}
+// newTestTransformer creates a Shaper whose Options.Source points to the given node,
+// so that matchTarget can resolve the source file and line.
+func newTestTransformer(name string, source model.Node, annotations ...model.Annotation) Transformer {
+	return &Shaper{BasicTransformer: BasicTransformer{
+		Name:        name,
+		Options:     model.Annotation{Source: source},
+		Annotations: annotations,
+	}}
 }
 
 func TestFilterTransformations_EmptyTargets(t *testing.T) {
 	node := &testNode{position: model.Position{Filename: "/a.go", Line: 10}}
-	ts := []Transformation{{Node: node, Transformer: newStubTransformer("t1")}}
+	ts := []Transformation{{Node: node, Transformer: newTestTransformer("t1", node)}}
 
 	result, err := filterTransformations(ts, nil)
 	assert.NilError(t, err)
@@ -123,38 +118,27 @@ func TestFilterTransformations_EmptyTargets(t *testing.T) {
 func TestFilterTransformations_FileOnly(t *testing.T) {
 	node1 := &testNode{position: model.Position{Filename: "/a.go", Line: 10}}
 	node2 := &testNode{position: model.Position{Filename: "/b.go", Line: 20}}
-	t1 := newStubTransformer("t1")
-	t2 := newStubTransformer("t2")
 
 	ts := []Transformation{
-		{Node: node1, Transformer: t1},
-		{Node: node2, Transformer: t2},
+		{Node: node1, Transformer: newTestTransformer("t1", node1)},
+		{Node: node2, Transformer: newTestTransformer("t2", node2)},
 	}
 
 	result, err := filterTransformations(ts, []FileTarget{{Path: "/a.go"}})
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
-	assert.Equal(t, result[0].Node.GetPosition().Filename, "/a.go")
+	assert.Equal(t, result[0].Transformer.GetName(), "t1")
 }
 
 func TestFilterTransformations_LineHitsDeclaration(t *testing.T) {
-	// Node at line 10, with doc comment from lines 7-9.
-	// Line 10 is the declaration — should return all transformations.
-	node := &testNode{
-		position: model.Position{Filename: "/a.go", Line: 10},
-		doc:      "plumber:derive\nplumber:template foo\nplumber:shape\n",
-		annotations: model.Annotations{
-			{Name: contract.TransformationDerive, DocLine: 1},
-			{Name: contract.OptionTemplate, DocLine: 2},
-			{Name: contract.TransformationShape, DocLine: 3},
-		},
-	}
-	t1 := newStubTransformer("derive")
-	t2 := newStubTransformer("shape")
+	// Source node at line 10. Both transformers point to the same source.
+	// Targeting line 10 (the declaration) should match both transformers
+	// because their source position line equals the target line.
+	node := &testNode{position: model.Position{Filename: "/a.go", Line: 10}}
 
 	ts := []Transformation{
-		{Node: node, Transformer: t1},
-		{Node: node, Transformer: t2},
+		{Node: node, Transformer: newTestTransformer("derive", node)},
+		{Node: node, Transformer: newTestTransformer("shape", node)},
 	}
 
 	result, err := filterTransformations(ts, []FileTarget{{Path: "/a.go", Line: 10}})
@@ -162,89 +146,67 @@ func TestFilterTransformations_LineHitsDeclaration(t *testing.T) {
 	assert.Equal(t, len(result), 2)
 }
 
-func TestFilterTransformations_LineHitsTransformerAnnotation(t *testing.T) {
-	// Doc comment:
-	//   line 7: plumber:derive
-	//   line 8: plumber:template foo
-	//   line 9: plumber:shape
-	// Declaration at line 10.
-	node := &testNode{
-		position: model.Position{Filename: "/a.go", Line: 10},
-		doc:      "plumber:derive\nplumber:template foo\nplumber:shape\n",
-		annotations: model.Annotations{
-			{Name: contract.TransformationDerive, DocLine: 1},
-			{Name: contract.OptionTemplate, DocLine: 2},
-			{Name: contract.TransformationShape, DocLine: 3},
-		},
-	}
-	tDerive := newStubTransformer("derive")
-	tShape := newStubTransformer("shape")
+func TestFilterTransformations_LineHitsAnnotationPosition(t *testing.T) {
+	// Source node at line 10. The "shape" transformer has an annotation whose
+	// Position is at line 9. Targeting line 9 should match only "shape".
+	node := &testNode{position: model.Position{Filename: "/a.go", Line: 10}}
+
+	pos9 := model.Position{Filename: "/a.go", Line: 9}
+
+	tDerive := newTestTransformer("derive", node)
+	tShape := newTestTransformer("shape", node,
+		model.Annotation{Name: "plumber:template", Position: &pos9},
+	)
 
 	ts := []Transformation{
 		{Node: node, Transformer: tDerive},
 		{Node: node, Transformer: tShape},
 	}
 
-	// Point to the plumber:shape annotation (line 9 = nodeStart + DocLine 3 - 1 = 7 + 3 - 1 = 9)
 	result, err := filterTransformations(ts, []FileTarget{{Path: "/a.go", Line: 9}})
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	assert.Equal(t, result[0].Transformer.GetName(), "shape")
-
-	// Point to the plumber:derive annotation (line 7 = nodeStart + 1 - 1 = 7)
-	result, err = filterTransformations(ts, []FileTarget{{Path: "/a.go", Line: 7}})
-	assert.NilError(t, err)
-	assert.Equal(t, len(result), 1)
-	assert.Equal(t, result[0].Transformer.GetName(), "derive")
 }
 
-func TestFilterTransformations_LineHitsModifierAnnotation(t *testing.T) {
-	// Doc comment:
-	//   line 7: plumber:derive
-	//   line 8: plumber:template foo
-	//   line 9: plumber:shape
-	// Declaration at line 10.
-	node := &testNode{
-		position: model.Position{Filename: "/a.go", Line: 10},
-		doc:      "plumber:derive\nplumber:template foo\nplumber:shape\n",
-		annotations: model.Annotations{
-			{Name: contract.TransformationDerive, DocLine: 1},
-			{Name: contract.OptionTemplate, DocLine: 2},
-			{Name: contract.TransformationShape, DocLine: 3},
+func TestFilterTransformations_LineHitsImpliedByPosition(t *testing.T) {
+	// Source node at line 10. The "derive" transformer has an annotation whose
+	// ImpliedBy.Position is at line 7 (macro origin). Targeting line 7 should
+	// match only "derive".
+	node := &testNode{position: model.Position{Filename: "/a.go", Line: 10}}
+
+	macroPos := model.Position{Filename: "/a.go", Line: 7}
+	tDerive := newTestTransformer("derive", node,
+		model.Annotation{
+			Name:      "plumber:template",
+			ImpliedBy: &model.Annotation{Position: &macroPos},
 		},
-	}
-	tDerive := newStubTransformer("derive")
-	tShape := newStubTransformer("shape")
+	)
+	tShape := newTestTransformer("shape", node)
 
 	ts := []Transformation{
 		{Node: node, Transformer: tDerive},
 		{Node: node, Transformer: tShape},
 	}
 
-	// Point to plumber:template (line 8), which is a modifier under plumber:derive.
-	// Should return the derive transformation (nearest transformer above).
-	result, err := filterTransformations(ts, []FileTarget{{Path: "/a.go", Line: 8}})
+	result, err := filterTransformations(ts, []FileTarget{{Path: "/a.go", Line: 7}})
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	assert.Equal(t, result[0].Transformer.GetName(), "derive")
 }
 
 func TestFilterTransformations_LineNoMatch(t *testing.T) {
-	node := &testNode{
-		position:    model.Position{Filename: "/a.go", Line: 10},
-		doc:         "plumber:derive\n",
-		annotations: model.Annotations{{Name: contract.TransformationDerive, DocLine: 1}},
-	}
-	ts := []Transformation{{Node: node, Transformer: newStubTransformer("derive")}}
+	node := &testNode{position: model.Position{Filename: "/a.go", Line: 10}}
+	ts := []Transformation{{Node: node, Transformer: newTestTransformer("derive", node)}}
 
-	// Line 50 doesn't match any node.
+	// Line 50 doesn't match any transformer's source or annotation position.
 	_, err := filterTransformations(ts, []FileTarget{{Path: "/a.go", Line: 50}})
 	assert.ErrorContains(t, err, "does not match any annotated node")
 }
 
 func TestFilterTransformations_Dedup(t *testing.T) {
 	node := &testNode{position: model.Position{Filename: "/a.go", Line: 10}}
-	tr := newStubTransformer("t1")
+	tr := newTestTransformer("t1", node)
 	ts := []Transformation{{Node: node, Transformer: tr}}
 
 	// Two targets pointing to the same file — should not duplicate.
@@ -254,4 +216,18 @@ func TestFilterTransformations_Dedup(t *testing.T) {
 	})
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
+}
+
+func TestFilterTransformations_NoSourceSkipped(t *testing.T) {
+	// Transformer with nil Source should be skipped, not crash.
+	node := &testNode{position: model.Position{Filename: "/a.go", Line: 10}}
+	tr := &Shaper{BasicTransformer: BasicTransformer{
+		Name:    "no-source",
+		Options: model.Annotation{}, // Source is nil
+	}}
+	ts := []Transformation{{Node: node, Transformer: tr}}
+
+	result, err := filterTransformations(ts, []FileTarget{{Path: "/a.go"}})
+	assert.NilError(t, err)
+	assert.Equal(t, len(result), 0)
 }

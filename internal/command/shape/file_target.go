@@ -118,8 +118,9 @@ func matchTarget(transformations []Transformation, target FileTarget) ([]Transfo
 	var filtered []Transformation
 
 	for _, t := range result {
+		// Transformer source position is the declaration line, so it matches
+		// if the target line hits the declaration itself.
 		p := t.Transformer.GetOptions().Source.GetPosition()
-
 		if p.Line == target.Line {
 			filtered = append(filtered, t)
 			continue
@@ -135,6 +136,7 @@ func matchTarget(transformations []Transformation, target FileTarget) ([]Transfo
 				}
 			}
 			// Position is matching position of the annotation itself
+			// all subsequent annotations has the position derived from the same position + doc line
 			if ann.Position != nil {
 				p = *ann.Position
 				if p.Line == target.Line {
