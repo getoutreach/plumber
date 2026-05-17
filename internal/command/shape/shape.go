@@ -31,8 +31,13 @@ import (
 )
 
 // Run is the main entry point for the shape command, orchestrating the entire transformation process.
-func Run(ctx *contract.ShapingContext, cfg *Config, args []string) error {
-	filenames, err := inspect.ScanFiles("./", args)
+func Run(ctx *contract.ShapingContext, cfg *Config, targets []FileTarget) error {
+	dirs := cfg.WorkingDirs
+	if len(dirs) == 0 {
+		dirs = []string{"./..."}
+	}
+
+	filenames, err := inspect.ScanFiles("./", dirs)
 	if err != nil {
 		return fmt.Errorf("failed to scan files: %w", err)
 	}
@@ -50,6 +55,12 @@ func Run(ctx *contract.ShapingContext, cfg *Config, args []string) error {
 	}
 
 	transformations, err := collectTransformations(ctx, cfg, pkgs)
+	if err != nil {
+		return err
+	}
+
+	// Filter transformations by file targets when provided.
+	transformations, err = filterTransformations(transformations, targets)
 	if err != nil {
 		return err
 	}
@@ -72,8 +83,13 @@ func Run(ctx *contract.ShapingContext, cfg *Config, args []string) error {
 
 // RunTarget is the entry point for the shape target subcommand, which processes a single specified type with a named macro,
 // bypassing the full annotation scan.
-func RunTarget(ctx *contract.ShapingContext, cfg *Config, args []string) error {
-	filenames, err := inspect.ScanFiles("./", args)
+func RunTarget(ctx *contract.ShapingContext, cfg *Config, targets []FileTarget) error {
+	dirs := cfg.WorkingDirs
+	if len(dirs) == 0 {
+		dirs = []string{"./..."}
+	}
+
+	filenames, err := inspect.ScanFiles("./", dirs)
 	if err != nil {
 		return fmt.Errorf("failed to scan files: %w", err)
 	}
@@ -226,7 +242,11 @@ func collectTransformations(ctx *contract.ShapingContext, cfg *Config, pkgs mode
 //   - Single type: plumber:context "pkg/path".TypeName — targets a single type by FQN.
 //   - Package matcher: plumber:context pkg/path matcher=<name> — targets all types in the
 //     package that match the named matcher's rules.
-func collectCommentTransformations(ctx *contract.ShapingContext, cfg *Config, pkgs model.Packages, appendTransformer func(node model.Node, ts []Transformer)) error {
+func collectCommentTransformations(
+	ctx *contract.ShapingContext,
+	cfg *Config,
+	pkgs model.Packages,
+	appendTransformer func(node model.Node, ts []Transformer)) error {
 	for _, pkg := range pkgs {
 		for _, comment := range pkg.Comments {
 			m := comment.Annotations.Find(contract.OptionContext)
@@ -257,8 +277,6 @@ func collectCommentTransformations(ctx *contract.ShapingContext, cfg *Config, pk
 				return fmt.Errorf("failed to resolve package path for context annotation %q: %w", m.Value(), resolveErr)
 			}
 
-			fmt.Println("FOJND!!!", fqn.String())
-
 			if err != nil {
 				return fmt.Errorf("failed to parse model FQN %q: %w", m.Value(), err)
 			}
@@ -271,10 +289,6 @@ func collectCommentTransformations(ctx *contract.ShapingContext, cfg *Config, pk
 				return a.Name != contract.OptionContext
 			})
 
-			for _, a := range filtered.Annotations {
-				fmt.Println(a)
-			}
-
 			ts, err := buildTransformers(cfg, filtered)
 			if err != nil {
 				return fmt.Errorf("failed to build transformers for node %q: %w", comment.GetPosition(), err)
@@ -284,7 +298,6 @@ func collectCommentTransformations(ctx *contract.ShapingContext, cfg *Config, pk
 				return fmt.Errorf("no transformers built for node %q with context annotation", t.GetPosition())
 			}
 
-			fmt.Println("!!!!!!!!!!", ts)
 			appendTransformer(t, ts)
 		}
 	}

@@ -15,7 +15,7 @@ func TestMergeMissingType(t *testing.T) {
 	err := withFixture(
 		&shape.Config{},
 		func(ctx FixtureContext) error {
-			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, nil)
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "mergemissing/merged.go", "mergemissing/merged.go.golden")
 			return nil

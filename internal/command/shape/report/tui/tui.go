@@ -212,6 +212,7 @@ type quitMsg struct{}
 // the footer text differ between them.
 type phase int
 
+// Consts
 const (
 	// phaseLive is the streaming phase: panels are still being added and
 	// updated. The viewport auto-scrolls to the bottom as new content
@@ -293,9 +294,11 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.enterReview()
 			return m, nil
 		}
-		return m, m.forwardToViewport(msg)
+		err := m.forwardToViewport(msg)
+		return m, err
 	case tea.MouseMsg:
-		return m, m.forwardToViewport(msg)
+		err := m.forwardToViewport(msg)
+		return m, err
 	case eventMsg:
 		if m.phase == phaseReview {
 			// Late-arriving events after the user has begun reviewing are
@@ -387,7 +390,7 @@ func (m *tuiModel) enterReview() {
 // updating the existing panel's status or appending log lines as
 // appropriate.
 //
-// nolint: cyclop,funlen //Why: tui
+// nolint: gocyclo,funlen //Why: tui
 func (m *tuiModel) applyEvent(e contract.ReporterEvent) {
 	switch e.Kind {
 	case contract.EventTransformerAdded:
@@ -627,7 +630,7 @@ var logStyle = lipgloss.NewStyle().
 // panel a clear, well-defined body.
 var panelLineStyle = lipgloss.NewStyle().Background(ColorPanelBg)
 
-// footerStyle styles the always-visible footer shown beneath the viewport
+// reviewFooterStyle styles the always-visible footer shown beneath the viewport
 // in both the live and review phases. It uses the panel border colour as
 // its background so the footer reads as a clearly distinct status bar
 // separated from the panel content above it.

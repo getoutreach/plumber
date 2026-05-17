@@ -30,7 +30,7 @@ func TestShapeTargeted(t *testing.T) {
 			},
 		},
 		func(ctx FixtureContext) error {
-			err := shape.RunTarget(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			err := shape.RunTarget(ctx.ShapingContext, ctx.Cfg, nil)
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "targeted/generated.go", "targeted/generated.go.golden")
 			return nil
@@ -50,7 +50,7 @@ func TestShapeTargetedMacroNotFound(t *testing.T) {
 			},
 		},
 		func(ctx FixtureContext) error {
-			return shape.RunTarget(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			return shape.RunTarget(ctx.ShapingContext, ctx.Cfg, nil)
 		},
 		"targeted/model.go",
 	)
@@ -78,7 +78,7 @@ func TestShapeTargetedTypeNotFound(t *testing.T) {
 			},
 		},
 		func(ctx FixtureContext) error {
-			return shape.RunTarget(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			return shape.RunTarget(ctx.ShapingContext, ctx.Cfg, nil)
 		},
 		"targeted/model.go",
 	)

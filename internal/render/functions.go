@@ -72,7 +72,10 @@ func (i *Ignores) Ignored(groups ...string) bool {
 	return exists
 }
 
-func TypesRenderer(currentPkgPath string, register *ModuleRegister, pathResolver PathResolverFunc) func(spec model.TypeSpec) (string, error) {
+func TypesRenderer(
+	currentPkgPath string,
+	register *ModuleRegister,
+	pathResolver PathResolverFunc) func(spec model.TypeSpec) (string, error) {
 	return func(spec model.TypeSpec) (string, error) {
 		fqn, err := astx.ParseFQN(spec.FQN)
 		if err != nil {
@@ -208,7 +211,8 @@ func module(context Context) func(modulePath ...string) (ModuleRef, error) {
 	}
 }
 
-// ModuleRef represents a reference to a module that has been registered for inclusion during rendering, containing the module path and its registration details.
+// ModuleRef represents a reference to a module that has been registered for inclusion
+// during rendering, containing the module path and its registration details.
 type ModuleRef struct {
 	Path string
 	use  func() ModuleRegistration

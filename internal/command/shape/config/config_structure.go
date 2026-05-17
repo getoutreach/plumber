@@ -4,7 +4,16 @@ package config
 
 import "fmt"
 
-// StructureConfig represents the overall configuration for the shape command, including included structures and additional structure definitions.
+// PlumberStructureConfig represents the configuration for a structure in the shape command,
+type PlumberStructureConfig struct {
+	Name        string                `yaml:"name"`
+	Description string                `yaml:"description,omitempty"`
+	Path        string                `yaml:"path,omitempty"`
+	Paths       []StructurePathConfig `yaml:"paths,omitempty"`
+}
+
+// StructureConfig represents the overall configuration for the shape command,
+// including included structures and additional structure definitions.
 type StructureConfig struct {
 	Include    []string                    `yaml:"include,omitempty"`
 	Additional []StructureDefinitionConfig `yaml:"additional,omitempty"`
@@ -25,16 +34,17 @@ func ResolveStructureDefinitions(cfg StructureConfig, available []*StructureDefi
 	for _, name := range cfg.Include {
 		found := false
 		for _, def := range available {
-			if def.Structure.Name == name {
-				// Deep-copy paths slice so merges don't mutate the original config.
-				s := def.Structure
-				pathsCopy := make([]StructurePathConfig, len(s.Paths))
-				copy(pathsCopy, s.Paths)
-				s.Paths = pathsCopy
-				included = append(included, s)
-				found = true
-				break
+			if def.Structure.Name != name {
+				continue
 			}
+			// Deep-copy paths slice so merges don't mutate the original config.
+			s := def.Structure
+			pathsCopy := make([]StructurePathConfig, len(s.Paths))
+			copy(pathsCopy, s.Paths)
+			s.Paths = pathsCopy
+			included = append(included, s)
+			found = true
+			break
 		}
 		if !found {
 			return nil, fmt.Errorf("structure %q not found in available definitions", name)
@@ -92,14 +102,6 @@ func (c *PlumberStructureConfig) MergeFrom(other PlumberStructureConfig) {
 // StructureDefinitionConfig represents the configuration for a structure in the shape command,
 type StructureDefinitionConfig struct {
 	Structure PlumberStructureConfig `yaml:"plumber.structure,omitempty"`
-}
-
-// PlumberStructureConfig represents the configuration for a structure in the shape command,
-type PlumberStructureConfig struct {
-	Name        string                `yaml:"name"`
-	Description string                `yaml:"description,omitempty"`
-	Path        string                `yaml:"path,omitempty"`
-	Paths       []StructurePathConfig `yaml:"paths,omitempty"`
 }
 
 // StructurePathConfig represents the configuration for a structure path in the shape command,

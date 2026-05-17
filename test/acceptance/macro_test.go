@@ -25,7 +25,7 @@ func TestMacro(t *testing.T) {
 		},
 		func(ctx FixtureContext) error {
 			shapingContext := ctx.ShapingContext
-			err := shape.Run(shapingContext, ctx.Cfg, []string{"./..."})
+			err := shape.Run(shapingContext, ctx.Cfg, nil)
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "macro/generated.go", "macro/generated.go.golden")
 			return nil
@@ -51,7 +51,7 @@ func TestMacroTemplate(t *testing.T) {
 			},
 		},
 		func(ctx FixtureContext) error {
-			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, nil)
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "macrotemplate/generated.go", "macrotemplate/generated.go.golden")
 			return nil

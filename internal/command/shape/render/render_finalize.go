@@ -17,10 +17,6 @@ func Finalize(
 ) (*render.Output, error) {
 	context = context.Clone()
 
-	for _, i := range context.GetModules().Imports {
-		fmt.Printf("Import: %s\n", i)
-	}
-
 	context.WithPriorityRenderOptions(
 		withRenderFuncMap(context, output),
 		gen.WithFS(EmbededTemplates,

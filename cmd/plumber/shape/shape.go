@@ -30,9 +30,11 @@ import (
 
 // Run executes the shape command
 func Run(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shape.Config) error {
-	args := c.Args().Slice()
-	err := shape.Run(ctx, shapeConfig, args)
+	targets, err := shape.ParseFileTargets(c.Args().Slice())
 	if err != nil {
+		return fmt.Errorf("invalid file target: %w", err)
+	}
+	if err := shape.Run(ctx, shapeConfig, targets); err != nil {
 		return fmt.Errorf("failed to run shape command: %w", err)
 	}
 
@@ -50,10 +52,12 @@ func RunTarget(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shape.
 		return err
 	}
 
-	args := c.Args().Slice()
-
-	err := shape.RunTarget(ctx, shapeConfig, args)
+	targets, err := shape.ParseFileTargets(c.Args().Slice())
 	if err != nil {
+		return fmt.Errorf("invalid file target: %w", err)
+	}
+
+	if err := shape.RunTarget(ctx, shapeConfig, targets); err != nil {
 		return fmt.Errorf("failed to run shape command: %w", err)
 	}
 	return nil

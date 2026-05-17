@@ -68,7 +68,7 @@ func (s *ServiceBlended) Switch(str string) {
 
 	err := withFixture(cfg,
 		func(ctx FixtureContext) error {
-			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, nil)
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "mergecomplex/blended.go", "mergecomplex/blended.go.golden")
 			return nil

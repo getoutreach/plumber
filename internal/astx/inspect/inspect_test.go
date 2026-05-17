@@ -10,11 +10,12 @@ import (
 	"github.com/dave/dst"
 	"github.com/getoutreach/plumber/query/model"
 	"gotest.tools/v3/assert"
+
+	_ "github.com/santhosh-tekuri/jsonschema"
 )
 
 func TestParseAnnotations(t *testing.T) {
-	doc := `
-    lorem ipsum dolor sit amet
+	doc := `lorem ipsum dolor sit amet
     lorem.ipsum dolor sit amet lorem ipsum dolor sit amet
 
     plumber.annotation arg1 arg2 key1=value1 key2=value2
@@ -23,6 +24,13 @@ func TestParseAnnotations(t *testing.T) {
 
     goverter.context yes
     `
+	p := model.Position{
+		Line: 2,
+	}
+
+	cg := &model.CommentGroup{
+		Position: p,
+	}
 
 	assert.DeepEqual(t, []model.Annotation{
 		{
@@ -32,6 +40,9 @@ func TestParseAnnotations(t *testing.T) {
 				"key1": "value1",
 				"key2": "value2",
 			},
+			DocLine:  3,
+			Position: &model.Position{Line: 5},
+			Source:   cg,
 		},
 		{
 			Name: "plumber:annotation",
@@ -39,6 +50,9 @@ func TestParseAnnotations(t *testing.T) {
 			NamedArgs: map[string]string{
 				"key2": "value2",
 			},
+			DocLine:  4,
+			Position: &model.Position{Line: 6},
+			Source:   cg,
 		},
 		{
 			Name: "@plumber.skip",
@@ -46,13 +60,19 @@ func TestParseAnnotations(t *testing.T) {
 			NamedArgs: map[string]string{
 				"key2": "value2",
 			},
+			DocLine:  5,
+			Position: &model.Position{Line: 7},
+			Source:   cg,
 		},
 		{
 			Name:      "goverter.context",
 			Args:      []string{"yes"},
 			NamedArgs: map[string]string{},
+			DocLine:   6,
+			Position:  &model.Position{Line: 8},
+			Source:    cg,
 		},
-	}, ParseAnnotations(doc))
+	}, ParseAnnotations(doc, cg))
 }
 
 func TestParseTags(t *testing.T) {
@@ -111,6 +131,12 @@ func TestAnnotationsFromDecs_MultipleDecs(t *testing.T) {
 }
 
 func TestParseAnnotations_Quoted(t *testing.T) {
+	p := model.Position{}
+
+	cg := &model.CommentGroup{
+		Position: p,
+	}
+
 	tests := []struct {
 		name string
 		doc  string
@@ -123,6 +149,9 @@ func TestParseAnnotations_Quoted(t *testing.T) {
 				Name:      "plumber.foo",
 				Args:      []string{"X Y"},
 				NamedArgs: map[string]string{},
+				DocLine:   1,
+				Position:  &p,
+				Source:    cg,
 			}},
 		},
 		{
@@ -132,6 +161,9 @@ func TestParseAnnotations_Quoted(t *testing.T) {
 				Name:      "plumber.foo",
 				Args:      []string{"hello world"},
 				NamedArgs: map[string]string{},
+				DocLine:   1,
+				Position:  &p,
+				Source:    cg,
 			}},
 		},
 		{
@@ -141,6 +173,9 @@ func TestParseAnnotations_Quoted(t *testing.T) {
 				Name:      "plumber.foo",
 				Args:      []string{"hello world"},
 				NamedArgs: map[string]string{},
+				DocLine:   1,
+				Position:  &p,
+				Source:    cg,
 			}},
 		},
 		{
@@ -150,6 +185,9 @@ func TestParseAnnotations_Quoted(t *testing.T) {
 				Name:      "plumber.foo",
 				Args:      []string{`"X".value`},
 				NamedArgs: map[string]string{},
+				DocLine:   1,
+				Position:  &p,
+				Source:    cg,
 			}},
 		},
 		{
@@ -159,6 +197,9 @@ func TestParseAnnotations_Quoted(t *testing.T) {
 				Name:      "plumber.foo",
 				Args:      nil,
 				NamedArgs: map[string]string{"key": "val with space"},
+				DocLine:   1,
+				Position:  &p,
+				Source:    cg,
 			}},
 		},
 		{
@@ -168,13 +209,16 @@ func TestParseAnnotations_Quoted(t *testing.T) {
 				Name:      "plumber.foo",
 				Args:      []string{"arg1", "arg two"},
 				NamedArgs: map[string]string{"key": "val ue"},
+				DocLine:   1,
+				Position:  &p,
+				Source:    cg,
 			}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ParseAnnotations(tt.doc)
+			got := ParseAnnotations(tt.doc, cg)
 			assert.DeepEqual(t, tt.want, got)
 		})
 	}

@@ -161,6 +161,8 @@ func expandAnnotations(
 					a.Name, a.Args,
 					model.WithNamedArgs(a.NamedArgs),
 					model.WithImpliedBy(trigger),
+					model.WithSource(ann.Source),
+					model.WithDocLine(ann.DocLine),
 				)
 			})
 		}
@@ -170,6 +172,8 @@ func expandAnnotations(
 				macroAnn.Name, macroAnn.Args,
 				model.WithNamedArgs(macroAnn.NamedArgs),
 				model.WithImpliedBy(trigger),
+				model.WithSource(ann.Source),
+				model.WithDocLine(ann.DocLine),
 			)
 			expanded = append(expanded, a)
 		}
@@ -244,10 +248,6 @@ func expandTemplateStr(scope render.Scope, node model.Node, s string, data sourc
 		"Package": data.Package,
 		"Type":    data.Type,
 		"Source":  data.Source,
-	}
-
-	if data.Source != nil {
-		fmt.Println("SOURCE", data.Source.NamedArgs)
 	}
 
 	maps.Copy(payload, scope)

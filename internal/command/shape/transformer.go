@@ -47,6 +47,7 @@ type Transformer interface {
 	// Add(annotation model.Annotation)
 	// Validate(packager contract.Packager) error
 	// GetPosition() model.Position
+	GetOptions() model.Annotation
 	// Output() string
 	// GetName() string
 	// Mode() string
@@ -127,6 +128,10 @@ func (t *BasicTransformer) GetPosition() model.Position {
 
 func (t *BasicTransformer) GetPackage() *model.Package {
 	return t.Package
+}
+
+func (t *BasicTransformer) GetOptions() model.Annotation {
+	return t.Options
 }
 
 // Validate checks if the transformer has the required annotations and options,

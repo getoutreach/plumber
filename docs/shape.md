@@ -8,11 +8,40 @@ by default.
 ## Quick start
 
 ```shell
-go run github.com/getoutreach/plumber/cmd/plumber@version shape [--config plumber.shape.yaml] ./...
+go run github.com/getoutreach/plumber/cmd/plumber@version shape [--config plumber.shape.yaml] [file[:line] ...]
 ```
 
-`./...` follows standard Go package pattern syntax.  Pass a single package path (e.g.
-`./internal/mypackage`) to restrict the scan.
+By default, the command scans directories listed in the `workingDirs` config property.
+When `workingDirs` is not set, it defaults to `./...` (recursive scan from the current
+directory).
+
+### File targeting
+
+Positional arguments accept file paths with optional line numbers to restrict which
+transformations are executed:
+
+```shell
+# Run only transformations from types declared in model.go
+plumber shape --config plumber.yaml ./internal/pkg/model.go
+
+# Run the transformation at or above line 30 in model.go
+plumber shape --config plumber.yaml ./internal/pkg/model.go:30
+
+# Multiple targets
+plumber shape --config plumber.yaml ./pkg/a.go:15 ./pkg/b.go
+```
+
+**Line matching rules:**
+
+| Line points to | Behaviour |
+|---|---|
+| A `plumber:derive` / `plumber:shape` / `plumber:render` annotation | Only that specific transformation is executed |
+| A modifier annotation (`plumber:template`, `plumber:filter`, etc.) | The nearest entry-point annotation **above** is selected |
+| The type declaration itself or a non-annotation line within the doc comment | All transformations for that node are executed |
+| A line outside any annotated node | Error |
+
+When no positional arguments are provided, all transformations from the scanned packages
+are executed (original behaviour).
 
 ### Single-type mode
 
@@ -20,15 +49,14 @@ Instead of scanning all types for annotations, you can target a specific type an
 named macro programmatically:
 
 ```shell
-go run github.com/getoutreach/plumber/cmd/plumber@version shape \
+go run github.com/getoutreach/plumber/cmd/plumber@version shape target \
   --config plumber.shape.yaml \
   --type '"github.com/example/pkg".MyService' \
   --macro '@derive' \
   --macro-arg DerivedName \
   --macro-arg AnotherArg \
   --macro-named-arg file=generated.go \
-  --macro-named-arg mode=inplace \
-  ./...
+  --macro-named-arg mode=inplace
 ```
 
 | Flag | Type | Description |
@@ -40,7 +68,8 @@ go run github.com/getoutreach/plumber/cmd/plumber@version shape \
 
 When `--type` and `--macro` are both provided, the command operates in **exclusive mode**:
 it bypasses the annotation scan and only processes the specified type with the named macro.
-The package pattern (`./...`) is still required so that the type can be resolved.
+The `workingDirs` config property (or the default `./...`) determines which packages are
+loaded so that the type can be resolved.
 
 The type can be specified as:
 - A **fully-qualified name**: `"github.com/example/pkg".MyService`
@@ -483,8 +512,10 @@ includes:
 
 # Shape command config.
 plumber.shape:
-  workingDir: ""      # optional working directory override
-  cacheDir:   ""      # optional cache directory for checked-out git templates
+  workingDirs:          # directories to scan for Go source files (default: ["./..."])
+    - ./internal/...    # supports standard Go package pattern syntax
+    - ./pkg/...
+  cacheDir:   ""        # optional cache directory for checked-out git templates
 
   # ---------- sources ----------
   # Template sources (local or git). These are resolved during template loading.

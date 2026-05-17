@@ -11,7 +11,7 @@ func TestMerge(t *testing.T) {
 	err := withFixture(
 		&shape.Config{},
 		func(ctx FixtureContext) error {
-			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, nil)
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "merge/blended.go", "merge/blended.go.golden")
 			return nil

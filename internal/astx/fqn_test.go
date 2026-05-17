@@ -128,8 +128,9 @@ func TestFQNFromGoType(t *testing.T) {
 			expected: `"github.com/example/foo".Container[string]`,
 		},
 		{
-			name:     "generic type with multiple type args",
-			typ:      genericType(pkgFoo, "Pair", types.Typ[types.Int], []string{"K", "V"}, []types.Type{types.Typ[types.String], types.Typ[types.Int]}),
+			name: "generic type with multiple type args",
+			typ: genericType(pkgFoo, "Pair",
+				types.Typ[types.Int], []string{"K", "V"}, []types.Type{types.Typ[types.String], types.Typ[types.Int]}),
 			expected: `"github.com/example/foo".Pair[string, int]`,
 		},
 		{

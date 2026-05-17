@@ -125,7 +125,7 @@ func (c *ShapingContext) HandlerTriggered(handlerName string, transformer Transf
 	}
 }
 
-func (c *ShapingContext) HandlerExecuting(handlerName string, command string) {
+func (c *ShapingContext) HandlerExecuting(handlerName, command string) {
 	if c.Reporter != nil {
 		c.Reporter.Notify(ReporterEvent{
 			Kind:    EventHandlerExecuting,
@@ -135,7 +135,7 @@ func (c *ShapingContext) HandlerExecuting(handlerName string, command string) {
 	}
 }
 
-func (c *ShapingContext) HandlerCompleted(handlerName string, command string) {
+func (c *ShapingContext) HandlerCompleted(handlerName, command string) {
 	if c.Reporter != nil {
 		c.Reporter.Notify(ReporterEvent{
 			Kind:    EventHandlerCompleted,
@@ -145,7 +145,7 @@ func (c *ShapingContext) HandlerCompleted(handlerName string, command string) {
 	}
 }
 
-func (c *ShapingContext) HandlerError(handlerName string, command string, err error) {
+func (c *ShapingContext) HandlerError(handlerName, command string, err error) {
 	if c.Reporter != nil {
 		c.Reporter.Notify(ReporterEvent{
 			Kind:    EventHandlerError,

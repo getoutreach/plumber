@@ -64,7 +64,6 @@ func (r *ModuleRegister) Dot(name string) ModuleRegistration {
 }
 
 func (r *ModuleRegister) Register(name string, std bool) ModuleRegistration {
-	fmt.Println("ModuleRegister Registering", name)
 	if _, exists := r.presence[name]; !exists {
 		id := name
 		if !std {

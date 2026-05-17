@@ -11,7 +11,7 @@ func TestQuery(t *testing.T) {
 	err := withFixture(
 		&shape.Config{},
 		func(ctx FixtureContext) error {
-			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, nil)
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "query/consumer.go", "query/consumer.go.golden")
 			return nil
@@ -26,7 +26,7 @@ func TestQueryTypeScope(t *testing.T) {
 	err := withFixture(
 		&shape.Config{},
 		func(ctx FixtureContext) error {
-			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, nil)
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "querytypescope/consumer.go", "querytypescope/consumer.go.golden")
 			return nil
@@ -41,7 +41,7 @@ func TestQueryCrossPackage(t *testing.T) {
 	err := withFixture(
 		&shape.Config{},
 		func(ctx FixtureContext) error {
-			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, nil)
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "querycross/consumer.go", "querycross/consumer.go.golden")
 			return nil
@@ -56,7 +56,7 @@ func TestQueryLocal(t *testing.T) {
 	err := withFixture(
 		&shape.Config{},
 		func(ctx FixtureContext) error {
-			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, nil)
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "querylocal/consumer.go", "querylocal/consumer.go.golden")
 			return nil

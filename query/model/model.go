@@ -15,6 +15,7 @@ import (
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
 	"github.com/getoutreach/plumber/internal/astx"
+
 	"github.com/samber/lo"
 )
 
@@ -43,6 +44,13 @@ type (
 		NamedArgs map[string]string `json:"namedArgs,omitempty" yaml:"namedArgs,omitempty"`
 		// ImpliedBy is a reference to the annotation that implied this annotation (macro, mixin), if any.
 		ImpliedBy *Annotation `json:"-" yaml:"-"`
+		// DocLine is the 1-indexed line number within the raw doc comment string where this
+		// annotation was parsed from. It is used for line-based filtering of transformations.
+		DocLine int `json:"-" yaml:"-"`
+
+		Position *Position `json:"position,omitempty" yaml:"position,omitempty"`
+
+		Source Node `json:"-" yaml:"-"`
 	}
 
 	// Annotations is a slice of Annotation, providing utility methods for searching and filtering annotations.
@@ -62,6 +70,7 @@ type (
 		// GetNode() *TypeNode
 		GetPackage() *Package
 		GetPosition() Position
+		GetDoc() string
 	}
 
 	// Package represents a Go package, containing its name, path, types, functions, variables, and comments.
@@ -144,6 +153,7 @@ type (
 	// Var represents a variable, function argument, or struct field, including its name,
 	// type, documentation, annotations, and tags (for struct fields).
 	Var struct {
+		Package      *Package        `json:"-" yaml:"-"`
 		Name         string          `json:"name,omitempty" yaml:"name,omitempty"`
 		FallbackName string          `json:"fallbackName,omitempty" yaml:"fallbackName,omitempty"`
 		Doc          string          `json:"doc,omitempty" yaml:"doc,omitempty"`
@@ -151,6 +161,7 @@ type (
 		Annotations  Annotations     `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 		Type         *TypeDefinition `json:"type" yaml:"type"`
 		Tags         []Tag
+		Position
 	}
 
 	// Function represents a function or method, including its name, receiver (for methods),
@@ -310,6 +321,18 @@ func WithOptionalImpliedBy(implied *Annotation) AnnotationOption {
 	}
 }
 
+func WithSource(source Node) AnnotationOption {
+	return func(a *Annotation) {
+		a.Source = source
+	}
+}
+
+func WithDocLine(docLine int) AnnotationOption {
+	return func(a *Annotation) {
+		a.DocLine = docLine
+	}
+}
+
 func NewAnnotation(name string, args []string, opts ...AnnotationOption) Annotation {
 	a := Annotation{Name: name, Args: args}
 	for _, opt := range opts {
@@ -379,12 +402,24 @@ func (n *TypeNode) GetDoc() string {
 	return n.Doc
 }
 
+func (n *Var) GetDoc() string {
+	return n.Doc
+}
+
+func (n *Var) GetPackage() *Package {
+	return n.Package
+}
+
 func (n *TypeNode) GetAnnotations() Annotations {
 	return n.Annotations
 }
 
 func (n *Var) GetAnnotations() Annotations {
 	return n.Annotations
+}
+
+func (n *Var) GetPosition() Position {
+	return n.Position
 }
 
 func (m *Annotation) Value() string {
@@ -411,6 +446,10 @@ func (m *Annotation) ValueOr(defaultValue string) string {
 
 func (n *CommentGroup) GetAnnotations() Annotations {
 	return n.Annotations
+}
+
+func (n *CommentGroup) GetDoc() string {
+	return n.Doc
 }
 
 func (n *CommentGroup) GetPosition() Position {

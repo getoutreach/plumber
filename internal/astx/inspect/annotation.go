@@ -77,21 +77,28 @@ func unquote(s string) string {
 }
 
 func ParseAnnotationsCommented(doc string) []model.Annotation {
-	return parseAnnotations(doc, true)
+	return parseAnnotations(doc, true, nil)
 }
 
-func ParseAnnotations(doc string) []model.Annotation {
-	return parseAnnotations(doc, false)
+func ParseAnnotations(doc string, source model.Node) []model.Annotation {
+	return parseAnnotations(doc, false, source)
 }
 
-func parseAnnotations(doc string, commented bool) []model.Annotation {
+// paragraphLine holds a trimmed line together with its 1-indexed position in the
+// original doc string, so that parsed annotations can record their source line.
+type paragraphLine struct {
+	text    string
+	docLine int // 1-indexed line number within the raw doc string
+}
+
+func parseAnnotations(doc string, commented bool, source model.Node) []model.Annotation {
 	var annotations []model.Annotation
 
 	// Split into paragraphs (groups of lines separated by blank lines).
 	// Annotations must be in their own paragraph, separated from prose by a blank line.
-	var paragraphs [][]string
-	var current []string
-	for _, line := range strings.Split(doc, "\n") {
+	var paragraphs [][]paragraphLine
+	var current []paragraphLine
+	for lineIdx, line := range strings.Split(doc, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if commented {
 			trimmed = strings.TrimPrefix(trimmed, "//")
@@ -103,7 +110,7 @@ func parseAnnotations(doc string, commented bool) []model.Annotation {
 				current = nil
 			}
 		} else {
-			current = append(current, trimmed)
+			current = append(current, paragraphLine{text: trimmed, docLine: lineIdx})
 		}
 	}
 	if len(current) > 0 {
@@ -113,8 +120,8 @@ func parseAnnotations(doc string, commented bool) []model.Annotation {
 	for _, para := range paragraphs {
 		// Skip paragraph if any line doesn't look like an annotation.
 		allAnnotations := true
-		for _, line := range para {
-			tokens := tokenizeAnnotationLine(line)
+		for _, pl := range para {
+			tokens := tokenizeAnnotationLine(pl.text)
 			if len(tokens) == 0 || !isAnnotationToken(tokens[0]) {
 				allAnnotations = false
 				break
@@ -123,11 +130,14 @@ func parseAnnotations(doc string, commented bool) []model.Annotation {
 		if !allAnnotations {
 			continue
 		}
-		for _, line := range para {
-			tokens := tokenizeAnnotationLine(line)
+		for _, pl := range para {
+			tokens := tokenizeAnnotationLine(pl.text)
 			ann := model.Annotation{
+				Source:    source,
 				Name:      tokens[0],
 				NamedArgs: make(map[string]string),
+				DocLine:   pl.docLine,
+				Position:  computeAnnotationPosition(source, pl.docLine),
 			}
 			for _, token := range tokens[1:] {
 				if eqIdx := strings.Index(token, "="); eqIdx > 0 {
@@ -142,6 +152,24 @@ func parseAnnotations(doc string, commented bool) []model.Annotation {
 		}
 	}
 	return annotations
+}
+
+func computeAnnotationPosition(source model.Node, docLine int) *model.Position {
+	if source == nil {
+		return nil
+	}
+	var order = 1
+	sourcePos := source.GetPosition()
+
+	if _, ok := source.(*model.CommentGroup); !ok {
+		order = -1 // For comment groups, annotations are typically above the declaration, so we subtract docLine from the source line.
+	}
+
+	return &model.Position{
+		Filename: sourcePos.Filename,
+		Line:     sourcePos.Line + (docLine * order), // docLine is 1-indexed
+		Column:   sourcePos.Column,
+	}
 }
 
 // isAnnotationToken reports whether a token looks like a namespaced annotation
@@ -220,5 +248,5 @@ func AnnotationsFromDecs(decs ...dst.Decorations) model.Annotations {
 	if len(lines) == 0 {
 		return nil
 	}
-	return ParseAnnotations(strings.Join(lines, "\n"))
+	return ParseAnnotations(strings.Join(lines, "\n"), nil)
 }

@@ -26,7 +26,7 @@ func TestGenerated(t *testing.T) {
 			},
 		},
 		func(ctx FixtureContext) error {
-			err := shape.Run(ctx.ShapingContext, ctx.Cfg, []string{"./..."})
+			err := shape.Run(ctx.ShapingContext, ctx.Cfg, nil)
 			assert.NilError(t, err)
 			ctx.AssertContent(t, "generated/generated.go", "generated/generated.go.golden")
 			return nil

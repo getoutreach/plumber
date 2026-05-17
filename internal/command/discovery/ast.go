@@ -242,7 +242,7 @@ func (p *ASTParser) checkRule(rule string, decl *dst.FuncDecl) bool {
 // hasAnnotation checks whether a function declaration's doc comment contains an annotation with the given name.
 func hasAnnotation(decl *dst.FuncDecl, name string) bool {
 	doc := extractComment(decl.Decs.Start)
-	for _, ann := range inspect.ParseAnnotations(doc) {
+	for _, ann := range inspect.ParseAnnotations(doc, nil) {
 		if ann.Name == name {
 			return true
 		}

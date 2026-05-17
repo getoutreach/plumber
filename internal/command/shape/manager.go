@@ -23,7 +23,11 @@ import (
 
 // buildContext constructs the rendering context for a given transformation, populating it with the package path, module register,
 // type wrapper, and output path based on the provided configuration and package information.
-func buildContext(cfg *Config, ctx *contract.ShapingContext, modules *baserender.ModuleRegister, pkg *model.Package, output string) (*render.Context, error) {
+func buildContext(
+	cfg *Config,
+	ctx *contract.ShapingContext,
+	modules *baserender.ModuleRegister,
+	pkg *model.Package, output string) (*render.Context, error) {
 	rc := baserender.NewRenderContext(modules, pkg, output)
 	rc.PathResolver = ctx.StructurePathResolver.ResolvePath
 
@@ -382,7 +386,6 @@ func inflateCustomScope(ctx *contract.ShapingContext, transformer Transformer, p
 		default:
 			return fmt.Errorf("plumber:scope annotation %q requires either a type= or value= named argument", name)
 		}
-
 	}
 	scope["Custom"] = custom
 	return nil

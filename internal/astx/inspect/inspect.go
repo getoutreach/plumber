@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/dave/dst"
-	"github.com/dave/dst/decorator"
 	"github.com/getoutreach/plumber/internal/astx"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
@@ -251,24 +250,23 @@ func processComments(pkg *model.Package, f *ast.File) []*model.CommentGroup {
 
 	for _, cg := range f.Comments {
 		txt := strings.TrimSpace(cg.Text())
-		if !strings.HasPrefix(txt, "@comment") {
-			continue
+		pos := cg.Pos()
+
+		p := model.Position{
+			Filename: pkg.Package.Fset.Position(pos).Filename,
+			Line:     pkg.Package.Fset.Position(pos).Line,
+			Column:   pkg.Package.Fset.Position(pos).Column,
 		}
-		txt = strings.TrimPrefix(txt, "@comment")
-		txt = strings.TrimSpace(txt)
 
-		cg.Pos()
+		cg := &model.CommentGroup{
+			Doc: txt,
 
-		comments = append(comments, &model.CommentGroup{
-			Doc:         txt,
-			Annotations: ParseAnnotations(txt),
-			Position: model.Position{
-				Filename: pkg.Package.Fset.Position(cg.Pos()).Filename,
-				Line:     pkg.Package.Fset.Position(cg.Pos()).Line,
-				Column:   pkg.Package.Fset.Position(cg.Pos()).Column,
-			},
-			Package: pkg,
-		})
+			Position: p,
+			Package:  pkg,
+		}
+		cg.Annotations = ParseAnnotations(txt, cg)
+
+		comments = append(comments, cg)
 	}
 	return comments
 }
@@ -282,20 +280,22 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 		pos := pkg.Fset.Position(obj.Pos())
 		doc := astx.TypeDoc(pkg.Package, obj) // Get the documentation for the type
 
-		node := model.TypeNode{
-			Package: pkgModel,
-			Position: model.Position{
-				Filename: pos.Filename,
-				Line:     pos.Line,
-				Column:   pos.Column,
-			},
-			Doc:         doc,
-			Annotations: ParseAnnotations(doc),
+		p := model.Position{
+			Filename: pos.Filename,
+			Line:     pos.Line,
+			Column:   pos.Column,
 		}
+
+		node := model.TypeNode{
+			Package:  pkgModel,
+			Position: p,
+			Doc:      doc,
+		}
+		node.Annotations = ParseAnnotations(doc, &node)
 
 		switch t := obj.(type) {
 		case *types.Func:
-			pkgModel.Functions = append(pkgModel.Functions, buildFunction(pkg, t, &node))
+			pkgModel.Functions = append(pkgModel.Functions, buildFunction(pkgModel, t, &node))
 		case *types.Var:
 			if !t.Exported() {
 				continue
@@ -325,16 +325,16 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 			if named, ok := t.Type().(*types.Named); ok {
 				switch ut := named.Underlying().(type) {
 				case *types.Interface:
-					buildInterface(pkg, tp, ut)
+					buildInterface(pkgModel, tp, ut)
 				case *types.Struct:
-					s := buildStruct(pkg, tp, ut)
+					s := buildStruct(pkgModel, tp, ut)
 					// Collect methods defined on the named type (pointer and value receivers)
 					for method := range named.Methods() {
-						s.Methods = append(s.Methods, buildFunction(pkg, method, &model.TypeNode{
+						s.Methods = append(s.Methods, buildFunction(pkgModel, method, &model.TypeNode{
 							Position: model.Position{
-								Filename: pkg.Fset.Position(method.Pos()).Filename,
-								Line:     pkg.Fset.Position(method.Pos()).Line,
-								Column:   pkg.Fset.Position(method.Pos()).Column,
+								Filename: pkgModel.Package.Fset.Position(method.Pos()).Filename,
+								Line:     pkgModel.Package.Fset.Position(method.Pos()).Line,
+								Column:   pkgModel.Package.Fset.Position(method.Pos()).Column,
 							},
 						}))
 					}
@@ -348,7 +348,7 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 	}
 }
 
-func buildMethods(pkg *decorator.Package, methods iter.Seq[*types.Func]) []*model.Function {
+func buildMethods(pkg *model.Package, methods iter.Seq[*types.Func]) []*model.Function {
 	var result []*model.Function
 	for method := range methods {
 		result = append(result, buildFunction(pkg, method, &model.TypeNode{}))
@@ -356,7 +356,7 @@ func buildMethods(pkg *decorator.Package, methods iter.Seq[*types.Func]) []*mode
 	return result
 }
 
-func buildInterface(pkg *decorator.Package, tp *model.Type, iface *types.Interface) *model.Interface {
+func buildInterface(pkg *model.Package, tp *model.Type, iface *types.Interface) *model.Interface {
 	i := &model.Interface{
 		Interface: iface,
 		Methods:   buildMethods(pkg, iface.Methods()),
@@ -365,7 +365,7 @@ func buildInterface(pkg *decorator.Package, tp *model.Type, iface *types.Interfa
 	return i
 }
 
-func buildStruct(pkg *decorator.Package, tp *model.Type, st *types.Struct) *model.Struct {
+func buildStruct(pkg *model.Package, tp *model.Type, st *types.Struct) *model.Struct {
 	s := &model.Struct{
 		Struct: st,
 	}
@@ -386,22 +386,30 @@ func buildStruct(pkg *decorator.Package, tp *model.Type, st *types.Struct) *mode
 	return s
 }
 
-func buildVar(pkg *decorator.Package, v *types.Var) *model.Var {
-	doc := astx.TypeDoc(pkg.Package, v) // Get the documentation for the variable
+func buildVar(pkg *model.Package, v *types.Var) *model.Var {
+	doc := astx.TypeDoc(pkg.Package.Package, v) // Get the documentation for the variable
 	t := v.Type()
 
-	return &model.Var{
-		Name:        v.Name(),
-		Doc:         doc,
-		Annotations: ParseAnnotations(doc),
+	pos := model.Position{
+		Filename: pkg.Package.Fset.Position(v.Pos()).Filename,
+		Line:     pkg.Package.Fset.Position(v.Pos()).Line,
+		Column:   pkg.Package.Fset.Position(v.Pos()).Column,
+	}
+
+	vr := &model.Var{
+		Position: pos,
+		Name:     v.Name(),
+		Doc:      doc,
 		Type: &model.TypeDefinition{
 			Spec: model.NewTypeSpec(astx.FQNFromGoType(t), t),
 		},
 		Embedded: v.Embedded(),
 	}
+	vr.Annotations = ParseAnnotations(doc, vr)
+	return vr
 }
 
-func buildFunction(pkg *decorator.Package, obj *types.Func, node *model.TypeNode) *model.Function {
+func buildFunction(pkg *model.Package, obj *types.Func, node *model.TypeNode) *model.Function {
 	signature := obj.Signature()
 	params := signature.Params().Len()
 	results := signature.Results().Len()

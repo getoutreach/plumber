@@ -17,6 +17,7 @@ import (
 	"strings"
 )
 
+// Consts
 const (
 	// PlumberAnyPkg is the package path used in the "plumber".Any wildcard sentinel.
 	PlumberAnyPkg = "plumber"
@@ -522,6 +523,7 @@ func isPlumberAny(expr ast.Expr) bool {
 // exprInstanceOf recursively compares two ast.Expr trees. It returns true when
 // a and b are structurally identical, with the exception that any position in b
 // occupied by the "plumber".Any sentinel matches any expression in a.
+// nolint: gocyclo,funlen //Why: for visibility
 func exprInstanceOf(a, b ast.Expr) bool {
 	// Wildcard in the pattern matches anything.
 	if isPlumberAny(b) {

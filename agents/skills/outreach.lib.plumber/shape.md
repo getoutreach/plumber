@@ -16,38 +16,62 @@ from pattern-matched entities.
 ### Running using mise (preferred when project is managed by mise)
 
 ```bash
-mise exec -- plumber shape [--config plumber.yaml] ./...
+mise exec -- plumber shape [--config plumber.yaml] [file[:line] ...]
 ```
 
-### Running using remove path
+### Running using remote path
 
 ```bash
-go run github.com/getoutreach/outreach/plumber@latest/cmd/plumber shape [--config plumber.yaml] ./...
+go run github.com/getoutreach/outreach/plumber@latest/cmd/plumber shape [--config plumber.yaml] [file[:line] ...]
 ```
+
+Positional arguments are optional file paths with optional line numbers for filtering
+transformations. When omitted, all transformations from `workingDirs` (or `./...` by
+default) are processed.
 
 | Flag | Alias | Default | Description |
 |---|---|---|---|
 | `--config` | `-c` | — | Path to `plumber.shape.yaml` (optional) |
-| `--type` | — | — | FQN or unqualified name of target type (single-type mode) |
-| `--macro` | — | — | Macro name to apply (requires `--type`) |
-| `--macro-arg` | — | — | Positional arg for the macro (repeatable) |
-| `--macro-named-arg` | — | — | Named arg as `key=value` (repeatable) |
+| `--interactive` | `-i` | `false` | Enable interactive TUI reporter |
 
-Standard Go package patterns are supported: `./...`, `./internal/pkg`, etc.
+### File targeting
+
+```bash
+# Only transformations in model.go
+plumber shape ./internal/pkg/model.go
+
+# Only the transformation at/above line 30
+plumber shape ./internal/pkg/model.go:30
+
+# Multiple targets
+plumber shape ./pkg/a.go:15 ./pkg/b.go
+```
+
+**Line matching rules:**
+
+| Line points to | Behaviour |
+|---|---|
+| An entry-point annotation (`plumber:derive`, `plumber:shape`, `plumber:render`) | Only that specific transformation runs |
+| A modifier annotation (`plumber:template`, `plumber:filter`, etc.) | The nearest entry-point annotation **above** is selected |
+| The type declaration itself or a non-annotation doc line | All transformations for that node run |
+| A line outside any annotated node | Error |
+
+Standard Go package patterns are now configured via the `workingDirs` property in config
+rather than passed as CLI arguments.
 
 ### Single-type mode
 
 When `--type` and `--macro` are both set, the command skips annotation scanning and
 processes only the specified type with the named macro. The macro must exist in config.
+These flags are available on the `shape target` subcommand.
 
 ```bash
-go run cmd/plumber/plumber.go shape \
+plumber shape target \
   --config plumber.shape.yaml \
   --type Worker \
   --macro '@derive' \
   --macro-arg DerivedName \
-  --macro-named-arg mode=inplace \
-  ./...
+  --macro-named-arg mode=inplace
 ```
 
 The type can be a full FQN (`"github.com/pkg".Type`) or an unqualified name (`Type`).
@@ -197,6 +221,10 @@ includes:
   - path: plumber.d/*.yaml
 
 plumber.shape:
+  workingDirs:          # directories to scan for Go source files (default: ["./..."])
+    - ./internal/...
+    - ./pkg/...
+
   sources:
     - local:
         path: ./templates
