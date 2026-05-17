@@ -1,0 +1,144 @@
+plumber.shape:
+  options:
+    # --- Option annotations ---
+    - name: "plumber:template"
+      doc:
+        title: Template
+        description: >-
+          Specifies the template to use for code generation.
+
+    - name: "plumber:ignore"
+      doc:
+        title: Ignore
+        description: >-
+          Specifies a template to ignore, allowing for selective exclusion
+          of templates during code generation.
+
+    - name: "plumber:context"
+      doc:
+        title: Context
+        description: >-
+          Specifies the context for the transformation. Supports two modes:
+          single type (plumber:context "pkg/path".TypeName) targeting a single
+          type by FQN, and package matcher (plumber:context pkg/path matcher=<name>)
+          targeting all types in the package that match the named matcher's rules.
+
+    - name: "plumber:comment"
+      doc:
+        title: Comment
+        description: >-
+          Allows adding a comment to the generated code, which can be used
+          for documentation or clarification purposes.
+
+    - name: "plumber:name"
+      doc:
+        title: Name
+        description: >-
+          Specifies a custom name for the generated type or function,
+          overriding the default naming convention.
+
+    - name: "plumber:receiver"
+      doc:
+        title: Receiver
+        description: >-
+          Specifies the receiver type for generated methods, allowing for
+          method generation on specific types.
+
+    - name: "plumber:filter"
+      doc:
+        title: Filter
+        description: >-
+          Specifies a filter to apply to the node's fields or methods,
+          enabling selective code generation based on field or method names,
+          types, or other criteria.
+
+    - name: "plumber:mixin"
+      doc:
+        title: Mixin
+        description: >-
+          Specifies a mixin template to include in the generated code,
+          allowing for code reuse and composition across different templates.
+
+    - name: "plumber:output"
+      doc:
+        title: Output
+        description: >-
+          Specifies the output path for the generated code, allowing for
+          flexible file organization and output management.
+
+    - name: "plumber:mode"
+      doc:
+        title: Mode
+        description: >-
+          Specifies the mode of code generation, such as "generate" for
+          generating new files or "inplace" for modifying existing files
+          in place.
+
+    - name: "plumber:field_wrapper"
+      doc:
+        title: Field Wrapper
+        description: >-
+          Specifies a template to wrap struct fields, enabling custom
+          field-level code generation such as adding tags, validation, or
+          other field-specific logic.
+
+    - name: "plumber:query"
+      doc:
+        title: Query
+        description: >-
+          Specifies a query entry point that searches for entities matching
+          a regex pattern within a defined scope and populates an annotated
+          slice variable with compatible results.
+
+    - name: "plumber:scope"
+      doc:
+        title: Scope
+        description: >-
+          Injects a resolved type into the template scope under
+          .Scope.Custom.<name>, allowing templates to access additional type
+          information beyond the subject type.
+          Usage: plumber:scope "MyType" type="pkg/path".TypeName
+
+    - name: "plumber:depends_on"
+      doc:
+        title: Depends On
+        description: >-
+          Declares a hard dependency on another type by FQN. The transformation
+          is silently skipped (no error) when the referenced type cannot be
+          resolved within the inspected packages. May be specified multiple times;
+          every dependency must resolve for the transformation to run.
+          Usage: plumber:depends_on "pkg/path".TypeName
+
+    - name: "plumber:notify"
+      doc:
+        title: Notify
+        description: >-
+          Triggers a named handler with optional named arguments at the end of
+          the shape run. The first positional argument is the handler name; named
+          arguments are aggregated across all notifications targeting the same
+          handler and passed to the handler command template.
+          Usage: plumber:notify goverter path="generated/converters"
+
+    # --- Transformation annotations ---
+    - name: "plumber:derive"
+      doc:
+        title: Derive
+        description: >-
+          Specifies a macro to derive a new type from the annotated node,
+          allowing for custom type transformations and generation based on
+          the original node's structure and annotations.
+
+    - name: "plumber:shape"
+      doc:
+        title: Shape
+        description: >-
+          Specifies that the annotated node should be processed by the shape
+          command, enabling transformations based on the node's annotations
+          and structure.
+
+    - name: "plumber:render"
+      doc:
+        title: Render
+        description: >-
+          Specifies a template to render the annotated node, allowing for
+          custom rendering of the node's code based on a specified template.

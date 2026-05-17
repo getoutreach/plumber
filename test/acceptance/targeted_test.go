@@ -15,7 +15,10 @@ func TestShapeTargeted(t *testing.T) {
 			Macros: []config.MacroConfig{
 				{
 					PlumberMacro: &config.PlumberMacroConfig{
-						Name: "@derive",
+						AnnotationSchemaConfig: config.AnnotationSchemaConfig{
+							Name: "@derive",
+						},
+
 						Annotations: []config.AnnotationConfig{
 							{Name: "plumber:derive", Args: []string{`{{ index .Source.Args 0 }}`}},
 							{Name: "plumber:output", Args: []string{"targeted/generated.go"}},
@@ -63,7 +66,9 @@ func TestShapeTargetedTypeNotFound(t *testing.T) {
 			Macros: []config.MacroConfig{
 				{
 					PlumberMacro: &config.PlumberMacroConfig{
-						Name: "@derive",
+						AnnotationSchemaConfig: config.AnnotationSchemaConfig{
+							Name: "@derive",
+						},
 						Annotations: []config.AnnotationConfig{
 							{Name: "plumber:derive", Args: []string{"Derived"}},
 							{Name: "plumber:output", Args: []string{"generated.go"}},

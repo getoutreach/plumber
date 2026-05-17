@@ -18,6 +18,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape"
 	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
+	"github.com/getoutreach/plumber/internal/command/shape/defaults"
 	"github.com/getoutreach/plumber/internal/command/shape/handler"
 	shaperender "github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/command/shape/report/term"
@@ -74,7 +75,13 @@ func RunCommand(name string, run func(*cli.Context, *contract.ShapingContext, *s
 
 		configPath := c.String("config")
 
-		shapeConfig := shape.Config{}
+		// Start with embedded defaults so the shape command always has
+		// built-in annotation option definitions available.
+		defaultCfg, err := defaults.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load embedded defaults: %w", err)
+		}
+		shapeConfig := *defaultCfg
 
 		if configPath != "" {
 			// Resolve absolute path for config file
@@ -89,7 +96,7 @@ func RunCommand(name string, run func(*cli.Context, *contract.ShapingContext, *s
 				return fmt.Errorf("failed to parse config: %w", err)
 			}
 
-			shapeConfig = cfg.Shape
+			shapeConfig.MergeShape(&cfg.Shape)
 		}
 
 		shapeConfig.Interactive = c.Bool("interactive")

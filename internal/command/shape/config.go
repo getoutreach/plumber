@@ -34,8 +34,10 @@ type Config struct {
 	Type                 config.TypeConfig                   `yaml:"type,omitempty"`
 	Structures           []*config.StructureDefinitionConfig `yaml:"structures,omitempty"`
 	Handlers             []config.HandlerConfig              `yaml:"handlers,omitempty"`
-	Target               *config.TargetConfig                `yaml:"-"`
-	Interactive          bool                                `yaml:"-"`
+	// Options is a list of annotation schema configurations that can be referenced by macros or other configuration elements,
+	Options     []config.AnnotationSchemaConfig `yaml:"options,omitempty"`
+	Target      *config.TargetConfig            `yaml:"-"`
+	Interactive bool                            `yaml:"-"`
 }
 
 func (c *FileConfig) Merge(includes ...*FileConfig) {
@@ -54,5 +56,6 @@ func (c *Config) MergeShape(other *Config) {
 	c.Matchers = append(c.Matchers, other.Matchers...)
 	c.Type.Wrappers = append(c.Type.Wrappers, other.Type.Wrappers...)
 	c.Structures = append(c.Structures, other.Structures...)
+	c.Options = append(c.Options, other.Options...)
 	// Note: Handler configs are not merged due to security implications of executing arbitrary commands
 }

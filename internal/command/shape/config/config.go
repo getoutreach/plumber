@@ -5,6 +5,8 @@
 // Package config provides functionality for managing configuration settings for the shape command.
 package config
 
+import "gopkg.in/yaml.v3"
+
 // TargetConfig holds parameters for single-type targeted mode where a specific type is
 // processed with a named macro, bypassing the full annotation scan.
 type TargetConfig struct {
@@ -74,12 +76,36 @@ type MacroConfig struct {
 	PlumberMacro *PlumberMacroConfig `yaml:"plumber.macro,omitempty"`
 }
 
+// AnnotationDocumentationConfig represents the documentation configuration for an annotation
+type AnnotationDocumentationConfig struct {
+	Title       string `yaml:"title,omitempty" json:"title,omitempty"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+}
+
+// AnnotationArgumentSchemaConfig represents the schema configuration for annotation arguments, including positional and named arguments.
+type AnnotationArgumentSchemaConfig struct {
+	Positional yaml.Node `yaml:"positional,omitempty"`
+	Named      yaml.Node `yaml:"named,omitempty"`
+}
+
+// AnnotationSchemaConfig represents the schema configuration for an annotation,
+// including documentation and an optional YAML schema for validation.
+type AnnotationSchemaConfig struct {
+	Name   string                          `yaml:"name"`
+	Doc    AnnotationDocumentationConfig   `yaml:"doc" json:"doc"`
+	Schema *AnnotationArgumentSchemaConfig `yaml:"schema,omitempty"`
+}
+
 // PlumberMacroConfig represents the configuration for a macro, specifying its name and the annotations
 // it expands into when referenced in Go source comments.
 type PlumberMacroConfig struct {
-	Name        string             `yaml:"name"`
-	Annotations []AnnotationConfig `yaml:"annotations,omitempty"`
-	Content     string             `yaml:"content,omitempty"` // optional content for the macro, which can be used in template rendering
+	AnnotationSchemaConfig `yaml:",inline"`   // inlined fields for annotation schema configuration
+	Annotations            []AnnotationConfig `yaml:"annotations,omitempty"`
+	Content                string             `yaml:"content,omitempty"` // optional content for the macro, which can be used in template rendering
+
+	// Options that will be advertised as available for use in macro content templates,
+	// allowing for dynamic behavior based on the presence of these options.
+	Options []string `yaml:"options,omitempty"`
 }
 
 // AnnotationConfig represents a configuration for filtering nodes based on specific annotation names.
