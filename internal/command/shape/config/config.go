@@ -101,7 +101,8 @@ type AnnotationSchemaConfig struct {
 type PlumberMacroConfig struct {
 	AnnotationSchemaConfig `yaml:",inline"`   // inlined fields for annotation schema configuration
 	Annotations            []AnnotationConfig `yaml:"annotations,omitempty"`
-	Content                string             `yaml:"content,omitempty"` // optional content for the macro, which can be used in template rendering
+	// Content is optional content for the macro, which can be used in template rendering.
+	Content string `yaml:"content,omitempty"`
 
 	// Options that will be advertised as available for use in macro content templates,
 	// allowing for dynamic behavior based on the presence of these options.

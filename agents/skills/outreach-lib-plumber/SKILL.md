@@ -1,5 +1,5 @@
 ---
-name: outreach.lib.plumber
+name: outreach-lib-plumber
 description: Provides guidance on using the plumber Go library for dependency injection, task orchestration, code discovery, shape-based code generation, and codebase inspection.
 ---
 

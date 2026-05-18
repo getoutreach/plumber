@@ -55,7 +55,7 @@ func expandAndTransform(
 	if node != nil {
 		pkg = node.GetPackage()
 	}
-	expanded, err := expandAnnotations(pkg, input, macroMap)
+	expanded, err := expandAnnotations(pkg, input, macroMap, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func TestExpandAnnotations_NoMacro(t *testing.T) {
 		model.NewAnnotation("plumber:derive", []string{"Foo"}),
 	}
 
-	result, err := expandAnnotations(fixturePackage(), input, macroMap)
+	result, err := expandAnnotations(fixturePackage(), input, macroMap, nil)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	assert.Equal(t, result[0].Name, "plumber:derive")
@@ -81,7 +81,7 @@ func TestExpandAnnotations_NoMacro(t *testing.T) {
 func TestExpandAnnotations_DefersTemplates(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@derive": {
-			Name: "@derive",
+			AnnotationSchemaConfig: config.AnnotationSchemaConfig{Name: "@derive"},
 			Annotations: []config.AnnotationConfig{
 				{Name: "plumber:derive", Args: []string{`{{ index .Source.Args 0 }}Derived`}},
 				{Name: "plumber:output", Args: []string{"generated.go"}},
@@ -93,7 +93,7 @@ func TestExpandAnnotations_DefersTemplates(t *testing.T) {
 		model.NewAnnotation("@derive", []string{"Foo"}),
 	}
 
-	result, err := expandAnnotations(fixturePackage(), input, macroMap)
+	result, err := expandAnnotations(fixturePackage(), input, macroMap, nil)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 3)
 	// Templates remain unexpanded at the macro stage.
@@ -111,7 +111,7 @@ func TestExpandAnnotations_DefersTemplates(t *testing.T) {
 func TestTransformerAnnotations_TemplateArgs(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@derive": {
-			Name: "@derive",
+			AnnotationSchemaConfig: config.AnnotationSchemaConfig{Name: "@derive"},
 			Annotations: []config.AnnotationConfig{
 				{Name: "plumber:derive", Args: []string{`{{ index .Source.Args 0 }}Derived`}},
 				{Name: "plumber:output", Args: []string{"generated.go"}},
@@ -135,7 +135,7 @@ func TestTransformerAnnotations_TemplateArgs(t *testing.T) {
 func TestTransformerAnnotations_TemplateNamedArgs(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@gen": {
-			Name: "@gen",
+			AnnotationSchemaConfig: config.AnnotationSchemaConfig{Name: "@gen"},
 			Annotations: []config.AnnotationConfig{
 				{
 					Name: "plumber:output",
@@ -163,7 +163,7 @@ func TestTransformerAnnotations_TemplateNamedArgs(t *testing.T) {
 func TestTransformerAnnotations_PackageContext(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@pkg": {
-			Name: "@pkg",
+			AnnotationSchemaConfig: config.AnnotationSchemaConfig{Name: "@pkg"},
 			Annotations: []config.AnnotationConfig{
 				{Name: "plumber:derive", Args: []string{`{{ .Package.Name }}Derived`}},
 				{Name: "plumber:comment", Args: []string{`from {{ .Package.Path }}`}},
@@ -188,7 +188,7 @@ func TestTransformerAnnotations_PackageContext(t *testing.T) {
 func TestTransformerAnnotations_TypeContext(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@named": {
-			Name: "@named",
+			AnnotationSchemaConfig: config.AnnotationSchemaConfig{Name: "@named"},
 			Annotations: []config.AnnotationConfig{
 				{Name: "plumber:name", Args: []string{`{{ .Type.Name }}Filter`}},
 				{Name: "plumber:comment", Args: []string{`source: {{ .Type.GetPosition.Filename }}`}},
@@ -210,7 +210,7 @@ func TestTransformerAnnotations_TypeContext(t *testing.T) {
 func TestTransformerAnnotations_TemplateError(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@bad": {
-			Name: "@bad",
+			AnnotationSchemaConfig: config.AnnotationSchemaConfig{Name: "@bad"},
 			Annotations: []config.AnnotationConfig{
 				{Name: "plumber:derive", Args: []string{`{{ .NonExistent }}`}},
 			},
@@ -228,7 +228,7 @@ func TestTransformerAnnotations_TemplateError(t *testing.T) {
 func TestTransformerAnnotations_NoTemplatePassthrough(t *testing.T) {
 	macroMap := map[string]*config.PlumberMacroConfig{
 		"@simple": {
-			Name: "@simple",
+			AnnotationSchemaConfig: config.AnnotationSchemaConfig{Name: "@simple"},
 			Annotations: []config.AnnotationConfig{
 				{Name: "plumber:derive", Args: []string{"{name}Macro"}},
 			},

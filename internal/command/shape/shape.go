@@ -24,6 +24,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/expand"
 	"github.com/getoutreach/plumber/internal/command/shape/matcher"
+	"github.com/getoutreach/plumber/internal/command/shape/validate"
 	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
@@ -489,12 +490,24 @@ func expandTransformations(
 	pkgs []*model.Package,
 	transformations []Transformation,
 ) error {
+	// Compile option schemas once for validating annotations after template expansion.
+	optionSchemas, err := validate.CompileSchemas(cfg.Options)
+	if err != nil {
+		return fmt.Errorf("compiling option schemas: %w", err)
+	}
+
 	scope := render.Scope{}
 	for _, t := range transformations {
 		if err := t.Transformer.Expand(ctx, pkgs, t.Node, scope); err != nil {
 			ctx.TransformerError(t.Transformer, t.Node, err)
 			return nil
 		}
+
+		// Validate fully-expanded annotations against their option schemas.
+		if err := validate.Annotations(t.Transformer.GetAnnotations(), optionSchemas); err != nil {
+			return fmt.Errorf("transformer %s at %s: %w", t.Transformer.GetName(), t.Transformer.GetPosition(), err)
+		}
+
 		ctx.TransformerAdded(t.Transformer, t.Node)
 	}
 	return nil

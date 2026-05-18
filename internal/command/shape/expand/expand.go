@@ -16,6 +16,7 @@ import (
 	"github.com/Masterminds/sprig/v3"
 	"github.com/getoutreach/plumber/internal/astx/inspect"
 	"github.com/getoutreach/plumber/internal/command/shape/config"
+	"github.com/getoutreach/plumber/internal/command/shape/validate"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
@@ -78,6 +79,8 @@ type outputTemplateData struct {
 // Macros replaces macro annotations with their defined annotation lists on all nodes
 // across all packages. This runs before Walk and buildTransformers so that macros can inject
 // entry-point annotations like plumber:derive or plumber:shape.
+// Macro invocation arguments are validated against the macro's schema (if defined)
+// before expansion.
 func Macros(pkgs []*model.Package, macros []config.MacroConfig) error {
 	macroMap := make(map[string]*config.PlumberMacroConfig, len(macros))
 	for i := range macros {
@@ -89,30 +92,37 @@ func Macros(pkgs []*model.Package, macros []config.MacroConfig) error {
 		return nil
 	}
 
+	// Pre-compile JSON Schemas for macros that define them so that invocation
+	// arguments can be validated before expansion.
+	macroSchemas, err := compileMacroSchemas(macroMap)
+	if err != nil {
+		return fmt.Errorf("compiling macro schemas: %w", err)
+	}
+
 	for _, pkg := range pkgs {
 		for _, typ := range pkg.Types {
-			anns, err := expandAnnotations(pkg, typ.TypeNode.Annotations, macroMap)
+			anns, err := expandAnnotations(pkg, typ.TypeNode.Annotations, macroMap, macroSchemas)
 			if err != nil {
 				return err
 			}
 			typ.TypeNode.Annotations = anns
 		}
 		for _, fun := range pkg.Functions {
-			anns, err := expandAnnotations(pkg, fun.TypeNode.Annotations, macroMap)
+			anns, err := expandAnnotations(pkg, fun.TypeNode.Annotations, macroMap, macroSchemas)
 			if err != nil {
 				return err
 			}
 			fun.TypeNode.Annotations = anns
 		}
 		for _, v := range pkg.Vars {
-			anns, err := expandAnnotations(pkg, v.TypeNode.Annotations, macroMap)
+			anns, err := expandAnnotations(pkg, v.TypeNode.Annotations, macroMap, macroSchemas)
 			if err != nil {
 				return err
 			}
 			v.TypeNode.Annotations = anns
 		}
 		for _, comment := range pkg.Comments {
-			anns, err := expandAnnotations(pkg, comment.Annotations, macroMap)
+			anns, err := expandAnnotations(pkg, comment.Annotations, macroMap, macroSchemas)
 			if err != nil {
 				return err
 			}
@@ -120,6 +130,25 @@ func Macros(pkgs []*model.Package, macros []config.MacroConfig) error {
 		}
 	}
 	return nil
+}
+
+// compileMacroSchemas compiles JSON Schema definitions from macro configs into
+// a map keyed by macro name. Macros without a schema are omitted.
+func compileMacroSchemas(macroMap map[string]*config.PlumberMacroConfig) (map[string]*validate.CompiledSchema, error) {
+	schemas := make(map[string]*validate.CompiledSchema, len(macroMap))
+	for name, macro := range macroMap {
+		if macro.Schema == nil {
+			continue
+		}
+		cs, err := validate.CompileSchema(name, macro.Schema)
+		if err != nil {
+			return nil, err
+		}
+		if cs != nil {
+			schemas[name] = cs
+		}
+	}
+	return schemas, nil
 }
 
 // expandAnnotations replaces any annotation whose name matches a macro with the macro's
@@ -130,10 +159,15 @@ func Macros(pkgs []*model.Package, macros []config.MacroConfig) error {
 // (see TransformerAnnotations) so that both macro- and mixin-implied annotations
 // can be expanded uniformly using their ImpliedBy reference as the data source.
 //
+// Before expansion, the macro invocation's positional and named arguments are
+// validated against the macro's compiled JSON Schema (if one was provided in the
+// macro configuration). Validation failures cause an immediate error.
+//
 // The pkg argument is preserved for symmetry and future use but is no longer
 // consulted here since no template execution occurs at this stage.
 func expandAnnotations(
 	pkg *model.Package, annotations model.Annotations, macroMap map[string]*config.PlumberMacroConfig,
+	schemas map[string]*validate.CompiledSchema,
 ) (model.Annotations, error) {
 	_ = pkg
 	var expanded model.Annotations
@@ -144,6 +178,14 @@ func expandAnnotations(
 		expanded = append(expanded, ann)
 		if !ok {
 			continue
+		}
+
+		// Validate macro invocation arguments against the macro's JSON Schema
+		// before expanding. This catches invalid arguments early.
+		if cs, hasSchema := schemas[ann.Name]; hasSchema {
+			if err := validate.Annotation(ann, cs); err != nil {
+				return nil, fmt.Errorf("macro %q: %w", ann.Name, err)
+			}
 		}
 
 		// Capture a stable pointer to the triggering annotation that subsequent

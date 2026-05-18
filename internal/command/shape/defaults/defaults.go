@@ -14,6 +14,8 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape"
 )
 
+// defaultsFS embeds the defaults.yaml file containing the default annotation option definitions.
+//
 //go:embed defaults.yaml
 var defaultsFS embed.FS
 

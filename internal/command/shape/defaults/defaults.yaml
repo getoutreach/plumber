@@ -5,14 +5,31 @@ plumber.shape:
       doc:
         title: Template
         description: >-
-          Specifies the template to use for code generation.
+          Specifies the template to use for code generation. Multiple template
+          names can be provided as positional arguments, and the annotation may
+          be repeated. All template names are flattened into a single list.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            description: Template name to load for rendering.
 
     - name: "plumber:ignore"
       doc:
         title: Ignore
         description: >-
-          Specifies a template to ignore, allowing for selective exclusion
-          of templates during code generation.
+          Specifies a template group to ignore, allowing for selective exclusion
+          of templates during code generation. May be repeated to ignore multiple
+          groups.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            description: Template group identifier to exclude from rendering.
 
     - name: "plumber:context"
       doc:
@@ -22,65 +39,178 @@ plumber.shape:
           single type (plumber:context "pkg/path".TypeName) targeting a single
           type by FQN, and package matcher (plumber:context pkg/path matcher=<name>)
           targeting all types in the package that match the named matcher's rules.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Fully-qualified type name (e.g. "pkg/path".TypeName) in single-type
+              mode, or package import path in package-matcher mode.
+        named:
+          type: object
+          properties:
+            matcher:
+              type: string
+              description: >-
+                Name of a configured matcher to apply against all types in the
+                target package. Required for package-matcher mode.
 
     - name: "plumber:comment"
       doc:
         title: Comment
         description: >-
           Allows adding a comment to the generated code, which can be used
-          for documentation or clarification purposes.
+          for documentation or clarification purposes. The comment text is
+          rendered as a Go comment line in the output.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: string
+            description: Comment text to add to the generated code.
 
     - name: "plumber:name"
       doc:
         title: Name
         description: >-
           Specifies a custom name for the generated type or function,
-          overriding the default naming convention.
+          overriding the default naming convention. Supports Go template
+          expansion when implied by a macro.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Custom name for the generated type or function. Supports Go
+              template expansion when implied by a macro.
 
     - name: "plumber:receiver"
       doc:
         title: Receiver
         description: >-
-          Specifies the receiver type for generated methods, allowing for
-          method generation on specific types.
+          Specifies the receiver variable name for generated methods. Defaults
+          to the first character of the lowercased plumber:name value, or "r"
+          if no name is set.
+      schema:
+        positional:
+          type: array
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Receiver variable name for generated methods (e.g. "s"). Defaults
+              to the first character of the lowercased plumber:name value, or
+              "r" if no name is set.
 
     - name: "plumber:filter"
       doc:
         title: Filter
         description: >-
           Specifies a filter to apply to the node's fields or methods,
-          enabling selective code generation based on field or method names,
-          types, or other criteria.
+          enabling selective code generation based on annotations. May be
+          repeated to apply multiple filters.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            - type: string
+              description: Filter function name.
+              enum:
+                - annotation.has
+            - type: string
+              description: >-
+                Filter argument. Required when filter function is
+                "annotation.has" — specifies the annotation name to check for.
+        named:
+          type: object
+          properties:
+            subject:
+              type: string
+              description: >-
+                Scopes the filter to a named group (e.g. "fields"). Filters
+                without subject apply to all groups.
 
     - name: "plumber:mixin"
       doc:
         title: Mixin
         description: >-
-          Specifies a mixin template to include in the generated code,
+          Includes a named mixin's annotations into the current transformer,
           allowing for code reuse and composition across different templates.
+          May be repeated to include multiple mixins.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Name of the mixin to include. Must match a configured
+              plumber.mixin name in the YAML config.
 
     - name: "plumber:output"
       doc:
         title: Output
         description: >-
-          Specifies the output path for the generated code, allowing for
-          flexible file organization and output management.
+          Specifies the output file path for the generated code, allowing for
+          flexible file organization and output management. Supports Go
+          template expansion.
+      schema:
+        positional:
+          type: array
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Output file path for the generated code. Supports Go template
+              expansion (e.g. '{{ filename_suffixed "filter" }}').
+            default: generated.go
 
     - name: "plumber:mode"
       doc:
         title: Mode
         description: >-
-          Specifies the mode of code generation, such as "generate" for
-          generating new files or "inplace" for modifying existing files
-          in place.
+          Specifies the mode of code generation. "generated" creates new files,
+          "inplace" modifies existing files in place.
+      schema:
+        positional:
+          type: array
+          maxItems: 1
+          items:
+            type: string
+            description: The code generation mode.
+            enum:
+              - generated
+              - inplace
+            default: generated
 
     - name: "plumber:field_wrapper"
       doc:
         title: Field Wrapper
         description: >-
-          Specifies a template to wrap struct fields, enabling custom
-          field-level code generation such as adding tags, validation, or
-          other field-specific logic.
+          Specifies a configured wrapper to apply to a struct field's type,
+          enabling custom field-level code generation such as adding tags,
+          validation, or other field-specific logic.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Name of a configured wrapper (plumber.wrapper) to apply to the
+              struct field's type.
 
     - name: "plumber:query"
       doc:
@@ -89,15 +219,68 @@ plumber.shape:
           Specifies a query entry point that searches for entities matching
           a regex pattern within a defined scope and populates an annotated
           slice variable with compatible results.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: string
+            description: Regex pattern to match entity names within the scope.
+        named:
+          type: object
+          required:
+            - scope
+          properties:
+            scope:
+              type: string
+              description: >-
+                Package path or type FQN to search within. Supported formats:
+                "." (current package), ".TypeName" (type in current package),
+                "./<relpath>" (relative package), "pkg/path" (absolute package),
+                or "pkg/path.TypeName" (type FQN).
+            receiver:
+              type: string
+              description: >-
+                Variable name to qualify field/method access (e.g. "r" produces
+                "r.MethodName"). Required when scope resolves to a named type.
 
     - name: "plumber:scope"
       doc:
         title: Scope
         description: >-
-          Injects a resolved type into the template scope under
+          Injects a resolved type or value into the template scope under
           .Scope.Custom.<name>, allowing templates to access additional type
-          information beyond the subject type.
-          Usage: plumber:scope "MyType" type="pkg/path".TypeName
+          information beyond the subject type. May be repeated.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Key name under which the resolved value is stored in
+              .Scope.Custom.
+        named:
+          type: object
+          properties:
+            type:
+              type: string
+              description: >-
+                FQN of a type to resolve (e.g. "pkg/path".TypeName). The
+                resolved type is injected into the template scope. Mutually
+                exclusive with "value".
+            value:
+              type: string
+              description: >-
+                A plain string value to inject into the template scope.
+                Mutually exclusive with "type".
+          oneOf:
+            - required:
+                - type
+            - required:
+                - value
 
     - name: "plumber:depends_on"
       doc:
@@ -105,40 +288,94 @@ plumber.shape:
         description: >-
           Declares a hard dependency on another type by FQN. The transformation
           is silently skipped (no error) when the referenced type cannot be
-          resolved within the inspected packages. May be specified multiple times;
-          every dependency must resolve for the transformation to run.
-          Usage: plumber:depends_on "pkg/path".TypeName
+          resolved within the inspected packages. May be specified multiple
+          times; every dependency must resolve for the transformation to run.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Fully-qualified type name (e.g. "pkg/path".TypeName). Supports
+              relative FQNs and structure path resolution.
 
     - name: "plumber:notify"
       doc:
         title: Notify
         description: >-
           Triggers a named handler with optional named arguments at the end of
-          the shape run. The first positional argument is the handler name; named
-          arguments are aggregated across all notifications targeting the same
-          handler and passed to the handler command template.
-          Usage: plumber:notify goverter path="generated/converters"
+          the shape run. Named arguments are aggregated across all notifications
+          targeting the same handler and passed to the handler command template.
+          May be repeated.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Handler name. Must match a configured plumber.handler name.
+        named:
+          type: object
+          additionalProperties:
+            type: string
+            description: >-
+              Named arguments passed through to the handler. All named args
+              across multiple plumber:notify annotations targeting the same
+              handler are aggregated per key into string lists.
 
     # --- Transformation annotations ---
     - name: "plumber:derive"
       doc:
         title: Derive
         description: >-
-          Specifies a macro to derive a new type from the annotated node,
-          allowing for custom type transformations and generation based on
-          the original node's structure and annotations.
+          Entry-point annotation that derives a new type from the annotated
+          struct, allowing for custom type transformations and generation based
+          on the original node's structure and annotations. Only accepts struct
+          types.
+      schema:
+        positional:
+          type: array
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Default name for the derived type. Promoted to plumber:name if no
+              explicit plumber:name annotation follows.
 
     - name: "plumber:shape"
       doc:
         title: Shape
         description: >-
-          Specifies that the annotated node should be processed by the shape
-          command, enabling transformations based on the node's annotations
+          Entry-point annotation that processes the annotated struct or
+          interface, enabling transformations based on the node's annotations
           and structure.
+      schema:
+        positional:
+          type: array
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Default name for the generated type. Promoted to plumber:name if
+              no explicit plumber:name annotation follows.
 
     - name: "plumber:render"
       doc:
         title: Render
         description: >-
-          Specifies a template to render the annotated node, allowing for
-          custom rendering of the node's code based on a specified template.
+          Entry-point annotation that renders the annotated struct using a
+          specified template, allowing for custom rendering of the node's code.
+          Only accepts struct types.
+      schema:
+        positional:
+          type: array
+          maxItems: 1
+          items:
+            type: string
+            description: >-
+              Default name for the rendered type. Promoted to plumber:name if
+              no explicit plumber:name annotation follows.
