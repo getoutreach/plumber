@@ -22,13 +22,24 @@ import (
 // (e.g. `{{ .Type.GetAnnotations }}`). Annotations without an ImpliedBy
 // reference are passed through unchanged.
 //
+// When singularNames is non-nil, annotations marked as singular are trimmed
+// (keeping only the last occurrence) before expansion so that template lookups
+// like FindOr(OptionName) see the correct final value.
+//
 // Expansion is performed annotation-by-annotation so it works uniformly for
 // both macro-implied and mixin-implied annotations. A nil node degrades
 // gracefully to empty .Package fields and a nil .Type.
-func TransformerAnnotations(node model.Node, annotations model.Annotations, scope render.Scope) (model.Annotations, error) {
+func TransformerAnnotations(
+	node model.Node, annotations model.Annotations, scope render.Scope, singularNames map[string]bool,
+) (model.Annotations, error) {
 	if len(annotations) == 0 {
 		return annotations, nil
 	}
+
+	// Trim singular annotations before expansion so that lookups (e.g. FindOr)
+	// during template expansion resolve to the correct (last) value.
+	annotations = annotations.TrimSingular(singularNames)
+
 	var pkg *model.Package
 	if node != nil {
 		pkg = node.GetPackage()

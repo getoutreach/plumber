@@ -63,6 +63,13 @@ type ContentConfig struct {
 	Content string `yaml:"content"`
 }
 
+// GitIncludeResult pairs an include file path with the git source config it
+// came from, allowing callers to stamp provenance on loaded objects.
+type GitIncludeResult struct {
+	Path string
+	Git  *GitSourceConfig
+}
+
 // Merge appends sources and content from another TemplatesFileConfig into this one.
 func (c *TemplatesFileConfig) Merge(other *TemplatesFileConfig) {
 	c.Sources = append(c.Sources, other.Sources...)

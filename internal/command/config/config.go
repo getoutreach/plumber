@@ -34,7 +34,7 @@ type IncludeConfig struct {
 func (c *FileConfig) Merge(includes ...*FileConfig) {
 	for _, include := range includes {
 		c.Templates.Merge(&include.Templates)
-		c.Shape.MergeShape(&include.Shape)
+		c.Shape.MergeShape(&include.Shape, false)
 		c.Discovery.MergeDiscovery(&include.Discovery)
 	}
 }

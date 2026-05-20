@@ -20,9 +20,9 @@ import (
 const DefaultCacheDir = "~/.outreach/.plumber"
 
 // Checkout performs Git checkouts for all Git-based template sources, using sparse clones
-// to efficiently retrieve only the necessary template files. It returns include paths
-// found within git repos (for merging additional config).
-func Checkout(sources []*SourceConfig, cacheDir string) ([]string, error) {
+// to efficiently retrieve only the necessary template files. It returns include results
+// pairing each path with its git source config for provenance tracking.
+func Checkout(sources []*SourceConfig, cacheDir string) ([]GitIncludeResult, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func Checkout(sources []*SourceConfig, cacheDir string) ([]string, error) {
 	defer func() {
 		err := os.Chdir(currentDir)
 		if err != nil {
-			fmt.Printf("warning: failed to change back to original directory: %v\n", err)
+			fmt.Fprintf(os.Stderr, "warning: failed to change back to original directory: %v\n", err)
 		}
 	}()
 
@@ -45,18 +45,20 @@ func Checkout(sources []*SourceConfig, cacheDir string) ([]string, error) {
 		}
 		cacheDir = path.Join(home, cacheDir[2:])
 	}
-	fmt.Println("Using cacheDir:", cacheDir)
-	var includePaths []string
+	fmt.Fprintln(os.Stderr, "Using cacheDir:", cacheDir)
+	var results []GitIncludeResult
 	for _, s := range sources {
 		if s.Git != nil {
 			paths, err := checkoutGit(s.Git, cacheDir)
 			if err != nil {
 				return nil, fmt.Errorf("failed to checkout git source %s: %w", s.Git.Repository, err)
 			}
-			includePaths = append(includePaths, paths...)
+			for _, p := range paths {
+				results = append(results, GitIncludeResult{Path: p, Git: s.Git})
+			}
 		}
 	}
-	return includePaths, nil
+	return results, nil
 }
 
 // LoadAllContent converts all inline content templates into render option functions.

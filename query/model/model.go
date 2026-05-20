@@ -386,6 +386,30 @@ func (aa Annotations) FlatArgs() []string {
 	})
 }
 
+// TrimSingular removes earlier occurrences of annotations whose names are in singularNames,
+// keeping only the last occurrence of each. Non-singular annotations are always preserved.
+func (aa Annotations) TrimSingular(singularNames map[string]bool) Annotations {
+	if len(singularNames) == 0 {
+		return aa
+	}
+	// Find the last index of each singular annotation
+	lastIndex := make(map[string]int, len(singularNames))
+	for i, ann := range aa {
+		if singularNames[ann.Name] {
+			lastIndex[ann.Name] = i
+		}
+	}
+	// Build result keeping only last occurrence of singular annotations
+	result := make(Annotations, 0, len(aa))
+	for i, ann := range aa {
+		if singularNames[ann.Name] && i != lastIndex[ann.Name] {
+			continue
+		}
+		result = append(result, ann)
+	}
+	return result
+}
+
 func (n *TypeNode) GetNode() *TypeNode {
 	return n
 }

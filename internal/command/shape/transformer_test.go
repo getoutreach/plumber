@@ -102,7 +102,7 @@ func TestOutput(t *testing.T) {
 					Package:  pkg,
 					Position: tt.position,
 				},
-			}, baserender.Scope{})
+			}, baserender.Scope{}, nil)
 			assert.NilError(t, err)
 			output := transformer.Output()
 			if output != tt.expected {

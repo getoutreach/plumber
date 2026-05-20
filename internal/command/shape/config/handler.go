@@ -14,6 +14,9 @@ type HandlerConfig struct {
 
 // PlumberHandlerConfig holds the name and command template for a single handler.
 type PlumberHandlerConfig struct {
+	// Doc is an optional documentation for the handler, which can be used in generated documentation or help output.
+	Doc DocumentationConfig `yaml:"doc,omitempty"`
+
 	// Name is the handler identifier that plumber:notify annotations reference.
 	Name string `yaml:"name"`
 	// Command is a Go template string that is expanded with the aggregated
@@ -21,4 +24,16 @@ type PlumberHandlerConfig struct {
 	// The template has access to .Source.NamedArgs (map[string][]string)
 	// and standard sprig + plumber template functions.
 	Command string `yaml:"command"`
+	// Args is an optional list of additional arguments to pass to the command, which can also be templated.
+	Args []string `yaml:"args,omitempty"`
+	// Variants is an optional list of command variants that can be selected based on additional criteria,
+	// allowing for more flexible handler behavior.
+	Variants []HandlerVariantConfig `yaml:"variants,omitempty"`
+}
+
+// HandlerVariantConfig represents a variant of a handler that can be used in the shape configuration,
+type HandlerVariantConfig struct {
+	Name    string   `yaml:"name"`
+	Command string   `yaml:"command"`
+	Args    []string `yaml:"args,omitempty"`
 }

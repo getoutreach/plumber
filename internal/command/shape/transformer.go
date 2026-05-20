@@ -51,7 +51,7 @@ type Transformer interface {
 	// Output() string
 	// GetName() string
 	// Mode() string
-	Expand(ctx *contract.ShapingContext, pkgs []*model.Package, node model.Node, scope baserender.Scope) error
+	Expand(ctx *contract.ShapingContext, pkgs []*model.Package, node model.Node, scope baserender.Scope, singularNames map[string]bool) error
 	Render(context *render.Context, tp *model.Type, scope baserender.Scope, output string, opener gen.MemoryFileOpener) (string, error)
 }
 
@@ -185,8 +185,13 @@ func (t *BasicTransformer) Add(annotation model.Annotation) {
 	t.Annotations = append(t.Annotations, annotation)
 }
 
-func (t *BasicTransformer) Expand(ctx *contract.ShapingContext, pkgs []*model.Package, node model.Node, scope baserender.Scope) error {
-	annotations, err := expand.TransformerAnnotations(node, t.Annotations, scope)
+func (t *BasicTransformer) Expand(
+	ctx *contract.ShapingContext,
+	pkgs []*model.Package,
+	node model.Node,
+	scope baserender.Scope,
+	singularNames map[string]bool) error {
+	annotations, err := expand.TransformerAnnotations(node, t.Annotations, scope, singularNames)
 	if err != nil {
 		return err
 	}
@@ -214,7 +219,6 @@ func (t *BasicTransformer) Expand(ctx *contract.ShapingContext, pkgs []*model.Pa
 	}
 
 	pkg, found := lo.Find(pkgs, func(p *model.Package) bool {
-		fmt.Println(p.Path)
 		return p.Path == pkgPath
 	})
 	if !found {

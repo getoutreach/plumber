@@ -42,12 +42,12 @@ type Config struct {
 
 func (c *FileConfig) Merge(includes ...*FileConfig) {
 	for _, include := range includes {
-		c.Shape.MergeShape(&include.Shape)
+		c.Shape.MergeShape(&include.Shape, false)
 	}
 }
 
 // MergeShape merges another Config into this one, appending sources, templates, mixins, matchers, and wrappers.
-func (c *Config) MergeShape(other *Config) {
+func (c *Config) MergeShape(other *Config, mergeHandler bool) {
 	c.Sources = append(c.Sources, other.Sources...)
 	c.Templates.Content = append(c.Templates.Content, other.Templates.Content...)
 	c.Templates.Global = append(c.Templates.Global, other.Templates.Global...)
@@ -57,5 +57,9 @@ func (c *Config) MergeShape(other *Config) {
 	c.Type.Wrappers = append(c.Type.Wrappers, other.Type.Wrappers...)
 	c.Structures = append(c.Structures, other.Structures...)
 	c.Options = append(c.Options, other.Options...)
+	if mergeHandler {
+		c.WorkingDirs = append(c.WorkingDirs, other.WorkingDirs...)
+		c.Handlers = append(c.Handlers, other.Handlers...)
+	}
 	// Note: Handler configs are not merged due to security implications of executing arbitrary commands
 }

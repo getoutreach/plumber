@@ -19,6 +19,8 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/defaults"
+	"github.com/getoutreach/plumber/internal/command/shape/describe"
+	"github.com/getoutreach/plumber/internal/command/shape/expand"
 	"github.com/getoutreach/plumber/internal/command/shape/handler"
 	shaperender "github.com/getoutreach/plumber/internal/command/shape/render"
 	"github.com/getoutreach/plumber/internal/command/shape/report/term"
@@ -64,6 +66,25 @@ func RunTarget(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shape.
 	return nil
 }
 
+// RunDescribe outputs a structured description of all registered macros, options, and handlers
+// in the requested format (md, json, yaml).
+func RunDescribe(c *cli.Context, _ *contract.ShapingContext, shapeConfig *shape.Config) error {
+	format := c.String("format")
+	formatter, err := describe.Format(format)
+	if err != nil {
+		return err
+	}
+
+	desc := describe.Build(shapeConfig)
+	out, err := formatter.Format(desc)
+	if err != nil {
+		return fmt.Errorf("failed to format description: %w", err)
+	}
+
+	_, err = os.Stdout.Write(out)
+	return err
+}
+
 func RunCommand(name string, run func(*cli.Context, *contract.ShapingContext, *shape.Config) error) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
 		defer func() {
@@ -96,7 +117,7 @@ func RunCommand(name string, run func(*cli.Context, *contract.ShapingContext, *s
 				return fmt.Errorf("failed to parse config: %w", err)
 			}
 
-			shapeConfig.MergeShape(&cfg.Shape)
+			shapeConfig.MergeShape(&cfg.Shape, true)
 		}
 
 		shapeConfig.Interactive = c.Bool("interactive")
@@ -104,6 +125,8 @@ func RunCommand(name string, run func(*cli.Context, *contract.ShapingContext, *s
 		if err := checkoutAndMergeIncludes(&shapeConfig); err != nil {
 			return fmt.Errorf("failed to checkout and merge includes: %w", err)
 		}
+
+		shapeConfig.Handlers = expand.Handlers(shapeConfig.Handlers)
 
 		ctx, wait, err := prepareContext(&shapeConfig)
 		if err != nil {
@@ -161,18 +184,20 @@ func newReporter(interactive bool) (reporter contract.Reporter, cleanup func()) 
 
 // checkoutAndMergeIncludes checks out template sources from git and merges
 // any config files found via git source includes into the shape config.
+// It stamps Git provenance on macros and options loaded from git repos.
 func checkoutAndMergeIncludes(cfg *shape.Config) error {
-	includePaths, err := template.Checkout(cfg.Sources, cfg.CacheDir)
+	results, err := template.Checkout(cfg.Sources, cfg.CacheDir)
 	if err != nil {
 		return fmt.Errorf("failed to checkout templates: %w", err)
 	}
 
-	for _, p := range includePaths {
-		inc, err := command.ParseConfig[shape.FileConfig](p)
+	for _, r := range results {
+		inc, err := command.ParseConfig[shape.FileConfig](r.Path)
 		if err != nil {
-			return fmt.Errorf("failed to parse git include config %q: %w", p, err)
+			return fmt.Errorf("failed to parse git include config %q: %w", r.Path, err)
 		}
-		cfg.MergeShape(&inc.Shape)
+		stampGitProvenance(&inc.Shape, r.Git)
+		cfg.MergeShape(&inc.Shape, false)
 	}
 
 	defs, err := config.ResolveStructureDefinitions(cfg.StructureConfig, cfg.Structures)
@@ -182,6 +207,18 @@ func checkoutAndMergeIncludes(cfg *shape.Config) error {
 	cfg.StructureDefinitions = defs
 
 	return nil
+}
+
+// stampGitProvenance sets the Git provenance field on all macros and options in the shape config.
+func stampGitProvenance(cfg *shape.Config, git *template.GitSourceConfig) {
+	for i := range cfg.Macros {
+		if cfg.Macros[i].PlumberMacro != nil {
+			cfg.Macros[i].PlumberMacro.Git = git
+		}
+	}
+	for i := range cfg.Options {
+		cfg.Options[i].Git = git
+	}
 }
 
 // parseTargetFlags reads --type, --macro, --macro-arg, --macro-named-arg flags

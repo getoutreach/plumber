@@ -553,11 +553,28 @@ plumber.shape:
   macros:
     - plumber.macro:
         name: "@derive"
+        doc:
+          title: Derive
+          description: Derives a new type with an optional output file.
+        schema:
+          positional:
+            type: array
+            minItems: 1
+            maxItems: 1
+            items:
+              type: string
+              description: Name for the derived type.
+          named:
+            type: object
+            properties:
+              file:
+                type: string
+                description: Output filename for the generated code.
         annotations:
           - name: plumber:derive
-            args: ["MacroDerived"]
+            args: ['{{ index .Source.Args 0 }}']
           - name: plumber:output
-            args: ['{{ filename_suffixed "generated" }}']
+            args: ['{{ .Source.NamedArgs.file | default "generated.go" }}']
 
   # ---------- mixins ----------
   # Mixins are named bundles of modifier annotations that can be referenced
@@ -824,6 +841,148 @@ missing key) cause a hard failure and abort the pipeline.
 | Expansion stage | Before `Walk` (early) | Inside `buildTransformers` (late) |
 | Can inject entry-point annotations | Yes | No |
 | Config key | `macros` | `mixins` |
+
+### Macro schema definition and validation
+
+Macros can declare a JSON Schema (in YAML form) that describes the positional and named
+arguments they accept. When a schema is defined, every invocation of the macro is validated
+against it **before** expansion. Invalid arguments produce a hard error that stops the
+shape run.
+
+#### Defining a schema
+
+The `schema` field on a macro has two sub-keys — `positional` (for positional args) and
+`named` (for `key=value` named args) — each containing a standard JSON Schema definition
+written in YAML.
+
+```yaml
+macros:
+  - plumber.macro:
+      name: "@model"
+      doc:
+        title: Model
+        description: Generates a domain model with accessor methods.
+      schema:
+        positional:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            - type: string
+              description: Name for the generated model type.
+            - type: string
+              description: Optional suffix appended to the output filename.
+        named:
+          type: object
+          required:
+            - template
+          properties:
+            template:
+              type: string
+              description: Template name to use for rendering.
+            mode:
+              type: string
+              description: Code generation mode.
+              enum:
+                - generated
+                - inplace
+              default: generated
+      annotations:
+        - { name: plumber:derive, args: ['{{ index .Source.Args 0 }}'] }
+        - { name: plumber:template, args: ['{{ .Source.NamedArgs.template }}'] }
+        - { name: plumber:mode, args: ['{{ .Source.NamedArgs.mode | default "generated" }}'] }
+```
+
+With the schema above, valid and invalid invocations are:
+
+```go
+// Valid: 1 positional arg and required named arg present
+// @model Widget template=plumber:object/accessor
+
+// Valid: 2 positional args, mode overridden
+// @model Widget filter template=plumber:object/accessor mode=inplace
+
+// Invalid: missing required "template" named arg → hard error
+// @model Widget
+
+// Invalid: no positional args (minItems: 1) → hard error
+// @model template=plumber:object/accessor
+
+// Invalid: mode is not in enum → hard error
+// @model Widget template=plumber:object/accessor mode=append
+```
+
+#### Documentation fields
+
+The optional `doc` field provides human-readable metadata for the macro:
+
+```yaml
+- plumber.macro:
+    name: "@model"
+    doc:
+      title: Model
+      description: >-
+        Generates a domain model with accessor methods and optional
+        field filtering based on the provided template.
+```
+
+| Field | Description |
+|---|---|
+| `doc.title` | Short display name for the macro. |
+| `doc.description` | Longer description of what the macro does and how to use it. |
+
+These fields are informational and used by tooling (e.g. the `shape structure` subcommand
+or IDE integrations) to display macro documentation. They do not affect runtime behaviour.
+
+#### Schema features
+
+The schema uses standard [JSON Schema Draft-07](http://json-schema.org/draft-07/schema#)
+features, compiled by `github.com/santhosh-tekuri/jsonschema`. Commonly used properties:
+
+**Positional arguments** (`schema.positional`):
+
+| Property | Description |
+|---|---|
+| `type: array` | Always `array` — positional args are an ordered list. |
+| `minItems` | Minimum number of positional args required. |
+| `maxItems` | Maximum number of positional args allowed. |
+| `items` | Schema for each item. Use a single schema object for homogeneous lists, or a YAML list for per-position schemas (tuple validation). |
+| `items[n].type` | Type of the argument (typically `string`). |
+| `items[n].description` | Human-readable description of this argument. |
+| `items[n].enum` | Restrict the argument to a set of allowed values. |
+| `items[n].default` | Default value (informational — not auto-applied). |
+
+**Named arguments** (`schema.named`):
+
+| Property | Description |
+|---|---|
+| `type: object` | Always `object` — named args are key-value pairs. |
+| `required` | List of named arg keys that must be present. |
+| `properties` | Schema for each known named arg. |
+| `properties.<key>.type` | Type of the value (typically `string`). |
+| `properties.<key>.description` | Human-readable description. |
+| `properties.<key>.enum` | Restrict to allowed values. |
+| `additionalProperties` | Set to `false` to reject unknown keys, or to a schema to validate unknown keys. |
+| `oneOf` | Mutually exclusive required groups (e.g. exactly one of `type` or `value`). |
+
+#### Validation pipeline
+
+Schema validation runs at two stages in the shape pipeline:
+
+1. **Macro invocations** — validated **before** macro expansion in `expand.Macros()`.
+   Each macro's compiled schema is checked against the invocation annotation's `Args` and
+   `NamedArgs` as they appear in the Go source comment. Template strings in the macro's
+   child annotations are **not** expanded yet at this stage — only the user-supplied
+   invocation arguments are validated.
+
+2. **Option annotations** — validated **after** template expansion in
+   `expandTransformations()`. At this point all annotation values are fully resolved
+   (template strings have been evaluated). Each annotation is checked against the
+   built-in option schemas (defined in `internal/command/shape/defaults/defaults.yaml`)
+   and any user-defined option schemas in the `plumber.shape.options` config key.
+
+In both cases, a validation failure returns a hard error that stops the shape run.
+The error message includes the annotation name and the specific schema violation.
 
 ---
 

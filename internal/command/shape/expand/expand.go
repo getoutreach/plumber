@@ -76,6 +76,26 @@ type outputTemplateData struct {
 	Dir      string
 }
 
+func MacroConfig(macro *config.PlumberMacroConfig) {
+	annotations := inspect.ParseAnnotationsCommented(macro.Content)
+	annotations = lo.Map(annotations, func(a model.Annotation, _ int) model.Annotation {
+		// We want to preserve the original Args and NamedArgs of the macro annotation on the
+		// implied annotations so that they can be used as template data in the deferred expansion stage.
+		return model.NewAnnotation(
+			a.Name, a.Args,
+			model.WithNamedArgs(a.NamedArgs),
+		)
+	})
+
+	for _, a := range annotations {
+		macro.Annotations = append(macro.Annotations, config.AnnotationConfig{
+			Name:      a.Name,
+			Args:      a.Args,
+			NamedArgs: a.NamedArgs,
+		})
+	}
+}
+
 // Macros replaces macro annotations with their defined annotation lists on all nodes
 // across all packages. This runs before Walk and buildTransformers so that macros can inject
 // entry-point annotations like plumber:derive or plumber:shape.

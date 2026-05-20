@@ -136,6 +136,20 @@ func main() {
 					},
 					Action: shape.RunCommand("structure", shape.RunStructure),
 				},
+				{
+					Name:        "describe",
+					Description: "Describe all registered macros, options, and handlers",
+					Flags: []cli.Flag{
+						fc,
+						&cli.StringFlag{
+							Name:    "format",
+							Aliases: []string{"f"},
+							Usage:   "Output format: md, json, yaml",
+							Value:   "md",
+						},
+					},
+					Action: shape.RunCommand("describe", shape.RunDescribe),
+				},
 			},
 		},
 		{

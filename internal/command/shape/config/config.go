@@ -5,7 +5,10 @@
 // Package config provides functionality for managing configuration settings for the shape command.
 package config
 
-import "gopkg.in/yaml.v3"
+import (
+	"github.com/getoutreach/plumber/internal/command/template"
+	"gopkg.in/yaml.v3"
+)
 
 // TargetConfig holds parameters for single-type targeted mode where a specific type is
 // processed with a named macro, bypassing the full annotation scan.
@@ -76,9 +79,8 @@ type MacroConfig struct {
 	PlumberMacro *PlumberMacroConfig `yaml:"plumber.macro,omitempty"`
 }
 
-// AnnotationDocumentationConfig represents the documentation configuration for an annotation
-type AnnotationDocumentationConfig struct {
-	Title       string `yaml:"title,omitempty" json:"title,omitempty"`
+// DocumentationConfig represents the documentation configuration
+type DocumentationConfig struct {
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
@@ -91,9 +93,22 @@ type AnnotationArgumentSchemaConfig struct {
 // AnnotationSchemaConfig represents the schema configuration for an annotation,
 // including documentation and an optional YAML schema for validation.
 type AnnotationSchemaConfig struct {
-	Name   string                          `yaml:"name"`
-	Doc    AnnotationDocumentationConfig   `yaml:"doc" json:"doc"`
-	Schema *AnnotationArgumentSchemaConfig `yaml:"schema,omitempty"`
+	Name string              `yaml:"name"`
+	Doc  DocumentationConfig `yaml:"doc" json:"doc"`
+	// Singular indicates that only a single instance of this annotation is allowed per node.
+	// If true, the system will take into the account only last annotation of this type when multiple are present
+	Singular bool `yaml:"singular,omitempty" json:"unique,omitempty"`
+	// Handler name is an optional field that specifies the name of a handler to be invoked when this annotation executed within UI
+	Handler string                          `yaml:"handler,omitempty" json:"handler,omitempty"`
+	Schema  *AnnotationArgumentSchemaConfig `yaml:"schema,omitempty"`
+	// Git holds the source provenance for annotations loaded from a git repository.
+	Git *template.GitSourceConfig `yaml:"-" json:"-"`
+}
+
+// OptionReferenceConfig represents a reference to an option that can be used in macro
+// content templates, allowing for dynamic behavior based on the presence of these options.
+type OptionReferenceConfig struct {
+	Name string `yaml:"name"`
 }
 
 // PlumberMacroConfig represents the configuration for a macro, specifying its name and the annotations
@@ -106,7 +121,7 @@ type PlumberMacroConfig struct {
 
 	// Options that will be advertised as available for use in macro content templates,
 	// allowing for dynamic behavior based on the presence of these options.
-	Options []string `yaml:"options,omitempty"`
+	Options []OptionReferenceConfig `yaml:"options,omitempty"`
 }
 
 // AnnotationConfig represents a configuration for filtering nodes based on specific annotation names.

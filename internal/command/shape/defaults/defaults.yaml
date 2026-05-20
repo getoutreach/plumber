@@ -2,8 +2,8 @@ plumber.shape:
   options:
     # --- Option annotations ---
     - name: "plumber:template"
+      singular: true
       doc:
-        title: Template
         description: >-
           Specifies the template to use for code generation. Multiple template
           names can be provided as positional arguments, and the annotation may
@@ -13,12 +13,12 @@ plumber.shape:
           type: array
           minItems: 1
           items:
+            name: name
             type: string
             description: Template name to load for rendering.
 
     - name: "plumber:ignore"
       doc:
-        title: Ignore
         description: >-
           Specifies a template group to ignore, allowing for selective exclusion
           of templates during code generation. May be repeated to ignore multiple
@@ -32,8 +32,8 @@ plumber.shape:
             description: Template group identifier to exclude from rendering.
 
     - name: "plumber:context"
+      singular: true
       doc:
-        title: Context
         description: >-
           Specifies the context for the transformation. Supports two modes:
           single type (plumber:context "pkg/path".TypeName) targeting a single
@@ -59,8 +59,8 @@ plumber.shape:
                 target package. Required for package-matcher mode.
 
     - name: "plumber:comment"
+      singular: true
       doc:
-        title: Comment
         description: >-
           Allows adding a comment to the generated code, which can be used
           for documentation or clarification purposes. The comment text is
@@ -75,8 +75,8 @@ plumber.shape:
             description: Comment text to add to the generated code.
 
     - name: "plumber:name"
+      singular: true
       doc:
-        title: Name
         description: >-
           Specifies a custom name for the generated type or function,
           overriding the default naming convention. Supports Go template
@@ -93,8 +93,8 @@ plumber.shape:
               template expansion when implied by a macro.
 
     - name: "plumber:receiver"
+      singular: true
       doc:
-        title: Receiver
         description: >-
           Specifies the receiver variable name for generated methods. Defaults
           to the first character of the lowercased plumber:name value, or "r"
@@ -112,7 +112,6 @@ plumber.shape:
 
     - name: "plumber:filter"
       doc:
-        title: Filter
         description: >-
           Specifies a filter to apply to the node's fields or methods,
           enabling selective code generation based on annotations. May be
@@ -125,12 +124,10 @@ plumber.shape:
           items:
             - type: string
               description: Filter function name.
-              enum:
-                - annotation.has
             - type: string
               description: >-
                 Filter argument. Required when filter function is
-                "annotation.has" — specifies the annotation name to check for.
+                "annotation.has:{annotation_name}" — specifies the annotation name to check for.
         named:
           type: object
           properties:
@@ -142,7 +139,6 @@ plumber.shape:
 
     - name: "plumber:mixin"
       doc:
-        title: Mixin
         description: >-
           Includes a named mixin's annotations into the current transformer,
           allowing for code reuse and composition across different templates.
@@ -152,15 +148,15 @@ plumber.shape:
           type: array
           minItems: 1
           maxItems: 1
-          items:
+          prefixItems:
             type: string
             description: >-
               Name of the mixin to include. Must match a configured
               plumber.mixin name in the YAML config.
 
     - name: "plumber:output"
+      singular: true
       doc:
-        title: Output
         description: >-
           Specifies the output file path for the generated code, allowing for
           flexible file organization and output management. Supports Go
@@ -177,8 +173,8 @@ plumber.shape:
             default: generated.go
 
     - name: "plumber:mode"
+      singular: true
       doc:
-        title: Mode
         description: >-
           Specifies the mode of code generation. "generated" creates new files,
           "inplace" modifies existing files in place.
@@ -195,8 +191,8 @@ plumber.shape:
             default: generated
 
     - name: "plumber:field_wrapper"
+      singular: true
       doc:
-        title: Field Wrapper
         description: >-
           Specifies a configured wrapper to apply to a struct field's type,
           enabling custom field-level code generation such as adding tags,
@@ -213,8 +209,8 @@ plumber.shape:
               struct field's type.
 
     - name: "plumber:query"
+      singular: true
       doc:
-        title: Query
         description: >-
           Specifies a query entry point that searches for entities matching
           a regex pattern within a defined scope and populates an annotated
@@ -247,7 +243,6 @@ plumber.shape:
 
     - name: "plumber:scope"
       doc:
-        title: Scope
         description: >-
           Injects a resolved type or value into the template scope under
           .Scope.Custom.<name>, allowing templates to access additional type
@@ -284,7 +279,6 @@ plumber.shape:
 
     - name: "plumber:depends_on"
       doc:
-        title: Depends On
         description: >-
           Declares a hard dependency on another type by FQN. The transformation
           is silently skipped (no error) when the referenced type cannot be
@@ -303,7 +297,6 @@ plumber.shape:
 
     - name: "plumber:notify"
       doc:
-        title: Notify
         description: >-
           Triggers a named handler with optional named arguments at the end of
           the shape run. Named arguments are aggregated across all notifications
@@ -330,7 +323,6 @@ plumber.shape:
     # --- Transformation annotations ---
     - name: "plumber:derive"
       doc:
-        title: Derive
         description: >-
           Entry-point annotation that derives a new type from the annotated
           struct, allowing for custom type transformations and generation based
@@ -342,13 +334,14 @@ plumber.shape:
           maxItems: 1
           items:
             type: string
+            name: name
             description: >-
               Default name for the derived type. Promoted to plumber:name if no
               explicit plumber:name annotation follows.
+      handler: "plumber[shape.file]"
 
     - name: "plumber:shape"
       doc:
-        title: Shape
         description: >-
           Entry-point annotation that processes the annotated struct or
           interface, enabling transformations based on the node's annotations
@@ -359,13 +352,14 @@ plumber.shape:
           maxItems: 1
           items:
             type: string
+            name: name
             description: >-
               Default name for the generated type. Promoted to plumber:name if
               no explicit plumber:name annotation follows.
+      handler: "plumber[shape.file]"
 
     - name: "plumber:render"
       doc:
-        title: Render
         description: >-
           Entry-point annotation that renders the annotated struct using a
           specified template, allowing for custom rendering of the node's code.

@@ -69,14 +69,14 @@ func checkoutGit(cfg *GitSourceConfig, cacheDir string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		fmt.Println(string(stdout))
+		fmt.Fprintln(os.Stderr, string(stdout))
 
 		cmd = execCommand("git", "checkout", "origin/"+cfg.Ref)
 		stdout, err = cmd.Output()
 		if err != nil {
 			return nil, err
 		}
-		fmt.Println(string(stdout))
+		fmt.Fprintln(os.Stderr, string(stdout))
 	}
 
 	var expandError []error
@@ -94,7 +94,7 @@ func checkoutGit(cfg *GitSourceConfig, cacheDir string) ([]string, error) {
 		return lo.Map(matches, func(m string, _ int) FileRef {
 			rel, err := filepath.Rel(repoPath, m)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(os.Stderr, err)
 				expandError = append(expandError, fmt.Errorf("failed to get relative path for glob match %q in repo %s: %w", m, cfg.Repository, err))
 				return FileRef{}
 			}
@@ -149,6 +149,6 @@ func exists(filePath string) (bool, error) {
 }
 
 func execCommand(name string, args ...string) *exec.Cmd {
-	fmt.Println(name, strings.Join(args, " "))
+	fmt.Fprintln(os.Stderr, name, strings.Join(args, " "))
 	return exec.Command(name, args...)
 }

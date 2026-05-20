@@ -37,6 +37,7 @@ func Run(ctx *contract.ShapingContext, cfg *Config, targets []FileTarget) error 
 	if len(dirs) == 0 {
 		dirs = []string{"./..."}
 	}
+	fmt.Println("DIRS", dirs, cfg.WorkingDirs)
 
 	filenames, err := inspect.ScanFiles("./", dirs)
 	if err != nil {
@@ -181,18 +182,27 @@ func resolveTargetType(typeFQN string, pkgs model.Packages) (*model.Type, error)
 
 // checkoutAndMergeIncludes checks out template sources from git and merges
 // any config files found via git source includes into the shape config.
+// It stamps Git provenance on macros and options loaded from git repos.
 func checkoutAndMergeIncludes(cfg *Config) error {
-	includePaths, err := template.Checkout(cfg.Sources, cfg.CacheDir)
+	results, err := template.Checkout(cfg.Sources, cfg.CacheDir)
 	if err != nil {
 		return fmt.Errorf("failed to checkout templates: %w", err)
 	}
 
-	for _, p := range includePaths {
-		inc, err := command.ParseConfig[FileConfig](p)
+	for _, r := range results {
+		inc, err := command.ParseConfig[FileConfig](r.Path)
 		if err != nil {
-			return fmt.Errorf("failed to parse git include config %q: %w", p, err)
+			return fmt.Errorf("failed to parse git include config %q: %w", r.Path, err)
 		}
-		cfg.MergeShape(&inc.Shape)
+		for i := range inc.Shape.Macros {
+			if inc.Shape.Macros[i].PlumberMacro != nil {
+				inc.Shape.Macros[i].PlumberMacro.Git = r.Git
+			}
+		}
+		for i := range inc.Shape.Options {
+			inc.Shape.Options[i].Git = r.Git
+		}
+		cfg.MergeShape(&inc.Shape, false)
 	}
 	return nil
 }
@@ -496,9 +506,17 @@ func expandTransformations(
 		return fmt.Errorf("compiling option schemas: %w", err)
 	}
 
+	// Build the set of singular option names for deduplication.
+	singularNames := make(map[string]bool, len(cfg.Options))
+	for _, opt := range cfg.Options {
+		if opt.Singular {
+			singularNames[opt.Name] = true
+		}
+	}
+
 	scope := render.Scope{}
 	for _, t := range transformations {
-		if err := t.Transformer.Expand(ctx, pkgs, t.Node, scope); err != nil {
+		if err := t.Transformer.Expand(ctx, pkgs, t.Node, scope, singularNames); err != nil {
 			ctx.TransformerError(t.Transformer, t.Node, err)
 			return nil
 		}

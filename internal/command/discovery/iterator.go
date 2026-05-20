@@ -91,13 +91,11 @@ func (pi *PathIterator) Iterate() ([]PathMatch, error) {
 		// Normalize path separators for matching
 		relPath = filepath.ToSlash(relPath)
 
-		fmt.Println("tryinh", relPath)
 		// Try to match the pattern
 		submatches := pi.pattern.FindStringSubmatch(relPath)
 		if submatches == nil {
 			return nil
 		}
-		fmt.Println("matched", relPath)
 
 		// Skip directories that contain no .go files
 		if !dirHasGoFiles(path) {
