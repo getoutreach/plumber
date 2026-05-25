@@ -1,3 +1,6 @@
+// Copyright 2024 Outreach Corporation. All Rights Reserved.
+
+// Description: Function descriptions and builders for template functions.
 package expand
 
 import (
@@ -45,13 +48,21 @@ func FunctionsDescription() (desc contract.FunctionDescriptions,
 			Func: macroDefaultsName,
 		},
 	}
-	return d, func(node model.Node, structurePathResolver contract.StructurePathResolver, data sourceTemplateData) (fm template.FuncMap, dispose func()) {
+	return d, func(
+		node model.Node,
+		structurePathResolver contract.StructurePathResolver,
+		data sourceTemplateData,
+	) (fm template.FuncMap, dispose func()) {
 		c := &EvaluationContext{node: node, structurePathResolver: structurePathResolver, data: data}
 		return d.ToMap(c), d.Dispose(c)
 	}
 }
 
-func WithRenderFuncMap(node model.Node, structurePathResolver contract.StructurePathResolver, data sourceTemplateData) (fm template.FuncMap, dispose func()) {
+func WithRenderFuncMap(
+	node model.Node,
+	structurePathResolver contract.StructurePathResolver,
+	data sourceTemplateData,
+) (fm template.FuncMap, dispose func()) {
 	_, build := FunctionsDescription()
 	return build(node, structurePathResolver, data)
 }

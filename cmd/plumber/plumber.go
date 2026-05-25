@@ -149,6 +149,22 @@ func main() {
 						},
 					},
 					Action: shape.RunCommand("describe", shape.RunDescribe),
+					Subcommands: []*cli.Command{
+						{
+							Name:        "functions",
+							Description: "Describe available template functions by category",
+							Flags: []cli.Flag{
+								fc,
+								&cli.StringFlag{
+									Name:    "format",
+									Aliases: []string{"f"},
+									Usage:   "Output format: md, json, yaml",
+									Value:   "md",
+								},
+							},
+							Action: shape.RunCommand("describe-functions", shape.RunDescribeFunctions),
+						},
+					},
 				},
 			},
 		},

@@ -1,3 +1,6 @@
+// Copyright 2024 Outreach Corporation. All Rights Reserved.
+
+// Description: Function descriptions and builders for template functions.
 package render
 
 import (

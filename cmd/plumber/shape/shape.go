@@ -27,6 +27,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/report/tui"
 	"github.com/getoutreach/plumber/internal/command/shape/structure"
 	"github.com/getoutreach/plumber/internal/command/template"
+	"github.com/getoutreach/plumber/internal/render"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/mod/modfile"
 )
@@ -79,6 +80,42 @@ func RunDescribe(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shap
 	out, err := formatter.Format(desc)
 	if err != nil {
 		return fmt.Errorf("failed to format description: %w", err)
+	}
+
+	_, err = os.Stdout.Write(out)
+	return err
+}
+
+// RunDescribeFunctions outputs a structured description of all registered template functions
+// grouped by category in the requested format (md, json, yaml).
+func RunDescribeFunctions(c *cli.Context, _ *contract.ShapingContext, _ *shape.Config) error {
+	format := c.String("format")
+	formatter, err := describe.FunctionsFormat(format)
+	if err != nil {
+		return err
+	}
+
+	expandDesc, _ := expand.FunctionsDescription()
+	shapeRenderDesc, _ := shaperender.FunctionsDescription()
+	renderDesc, _ := render.FunctionsDescription()
+	genericDesc, _ := render.GenericFunctionsDescription()
+
+	desc := describe.BuildFunctions([]describe.FunctionSectionInput{
+		{
+			Title:       "Annotation Value Expansion",
+			Description: "Template functions available during annotation value expansion.",
+			Sources:     []contract.FunctionDescriptions{expandDesc},
+		},
+		{
+			Title:       "Shape Template Evaluation",
+			Description: "Template functions available during shape template rendering.",
+			Sources:     []contract.FunctionDescriptions{shapeRenderDesc, renderDesc, genericDesc},
+		},
+	})
+
+	out, err := formatter.FormatFunctions(desc)
+	if err != nil {
+		return fmt.Errorf("failed to format functions description: %w", err)
 	}
 
 	_, err = os.Stdout.Write(out)

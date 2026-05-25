@@ -93,7 +93,7 @@ func writeDoc(b *strings.Builder, doc DocDescription) {
 		fmt.Fprintf(b, "%s\n\n", doc.Description)
 	}
 	if doc.Usage != "" {
-		fmt.Fprintf(b, "**Usage:** \n\n%s\n\n", doc.Usage)
+		fmt.Fprintf(b, "**Usage:** `%s`\n\n", doc.Usage)
 	}
 }
 
@@ -120,11 +120,7 @@ func writeStructure(b *strings.Builder, s *StructureDescription) {
 	if s == nil {
 		return
 	}
-	b.WriteString("**Structure:** \n\n")
-	b.WriteString("| Name | Path |\n")
-	b.WriteString("|------|---------|\n")
-	fmt.Fprintf(b, "| %s | `%s` |\n\n", s.Name, s.Path)
-
+	fmt.Fprintf(b, "**Structure:** %s — `%s`\n\n", s.Name, s.Path)
 }
 
 func writeSchemaSection(b *strings.Builder, schema *SchemaDescription) {

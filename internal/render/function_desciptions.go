@@ -1,3 +1,6 @@
+// Copyright 2024 Outreach Corporation. All Rights Reserved.
+
+// Description: Function descriptions and builders for template functions.
 package render
 
 import (
@@ -87,9 +90,11 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		},
 		{
 			Description: contract.FunctionDescription{
-				Name:        "type_method_undefined",
-				Description: `Check if a method is undefined or defined within same file as the current output. for the current type. User type_set to set the type first.`,
-				Usage:       `{{ type_method_undefined "MethodName" }}`,
+				Name: "type_method_undefined",
+				Description: `Check if a method is undefined or defined within ` +
+					`same file as the current output. for the current type. ` +
+					`User type_set to set the type first.`,
+				Usage: `{{ type_method_undefined "MethodName" }}`,
 			},
 			Func: func(c *EvaluationContext) any {
 				return typeMethodUndefined(c.Context, c.Type)

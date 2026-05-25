@@ -247,7 +247,11 @@ func Annotations(
 
 // expandTemplateSlice applies template expansion to each element in a string
 // slice, returning a new slice with all templates resolved.
-func expandTemplateSlice(structurePathResolver contract.StructurePathResolver, scope render.Scope, node model.Node, values []string, data sourceTemplateData, context string) ([]string, error) {
+func expandTemplateSlice(
+	structurePathResolver contract.StructurePathResolver,
+	scope render.Scope, node model.Node,
+	values []string, data sourceTemplateData, context string,
+) ([]string, error) {
 	if len(values) == 0 {
 		return values, nil
 	}
@@ -299,7 +303,11 @@ func packageTemplateData(pkg *model.Package) sourcePackageData {
 
 // expandTemplateStr parses and executes s as a text/template against data.
 // If s contains no template delimiters it is returned as-is.
-func expandTemplateStr(structurePathResolver contract.StructurePathResolver, scope render.Scope, node model.Node, s string, data sourceTemplateData, name string) (string, error) {
+func expandTemplateStr(
+	structurePathResolver contract.StructurePathResolver,
+	scope render.Scope, node model.Node,
+	s string, data sourceTemplateData, name string,
+) (string, error) {
 	if !strings.Contains(s, "{{") {
 		return s, nil
 	}

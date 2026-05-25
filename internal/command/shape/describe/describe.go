@@ -125,6 +125,7 @@ type NamedArgItem struct {
 	Details     string `json:"details,omitempty" yaml:"details,omitempty"`
 }
 
+// FunctionDescriptions is node describing a function
 type FunctionDescription struct {
 	Name string         `json:"name" yaml:"name"`
 	Doc  DocDescription `json:"doc" yaml:"doc"`
@@ -141,7 +142,11 @@ func Build(cfg *shape.Config, resolver contract.StructurePathResolver) Descripti
 	}
 }
 
-func buildMacros(macros []config.MacroConfig, options []config.AnnotationSchemaConfig, resolver contract.StructurePathResolver) []MacroDescription {
+func buildMacros(
+	macros []config.MacroConfig,
+	options []config.AnnotationSchemaConfig,
+	resolver contract.StructurePathResolver,
+) []MacroDescription {
 	// Build a lookup from option name to handler for resolving macro option handlers.
 	optionHandlers := make(map[string]string, len(options))
 	for _, o := range options {
@@ -224,7 +229,7 @@ func buildStructure(raw string, resolver contract.StructurePathResolver) *Struct
 		return nil
 	}
 	name := strings.TrimPrefix(raw, structure.StructurePathPrefix)
-	resolvedPath, err := resolver.ResolveStructurePath(structure.StructurePathPrefix + raw)
+	resolvedPath, err := resolver.ResolveStructurePath(raw)
 	if err != nil {
 		resolvedPath = raw
 	}

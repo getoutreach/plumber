@@ -1,3 +1,6 @@
+// Copyright 2024 Outreach Corporation. All Rights Reserved.
+
+// Description: The template functions used during the expand phase of the shape command.
 package expand
 
 import (
