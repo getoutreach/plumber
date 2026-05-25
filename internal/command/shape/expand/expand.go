@@ -16,6 +16,7 @@ import (
 	"github.com/Masterminds/sprig/v3"
 	"github.com/getoutreach/plumber/internal/astx/inspect"
 	"github.com/getoutreach/plumber/internal/command/shape/config"
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/validate"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
@@ -121,28 +122,28 @@ func Macros(pkgs []*model.Package, macros []config.MacroConfig) error {
 
 	for _, pkg := range pkgs {
 		for _, typ := range pkg.Types {
-			anns, err := expandAnnotations(pkg, typ.TypeNode.Annotations, macroMap, macroSchemas)
+			anns, err := Annotations(pkg, typ.TypeNode.Annotations, macroMap, macroSchemas)
 			if err != nil {
 				return err
 			}
 			typ.TypeNode.Annotations = anns
 		}
 		for _, fun := range pkg.Functions {
-			anns, err := expandAnnotations(pkg, fun.TypeNode.Annotations, macroMap, macroSchemas)
+			anns, err := Annotations(pkg, fun.TypeNode.Annotations, macroMap, macroSchemas)
 			if err != nil {
 				return err
 			}
 			fun.TypeNode.Annotations = anns
 		}
 		for _, v := range pkg.Vars {
-			anns, err := expandAnnotations(pkg, v.TypeNode.Annotations, macroMap, macroSchemas)
+			anns, err := Annotations(pkg, v.TypeNode.Annotations, macroMap, macroSchemas)
 			if err != nil {
 				return err
 			}
 			v.TypeNode.Annotations = anns
 		}
 		for _, comment := range pkg.Comments {
-			anns, err := expandAnnotations(pkg, comment.Annotations, macroMap, macroSchemas)
+			anns, err := Annotations(pkg, comment.Annotations, macroMap, macroSchemas)
 			if err != nil {
 				return err
 			}
@@ -185,7 +186,7 @@ func compileMacroSchemas(macroMap map[string]*config.PlumberMacroConfig) (map[st
 //
 // The pkg argument is preserved for symmetry and future use but is no longer
 // consulted here since no template execution occurs at this stage.
-func expandAnnotations(
+func Annotations(
 	pkg *model.Package, annotations model.Annotations, macroMap map[string]*config.PlumberMacroConfig,
 	schemas map[string]*validate.CompiledSchema,
 ) (model.Annotations, error) {
@@ -246,13 +247,13 @@ func expandAnnotations(
 
 // expandTemplateSlice applies template expansion to each element in a string
 // slice, returning a new slice with all templates resolved.
-func expandTemplateSlice(scope render.Scope, node model.Node, values []string, data sourceTemplateData, context string) ([]string, error) {
+func expandTemplateSlice(structurePathResolver contract.StructurePathResolver, scope render.Scope, node model.Node, values []string, data sourceTemplateData, context string) ([]string, error) {
 	if len(values) == 0 {
 		return values, nil
 	}
 	result := make([]string, len(values))
 	for i, v := range values {
-		expanded, err := expandTemplateStr(scope, node, v, data, fmt.Sprintf("%s/args[%d]", context, i))
+		expanded, err := expandTemplateStr(structurePathResolver, scope, node, v, data, fmt.Sprintf("%s/args[%d]", context, i))
 		if err != nil {
 			return nil, err
 		}
@@ -264,6 +265,7 @@ func expandTemplateSlice(scope render.Scope, node model.Node, values []string, d
 // expandTemplateMap applies template expansion to each value in a string map,
 // returning a new map with all templates resolved. Keys are not expanded.
 func expandTemplateMap(
+	structurePathResolver contract.StructurePathResolver,
 	scope render.Scope,
 	node model.Node,
 	values map[string]string,
@@ -274,7 +276,7 @@ func expandTemplateMap(
 	}
 	result := make(map[string]string, len(values))
 	for k, v := range values {
-		expanded, err := expandTemplateStr(scope, node, v, data, fmt.Sprintf("%s/namedArgs[%s]", context, k))
+		expanded, err := expandTemplateStr(structurePathResolver, scope, node, v, data, fmt.Sprintf("%s/namedArgs[%s]", context, k))
 		if err != nil {
 			return nil, err
 		}
@@ -297,7 +299,7 @@ func packageTemplateData(pkg *model.Package) sourcePackageData {
 
 // expandTemplateStr parses and executes s as a text/template against data.
 // If s contains no template delimiters it is returned as-is.
-func expandTemplateStr(scope render.Scope, node model.Node, s string, data sourceTemplateData, name string) (string, error) {
+func expandTemplateStr(structurePathResolver contract.StructurePathResolver, scope render.Scope, node model.Node, s string, data sourceTemplateData, name string) (string, error) {
 	if !strings.Contains(s, "{{") {
 		return s, nil
 	}
@@ -316,16 +318,15 @@ func expandTemplateStr(scope render.Scope, node model.Node, s string, data sourc
 
 	pos.Filename = path.Base(pos.Filename)
 
+	fm, dispose := WithRenderFuncMap(node, structurePathResolver, data)
+	defer dispose()
+
 	tmpl, err := template.New(name).
 		Option("missingkey=error").
 		Funcs(render.GenericFunctions()).
 		Funcs(sprig.TxtFuncMap()).
-		Funcs(map[string]any{
-			"filename_suffixed": func(suffix string) string {
-				output := toOutputTemplateData(path.Join(node.GetPackage().Dir, pos.Filename))
-				return fmt.Sprintf("%s_%s%s", output.Name, suffix, output.Ext)
-			},
-		}).Parse(s)
+		Funcs(fm).
+		Parse(s)
 
 	if err != nil {
 		return "", fmt.Errorf("parsing template %q: %w", s, err)

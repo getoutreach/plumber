@@ -15,7 +15,9 @@ import (
 
 	"github.com/getoutreach/plumber/internal/command/shape"
 	"github.com/getoutreach/plumber/internal/command/shape/config"
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/expand"
+	"github.com/getoutreach/plumber/internal/command/shape/structure"
 	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/samber/lo"
 )
@@ -30,19 +32,21 @@ type Description struct {
 
 // MacroDescription describes a single registered macro.
 type MacroDescription struct {
-	Name     string              `json:"name" yaml:"name"`
-	Doc      DocDescription      `json:"doc" yaml:"doc"`
-	Metadata MetadataDescription `json:"metadata" yaml:"metadata"`
-	Schema   *SchemaDescription  `json:"schema,omitempty" yaml:"schema,omitempty"`
-	Options  []string            `json:"options,omitempty" yaml:"options,omitempty"`
+	Name      string                `json:"name" yaml:"name"`
+	Doc       DocDescription        `json:"doc" yaml:"doc"`
+	Metadata  MetadataDescription   `json:"metadata" yaml:"metadata"`
+	Schema    *SchemaDescription    `json:"schema,omitempty" yaml:"schema,omitempty"`
+	Options   []string              `json:"options,omitempty" yaml:"options,omitempty"`
+	Structure *StructureDescription `json:"structure,omitempty" yaml:"structure,omitempty"`
 }
 
 // OptionDescription describes a single registered annotation option.
 type OptionDescription struct {
-	Name     string              `json:"name" yaml:"name"`
-	Doc      DocDescription      `json:"doc" yaml:"doc"`
-	Metadata MetadataDescription `json:"metadata" yaml:"metadata"`
-	Schema   *SchemaDescription  `json:"schema,omitempty" yaml:"schema,omitempty"`
+	Name      string                `json:"name" yaml:"name"`
+	Doc       DocDescription        `json:"doc" yaml:"doc"`
+	Metadata  MetadataDescription   `json:"metadata" yaml:"metadata"`
+	Schema    *SchemaDescription    `json:"schema,omitempty" yaml:"schema,omitempty"`
+	Structure *StructureDescription `json:"structure,omitempty" yaml:"structure,omitempty"`
 }
 
 // HandlerDescription describes a single registered handler.
@@ -60,9 +64,16 @@ type HandlerVariantDescription struct {
 	Args    []string `json:"args,omitempty" yaml:"args,omitempty"`
 }
 
-// DocDescription holds the description documentation field.
+// DocDescription holds the description and usage documentation fields.
 type DocDescription struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Usage       string `json:"usage,omitempty" yaml:"usage,omitempty"`
+}
+
+// StructureDescription holds the resolved structure name and path.
+type StructureDescription struct {
+	Name string `json:"name" yaml:"name"`
+	Path string `json:"path" yaml:"path"`
 }
 
 // MetadataDescription holds metadata fields for an option or macro.
@@ -114,17 +125,23 @@ type NamedArgItem struct {
 	Details     string `json:"details,omitempty" yaml:"details,omitempty"`
 }
 
+type FunctionDescription struct {
+	Name string         `json:"name" yaml:"name"`
+	Doc  DocDescription `json:"doc" yaml:"doc"`
+}
+
 // Build extracts macros, options, and handlers from the given shape config
-// and returns a Description ready for formatting.
-func Build(cfg *shape.Config) Description {
+// and returns a Description ready for formatting. The resolver is used to
+// resolve structure paths referenced by annotations.
+func Build(cfg *shape.Config, resolver contract.StructurePathResolver) Description {
 	return Description{
-		Macros:   buildMacros(cfg.Macros, cfg.Options),
-		Options:  buildOptions(cfg.Options),
+		Macros:   buildMacros(cfg.Macros, cfg.Options, resolver),
+		Options:  buildOptions(cfg.Options, resolver),
 		Handlers: buildHandlers(cfg.Handlers),
 	}
 }
 
-func buildMacros(macros []config.MacroConfig, options []config.AnnotationSchemaConfig) []MacroDescription {
+func buildMacros(macros []config.MacroConfig, options []config.AnnotationSchemaConfig, resolver contract.StructurePathResolver) []MacroDescription {
 	// Build a lookup from option name to handler for resolving macro option handlers.
 	optionHandlers := make(map[string]string, len(options))
 	for _, o := range options {
@@ -154,32 +171,34 @@ func buildMacros(macros []config.MacroConfig, options []config.AnnotationSchemaC
 
 		md := MacroDescription{
 			Name: pm.Name,
-			Doc:  DocDescription{Description: pm.Doc.Description},
+			Doc:  DocDescription{Description: pm.Doc.Description, Usage: pm.Doc.Usage},
 			Metadata: MetadataDescription{
 				Source:   buildSource(pm.Git),
 				Singular: pm.Singular,
 				Handler:  h,
 			},
-			Schema:  buildSchema(pm.Schema),
-			Options: buildOptionRefs(pm.Options),
+			Schema:    buildSchema(pm.Schema),
+			Options:   buildOptionRefs(pm.Options),
+			Structure: buildStructure(pm.Structure, resolver),
 		}
 		result = append(result, md)
 	}
 	return result
 }
 
-func buildOptions(options []config.AnnotationSchemaConfig) []OptionDescription {
+func buildOptions(options []config.AnnotationSchemaConfig, resolver contract.StructurePathResolver) []OptionDescription {
 	result := make([]OptionDescription, 0, len(options))
 	for _, o := range options {
 		od := OptionDescription{
 			Name: o.Name,
-			Doc:  DocDescription{Description: o.Doc.Description},
+			Doc:  DocDescription{Description: o.Doc.Description, Usage: o.Doc.Usage},
 			Metadata: MetadataDescription{
 				Source:   buildSource(o.Git),
 				Singular: o.Singular,
 				Handler:  o.Handler,
 			},
-			Schema: buildSchema(o.Schema),
+			Schema:    buildSchema(o.Schema),
+			Structure: buildStructure(o.Structure, resolver),
 		}
 		result = append(result, od)
 	}
@@ -197,6 +216,24 @@ func buildSource(git *template.GitSourceConfig) *SourceDescription {
 	}
 }
 
+// buildStructure resolves a structure reference into a StructureDescription with
+// the name (stripped of the structure: prefix) and the resolved filesystem path.
+// Returns nil if the raw structure string is empty.
+func buildStructure(raw string, resolver contract.StructurePathResolver) *StructureDescription {
+	if raw == "" {
+		return nil
+	}
+	name := strings.TrimPrefix(raw, structure.StructurePathPrefix)
+	resolvedPath, err := resolver.ResolveStructurePath(structure.StructurePathPrefix + raw)
+	if err != nil {
+		resolvedPath = raw
+	}
+	return &StructureDescription{
+		Name: name,
+		Path: resolvedPath,
+	}
+}
+
 func buildHandlers(handlers []config.HandlerConfig) []HandlerDescription {
 	result := make([]HandlerDescription, 0, len(handlers))
 	for _, h := range handlers {
@@ -207,7 +244,7 @@ func buildHandlers(handlers []config.HandlerConfig) []HandlerDescription {
 			Name:    h.PlumberHandler.Name,
 			Command: h.PlumberHandler.Command,
 			Args:    h.PlumberHandler.Args,
-			Doc:     DocDescription{Description: h.PlumberHandler.Doc.Description},
+			Doc:     DocDescription{Description: h.PlumberHandler.Doc.Description, Usage: h.PlumberHandler.Doc.Usage},
 		}
 		result = append(result, hd)
 	}

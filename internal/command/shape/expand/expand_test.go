@@ -3,12 +3,14 @@
 // Description: This file contains unit tests for macro expansion in expandAnnotations
 // and the deferred per-annotation template expansion performed by TransformerAnnotations.
 
-package expand
+package expand_test
 
 import (
 	"testing"
 
 	"github.com/getoutreach/plumber/internal/command/shape/config"
+	"github.com/getoutreach/plumber/internal/command/shape/expand"
+	"github.com/getoutreach/plumber/internal/command/shape/structure"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"gotest.tools/v3/assert"
@@ -55,11 +57,11 @@ func expandAndTransform(
 	if node != nil {
 		pkg = node.GetPackage()
 	}
-	expanded, err := expandAnnotations(pkg, input, macroMap, nil)
+	expanded, err := expand.Annotations(pkg, input, macroMap, nil)
 	if err != nil {
 		return nil, err
 	}
-	return TransformerAnnotations(node, expanded, render.Scope{}, nil)
+	return expand.TransformerAnnotations(&structure.NoopResolver{}, node, expanded, render.Scope{}, nil)
 }
 
 func TestExpandAnnotations_NoMacro(t *testing.T) {
@@ -68,7 +70,7 @@ func TestExpandAnnotations_NoMacro(t *testing.T) {
 		model.NewAnnotation("plumber:derive", []string{"Foo"}),
 	}
 
-	result, err := expandAnnotations(fixturePackage(), input, macroMap, nil)
+	result, err := expand.Annotations(fixturePackage(), input, macroMap, nil)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	assert.Equal(t, result[0].Name, "plumber:derive")
@@ -93,7 +95,7 @@ func TestExpandAnnotations_DefersTemplates(t *testing.T) {
 		model.NewAnnotation("@derive", []string{"Foo"}),
 	}
 
-	result, err := expandAnnotations(fixturePackage(), input, macroMap, nil)
+	result, err := expand.Annotations(fixturePackage(), input, macroMap, nil)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 3)
 	// Templates remain unexpanded at the macro stage.
@@ -256,7 +258,7 @@ func TestTransformerAnnotations_PassthroughWithoutImpliedBy(t *testing.T) {
 			model.WithImpliedBy(model.NewAnnotation("plumber:mixing", []string{"arg"})),
 		),
 	}
-	result, err := TransformerAnnotations(fixtureNode(), input, render.Scope{}, nil)
+	result, err := expand.TransformerAnnotations(&structure.NoopResolver{}, fixtureNode(), input, render.Scope{}, nil)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	assert.Equal(t, result[0].Args[0], `arg`)

@@ -13,11 +13,12 @@ import (
 
 	"github.com/getoutreach/plumber/internal/command/shape"
 	"github.com/getoutreach/plumber/internal/command/shape/config"
+	"github.com/getoutreach/plumber/internal/command/shape/structure"
 )
 
 func TestBuildEmpty(t *testing.T) {
 	cfg := &shape.Config{}
-	desc := Build(cfg)
+	desc := Build(cfg, &structure.NoopResolver{})
 
 	if len(desc.Macros) != 0 {
 		t.Errorf("expected 0 macros, got %d", len(desc.Macros))
@@ -51,7 +52,7 @@ func TestBuildMacros(t *testing.T) {
 		},
 	}
 
-	desc := Build(cfg)
+	desc := Build(cfg, &structure.NoopResolver{})
 
 	if len(desc.Macros) != 1 {
 		t.Fatalf("expected 1 macro, got %d", len(desc.Macros))
@@ -80,7 +81,7 @@ func TestBuildOptions(t *testing.T) {
 		},
 	}
 
-	desc := Build(cfg)
+	desc := Build(cfg, &structure.NoopResolver{})
 
 	if len(desc.Options) != 1 {
 		t.Fatalf("expected 1 option, got %d", len(desc.Options))
@@ -110,7 +111,7 @@ func TestBuildHandlers(t *testing.T) {
 		},
 	}
 
-	desc := Build(cfg)
+	desc := Build(cfg, &structure.NoopResolver{})
 
 	if len(desc.Handlers) != 1 {
 		t.Fatalf("expected 1 handler, got %d", len(desc.Handlers))
@@ -149,7 +150,7 @@ items:
 		},
 	}
 
-	desc := Build(cfg)
+	desc := Build(cfg, &structure.NoopResolver{})
 	schema := desc.Options[0].Schema
 	if schema == nil {
 		t.Fatal("expected schema to be non-nil")
@@ -199,7 +200,7 @@ items:
 		},
 	}
 
-	desc := Build(cfg)
+	desc := Build(cfg, &structure.NoopResolver{})
 	schema := desc.Options[0].Schema
 	if schema == nil || schema.Positional == nil {
 		t.Fatal("expected positional schema")
@@ -249,7 +250,7 @@ properties:
 		},
 	}
 
-	desc := Build(cfg)
+	desc := Build(cfg, &structure.NoopResolver{})
 	schema := desc.Options[0].Schema
 	if schema == nil || schema.Named == nil {
 		t.Fatal("expected named schema")
@@ -300,7 +301,7 @@ additionalProperties:
 		},
 	}
 
-	desc := Build(cfg)
+	desc := Build(cfg, &structure.NoopResolver{})
 	schema := desc.Options[0].Schema
 	if schema == nil || schema.Named == nil {
 		t.Fatal("expected named schema")
@@ -451,7 +452,7 @@ properties:
 		},
 	}
 
-	desc := Build(cfg)
+	desc := Build(cfg, &structure.NoopResolver{})
 	f, err := Format("md")
 	if err != nil {
 		t.Fatal(err)
@@ -522,7 +523,7 @@ func TestBuildMacroHandlersFromOptions(t *testing.T) {
 		},
 	}
 
-	desc := Build(cfg)
+	desc := Build(cfg, &structure.NoopResolver{})
 
 	if len(desc.Macros) != 1 {
 		t.Fatalf("expected 1 macro, got %d", len(desc.Macros))
@@ -575,7 +576,7 @@ func TestBuildHandlersWithArgsAndVariants(t *testing.T) {
 		},
 	}
 
-	desc := Build(cfg)
+	desc := Build(cfg, &structure.NoopResolver{})
 
 	if len(desc.Handlers) != 1 {
 		t.Fatalf("expected 1 handler, got %d", len(desc.Handlers))
@@ -611,5 +612,154 @@ func TestMdFormatHandlerArgsAndVariants(t *testing.T) {
 	}
 	if !strings.Contains(s, "`-v`") {
 		t.Error("expected -v arg in handler output")
+	}
+}
+
+func TestBuildOptionsWithUsage(t *testing.T) {
+	cfg := &shape.Config{
+		Options: []config.AnnotationSchemaConfig{
+			{
+				Name: "plumber:template",
+				Doc: config.DocumentationConfig{
+					Description: "Template annotation.",
+					Usage:       "plumber:template <name>",
+				},
+			},
+		},
+	}
+
+	desc := Build(cfg, &structure.NoopResolver{})
+
+	if len(desc.Options) != 1 {
+		t.Fatalf("expected 1 option, got %d", len(desc.Options))
+	}
+	o := desc.Options[0]
+	if o.Doc.Usage != "plumber:template <name>" {
+		t.Errorf("expected usage 'plumber:template <name>', got %q", o.Doc.Usage)
+	}
+}
+
+func TestBuildOptionsWithStructure(t *testing.T) {
+	cfg := &shape.Config{
+		Options: []config.AnnotationSchemaConfig{
+			{
+				Name:      "plumber:generate",
+				Structure: "structure:models",
+			},
+		},
+	}
+
+	desc := Build(cfg, &structure.NoopResolver{})
+
+	if len(desc.Options) != 1 {
+		t.Fatalf("expected 1 option, got %d", len(desc.Options))
+	}
+	o := desc.Options[0]
+	if o.Structure == nil {
+		t.Fatal("expected structure to be non-nil")
+	}
+	if o.Structure.Name != "models" {
+		t.Errorf("expected structure name 'models', got %q", o.Structure.Name)
+	}
+	// NoopResolver returns the raw path as-is
+	if o.Structure.Path != "structure:models" {
+		t.Errorf("expected structure path 'structure:models', got %q", o.Structure.Path)
+	}
+}
+
+func TestBuildOptionsWithoutStructure(t *testing.T) {
+	cfg := &shape.Config{
+		Options: []config.AnnotationSchemaConfig{
+			{
+				Name: "plumber:template",
+			},
+		},
+	}
+
+	desc := Build(cfg, &structure.NoopResolver{})
+
+	if desc.Options[0].Structure != nil {
+		t.Error("expected structure to be nil when not set")
+	}
+}
+
+func TestBuildMacrosWithStructure(t *testing.T) {
+	cfg := &shape.Config{
+		Macros: []config.MacroConfig{
+			{
+				PlumberMacro: &config.PlumberMacroConfig{
+					AnnotationSchemaConfig: config.AnnotationSchemaConfig{
+						Name:      "my-macro",
+						Structure: "structure:services",
+					},
+				},
+			},
+		},
+	}
+
+	desc := Build(cfg, &structure.NoopResolver{})
+
+	if len(desc.Macros) != 1 {
+		t.Fatalf("expected 1 macro, got %d", len(desc.Macros))
+	}
+	m := desc.Macros[0]
+	if m.Structure == nil {
+		t.Fatal("expected structure to be non-nil")
+	}
+	if m.Structure.Name != "services" {
+		t.Errorf("expected structure name 'services', got %q", m.Structure.Name)
+	}
+}
+
+func TestMdFormatUsage(t *testing.T) {
+	desc := Description{
+		Options: []OptionDescription{
+			{
+				Name: "plumber:template",
+				Doc:  DocDescription{Description: "Template annotation.", Usage: "plumber:template <name>"},
+			},
+		},
+	}
+
+	f, err := Format("md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.Format(desc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := string(out)
+	if !strings.Contains(s, "**Usage:** `plumber:template <name>`") {
+		t.Errorf("expected usage in markdown output, got:\n%s", s)
+	}
+}
+
+func TestMdFormatStructure(t *testing.T) {
+	desc := Description{
+		Options: []OptionDescription{
+			{
+				Name:      "plumber:generate",
+				Structure: &StructureDescription{Name: "models", Path: "/resolved/path/models"},
+			},
+		},
+	}
+
+	f, err := Format("md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.Format(desc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := string(out)
+	if !strings.Contains(s, "**Structure:** models") {
+		t.Errorf("expected structure name in markdown output, got:\n%s", s)
+	}
+	if !strings.Contains(s, "`/resolved/path/models`") {
+		t.Errorf("expected structure path in markdown output, got:\n%s", s)
 	}
 }

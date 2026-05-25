@@ -82,6 +82,7 @@ type MacroConfig struct {
 // DocumentationConfig represents the documentation configuration
 type DocumentationConfig struct {
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Usage       string `yaml:"usage,omitempty" json:"usage,omitempty"`
 }
 
 // AnnotationArgumentSchemaConfig represents the schema configuration for annotation arguments, including positional and named arguments.
@@ -103,12 +104,16 @@ type AnnotationSchemaConfig struct {
 	Schema  *AnnotationArgumentSchemaConfig `yaml:"schema,omitempty"`
 	// Git holds the source provenance for annotations loaded from a git repository.
 	Git *template.GitSourceConfig `yaml:"-" json:"-"`
+
+	// Structure is an optional field that specifies the name of a structure where code related to this annotation should be generated
+	Structure string `yaml:"structure,omitempty" json:"structure,omitempty"`
 }
 
 // OptionReferenceConfig represents a reference to an option that can be used in macro
 // content templates, allowing for dynamic behavior based on the presence of these options.
 type OptionReferenceConfig struct {
-	Name string `yaml:"name"`
+	Name        string `yaml:"name"`
+	Description string `yaml:"description,omitempty"`
 }
 
 // PlumberMacroConfig represents the configuration for a macro, specifying its name and the annotations

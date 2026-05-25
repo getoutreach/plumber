@@ -162,7 +162,7 @@ func ParseRelativeFQN(packagePath, s string, replacers ...func(pkgPath, typeName
 		return nil, err
 	}
 	fqn.TranslateModules(func(pkgPath, typeName string) (string, bool) {
-		if strings.HasPrefix(pkgPath, "../") {
+		if strings.HasPrefix(pkgPath, "../") || strings.HasPrefix(pkgPath, "./") {
 			return path.Clean(path.Join(packagePath, pkgPath)), true
 		}
 		for _, replacer := range replacers {

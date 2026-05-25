@@ -37,6 +37,7 @@ func writeMacros(b *strings.Builder, macros []MacroDescription) {
 		fmt.Fprintf(b, "### %s\n\n", m.Name)
 		writeDoc(b, m.Doc)
 		writeMetadata(b, m.Metadata)
+		writeStructure(b, m.Structure)
 		if m.Schema != nil {
 			writeSchemaSection(b, m.Schema)
 		}
@@ -60,6 +61,7 @@ func writeOptions(b *strings.Builder, options []OptionDescription) {
 		fmt.Fprintf(b, "### %s\n\n", o.Name)
 		writeDoc(b, o.Doc)
 		writeMetadata(b, o.Metadata)
+		writeStructure(b, o.Structure)
 		if o.Schema != nil {
 			writeSchemaSection(b, o.Schema)
 		}
@@ -90,6 +92,9 @@ func writeDoc(b *strings.Builder, doc DocDescription) {
 	if doc.Description != "" {
 		fmt.Fprintf(b, "%s\n\n", doc.Description)
 	}
+	if doc.Usage != "" {
+		fmt.Fprintf(b, "**Usage:** \n\n%s\n\n", doc.Usage)
+	}
 }
 
 func writeMetadata(b *strings.Builder, meta MetadataDescription) {
@@ -109,6 +114,17 @@ func writeMetadata(b *strings.Builder, meta MetadataDescription) {
 		fmt.Fprintf(b, "| Handler | `%s` |\n", meta.Handler)
 	}
 	b.WriteString("\n")
+}
+
+func writeStructure(b *strings.Builder, s *StructureDescription) {
+	if s == nil {
+		return
+	}
+	b.WriteString("**Structure:** \n\n")
+	b.WriteString("| Name | Path |\n")
+	b.WriteString("|------|---------|\n")
+	fmt.Fprintf(b, "| %s | `%s` |\n\n", s.Name, s.Path)
+
 }
 
 func writeSchemaSection(b *strings.Builder, schema *SchemaDescription) {

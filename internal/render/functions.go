@@ -7,7 +7,6 @@ package render
 
 import (
 	"fmt"
-	"html/template"
 	"maps"
 	"path"
 	"strings"
@@ -244,85 +243,63 @@ func (r ModuleRef) FQN(name string) (string, error) {
 	return fqn.String(), nil
 }
 
-func WithRenderFuncMap(context Context, scope Scope, output string) (opt gen.RenderOptionsFunc, dispose func()) {
-	var tp *model.Type
-	dispose = func() {
-		if tp != nil {
-			tp = nil
+func fileDescription(scope Scope) func(s string) string {
+	return func(s string) string {
+		if f, ok := scope["File"].(Scope); ok {
+			f["Description"] = s
 		}
+		return ""
 	}
-	functions := template.FuncMap{
-		"extend": extend,
-		"file_description": func(s string) string {
-			if f, ok := scope["File"].(Scope); ok {
-				f["Description"] = s
-			}
-			return ""
-		},
-		"file_package_description": func(s string) string {
-			if f, ok := scope["File"].(Scope); ok {
-				f["PackageDescription"] = s
-			}
-			return ""
-		},
-		"comment_wrap": commentWrap,
-		"type":         TypesRenderer(context.GetPkgPath(), context.GetModules(), context.GetPathResolver()),
-		"type_set": func(name string) (string, error) {
-			fqn, err := astx.CraftFQN(context.GetPkgPath(), name)
-			if err != nil {
-				return "", fmt.Errorf("failed to craft FQN for type %q: %w", name, err)
-			}
-			tp = &model.Type{
-				Spec: model.TypeSpec{
-					FQN: fqn.String(),
+}
+
+func filePackageDescription(scope Scope) func(s string) string {
+	return func(s string) string {
+		if f, ok := scope["File"].(Scope); ok {
+			f["PackageDescription"] = s
+		}
+		return ""
+	}
+}
+
+func typeSet(context Context, set func(*model.Type)) func(string) (string, error) {
+	return func(name string) (string, error) {
+		fqn, err := astx.CraftFQN(context.GetPkgPath(), name)
+		if err != nil {
+			return "", fmt.Errorf("failed to craft FQN for type %q: %w", name, err)
+		}
+		tp := &model.Type{
+			Spec: model.TypeSpec{
+				FQN: fqn.String(),
+			},
+			TypeNode: &model.TypeNode{
+				Position: model.Position{
+					Filename: context.GetOutput(),
 				},
-				TypeNode: &model.TypeNode{
-					Position: model.Position{
-						Filename: context.GetOutput(),
-					},
-				},
-			}
-			return "", nil
-		},
-		"type_method_undefined": func(methodName string) (bool, error) {
-			if tp == nil {
-				return false, fmt.Errorf("type not set by type_set function")
-			}
-			_, ok := lo.Find(context.GetPackage().Types, func(t *model.Type) bool {
-				if t.Spec.FQN == tp.Spec.FQN {
-					for _, m := range t.Struct.Methods {
-						if m.Name == methodName {
-							if m.Position.Filename != context.GetOutput() {
-								return true
-							}
+			},
+		}
+		set(tp)
+		return "", nil
+	}
+}
+
+func typeMethodUndefined(context Context, tp *model.Type) func(methodName string) (bool, error) {
+	return func(methodName string) (bool, error) {
+		if tp == nil {
+			return false, fmt.Errorf("type not set by type_set function")
+		}
+		_, ok := lo.Find(context.GetPackage().Types, func(t *model.Type) bool {
+			if t.Spec.FQN == tp.Spec.FQN {
+				for _, m := range t.Struct.Methods {
+					if m.Name == methodName {
+						if m.Position.Filename != context.GetOutput() {
+							return true
 						}
 					}
 				}
-				return false
-			})
-			return !ok, nil
-		},
-		"placeholder":    placeholder(scope),
-		"fragment_start": fragmentStart(scope),
-		"fragment_end":   fragmentEnd(scope),
-		"module_include": moduleInclude(context),
-		"module":         module(context),
-	}
-	maps.Copy(functions, GenericFunctions())
-	return gen.WithFuncMap(functions), dispose
-}
-
-func GenericFunctions() template.FuncMap {
-	return template.FuncMap{
-		"annotation":       annotation,
-		"annotation_value": AnnotationValue,
-		"fqn_mask": func(spec model.TypeSpec, mask string) (string, error) {
-			fqn, err := astx.ParseFQN(spec.FQN)
-			if err != nil {
-				return "", fmt.Errorf("failed to parse FQN: %w", err)
 			}
-			return fqn.Mask(mask).String(), nil
-		},
+			return false
+		})
+		return !ok, nil
 	}
 }
 

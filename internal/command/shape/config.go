@@ -47,7 +47,7 @@ func (c *FileConfig) Merge(includes ...*FileConfig) {
 }
 
 // MergeShape merges another Config into this one, appending sources, templates, mixins, matchers, and wrappers.
-func (c *Config) MergeShape(other *Config, mergeHandler bool) {
+func (c *Config) MergeShape(other *Config, initial bool) {
 	c.Sources = append(c.Sources, other.Sources...)
 	c.Templates.Content = append(c.Templates.Content, other.Templates.Content...)
 	c.Templates.Global = append(c.Templates.Global, other.Templates.Global...)
@@ -57,7 +57,8 @@ func (c *Config) MergeShape(other *Config, mergeHandler bool) {
 	c.Type.Wrappers = append(c.Type.Wrappers, other.Type.Wrappers...)
 	c.Structures = append(c.Structures, other.Structures...)
 	c.Options = append(c.Options, other.Options...)
-	if mergeHandler {
+	if initial {
+		c.StructureConfig = other.StructureConfig
 		c.WorkingDirs = append(c.WorkingDirs, other.WorkingDirs...)
 		c.Handlers = append(c.Handlers, other.Handlers...)
 	}

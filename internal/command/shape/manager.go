@@ -27,9 +27,10 @@ func buildContext(
 	cfg *Config,
 	ctx *contract.ShapingContext,
 	modules *baserender.ModuleRegister,
-	pkg *model.Package, output string) (*render.Context, error) {
+	pkg *model.Package, output string,
+) (*render.Context, error) {
 	rc := baserender.NewRenderContext(modules, pkg, output)
-	rc.PathResolver = ctx.StructurePathResolver.ResolvePath
+	rc.PathResolver = ctx.StructurePathResolver.ResolvePackagePath
 
 	context := &render.Context{
 		ContextCloner: rc,
@@ -395,7 +396,7 @@ func resolveFQN(ctx *contract.ShapingContext, transformer Transformer, fqnStr st
 	var resolveErr error
 
 	fqn, err := astx.ParseRelativeFQN(transformer.GetPackage().Path, fqnStr, func(pkgPath, typeName string) (replacement string, ok bool) {
-		resolvedPath, err := ctx.StructurePathResolver.ResolvePath(pkgPath)
+		resolvedPath, err := ctx.StructurePathResolver.ResolvePackagePath(pkgPath)
 		if err != nil {
 			resolveErr = err
 			return "", false

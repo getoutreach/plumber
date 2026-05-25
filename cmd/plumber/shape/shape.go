@@ -68,14 +68,14 @@ func RunTarget(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shape.
 
 // RunDescribe outputs a structured description of all registered macros, options, and handlers
 // in the requested format (md, json, yaml).
-func RunDescribe(c *cli.Context, _ *contract.ShapingContext, shapeConfig *shape.Config) error {
+func RunDescribe(c *cli.Context, ctx *contract.ShapingContext, shapeConfig *shape.Config) error {
 	format := c.String("format")
 	formatter, err := describe.Format(format)
 	if err != nil {
 		return err
 	}
 
-	desc := describe.Build(shapeConfig)
+	desc := describe.Build(shapeConfig, ctx.StructurePathResolver)
 	out, err := formatter.Format(desc)
 	if err != nil {
 		return fmt.Errorf("failed to format description: %w", err)

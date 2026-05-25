@@ -277,7 +277,7 @@ func collectCommentTransformations(
 
 			var resolveErr error
 			fqn, err := astx.ParseRelativeFQN(pkg.Package.PkgPath, m.Value(), func(pkgPath, typeName string) (replacement string, ok bool) {
-				resolvedPath, err := ctx.StructurePathResolver.ResolvePath(pkgPath)
+				resolvedPath, err := ctx.StructurePathResolver.ResolvePackagePath(pkgPath)
 				if err != nil {
 					resolveErr = err
 					return "", false

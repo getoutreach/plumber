@@ -30,7 +30,11 @@ import (
 // both macro-implied and mixin-implied annotations. A nil node degrades
 // gracefully to empty .Package fields and a nil .Type.
 func TransformerAnnotations(
-	node model.Node, annotations model.Annotations, scope render.Scope, singularNames map[string]bool,
+	structurePathResolver contract.StructurePathResolver,
+	node model.Node,
+	annotations model.Annotations,
+	scope render.Scope,
+	singularNames map[string]bool,
 ) (model.Annotations, error) {
 	if len(annotations) == 0 {
 		return annotations, nil
@@ -48,6 +52,7 @@ func TransformerAnnotations(
 	for i := range annotations {
 		ann := annotations[i]
 		expanded, err := expandAnnotationValue(
+			structurePathResolver,
 			scope,
 			node,
 			pkg,
@@ -68,6 +73,7 @@ func TransformerAnnotations(
 // single annotation when it was implied by another annotation (macro or mixin).
 // Annotations without an ImpliedBy reference are returned unchanged.
 func expandAnnotationValue(
+	structurePathResolver contract.StructurePathResolver,
 	scope render.Scope,
 	node model.Node,
 	pkg *model.Package,
@@ -95,12 +101,12 @@ func expandAnnotationValue(
 		}
 	}
 
-	args, err := expandTemplateSlice(scope, node, ann.Args, data, ann.Name)
+	args, err := expandTemplateSlice(structurePathResolver, scope, node, ann.Args, data, ann.Name)
 	if err != nil {
 		return ann, fmt.Errorf("expanding implied annotation %q (from %q) args: %w", ann.Name, impliedBy, err)
 	}
 
-	namedArgs, err := expandTemplateMap(scope, node, ann.NamedArgs, data, ann.Name)
+	namedArgs, err := expandTemplateMap(structurePathResolver, scope, node, ann.NamedArgs, data, ann.Name)
 	if err != nil {
 		return ann, fmt.Errorf("expanding implied annotation %q (from %q) namedArgs: %w", ann.Name, impliedBy, err)
 	}

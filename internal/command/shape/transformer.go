@@ -191,7 +191,7 @@ func (t *BasicTransformer) Expand(
 	node model.Node,
 	scope baserender.Scope,
 	singularNames map[string]bool) error {
-	annotations, err := expand.TransformerAnnotations(node, t.Annotations, scope, singularNames)
+	annotations, err := expand.TransformerAnnotations(ctx.StructurePathResolver, node, t.Annotations, scope, singularNames)
 	if err != nil {
 		return err
 	}

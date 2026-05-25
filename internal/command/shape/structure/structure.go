@@ -53,15 +53,23 @@ func NewResolver(
 // NoopResolver is a no-op implementation of the Resolver that simply returns the path as-is.
 type NoopResolver struct{}
 
-func (r *NoopResolver) ResolvePath(p string) (string, error) {
+func (r *NoopResolver) ResolvePackagePath(p string) (string, error) {
 	return p, nil
 }
 
-func (r *Resolver) ResolvePath(p string) (string, error) {
-	if !strings.HasPrefix(p, StructurePathPrefix) {
-		return p, nil
-	}
+func (r *NoopResolver) ResolveStructurePath(p string) (string, error) {
+	return p, nil
+}
 
+func (r *Resolver) resolve(p string) (
+	mod *contract.ModuleInfo,
+	structureConfig *config.PlumberStructureConfig,
+	structurePath *config.StructurePathConfig,
+	err error,
+) {
+	if !strings.HasPrefix(p, StructurePathPrefix) {
+		return nil, nil, nil, nil
+	}
 	name := strings.TrimPrefix(p, StructurePathPrefix)
 
 	// Search across all structures, first match wins.
@@ -70,7 +78,7 @@ func (r *Resolver) ResolvePath(p string) (string, error) {
 			return pt.Path.Name == name
 		})
 		if found {
-			return path.Join(r.module.Path, s.Path, sp.Path.Path), nil
+			return &r.module, &s, &sp, nil
 		}
 	}
 
@@ -83,5 +91,29 @@ func (r *Resolver) ResolvePath(p string) (string, error) {
 		allNames = append(allNames, names...)
 	}
 
-	return name, fmt.Errorf("structure path '%s' not found in any structure definition. Available paths: %v", name, allNames)
+	return nil, nil, nil, fmt.Errorf("structure path '%s' not found in any structure definition. Available paths: %v", name, allNames)
+}
+
+func (r *Resolver) ResolveStructurePath(p string) (string, error) {
+	m, sc, sp, err := r.resolve(p)
+	if err != nil {
+		return "", err
+	}
+	if m == nil {
+		return p, nil
+	}
+
+	return path.Join(m.Dir, sc.Path, sp.Path.Path), nil
+}
+
+func (r *Resolver) ResolvePackagePath(p string) (string, error) {
+	m, sc, sp, err := r.resolve(p)
+	if err != nil {
+		return "", err
+	}
+	if m == nil {
+		return p, nil
+	}
+
+	return path.Join(m.Path, sc.Path, sp.Path.Path), nil
 }

@@ -164,7 +164,8 @@ type TemplateLoader interface {
 
 // StructurePathResolver defines an interface for resolving structure paths according to structure path configuration
 type StructurePathResolver interface {
-	ResolvePath(path string) (string, error)
+	ResolvePackagePath(path string) (string, error)
+	ResolveStructurePath(path string) (string, error)
 }
 
 // ShapingContext provides context for a transformation, including a Reporter for emitting events during the transformation process.
