@@ -11,8 +11,10 @@ import (
 
 // GRPC service represents grpc related dependency container
 type GRPC struct {
-	Port   plumber.D[int32]
-	Server plumber.R[*grpc.Server]
+	Port          plumber.D[int32]
+	Server        plumber.R[*grpc.Server]
+	TracingServer plumber.R[*grpc.Server]
+	WithTracing   plumber.D[func(*grpc.Server) *grpc.Server]
 }
 
 // Define resolves dependencies
@@ -31,4 +33,14 @@ func (c *GRPC) Define(ctx context.Context, cf *Config, a *Container) {
 			))
 		})
 	})
+
+	c.WithTracing.Const(func(s *grpc.Server) *grpc.Server {
+		// wrap with tracing interceptor
+		return s
+	})
+
+	c.TracingServer.As(&c.Server).Wrap(
+		&c.WithTracing,
+		plumber.WrapperFunc(func(s *grpc.Server) *grpc.Server { return s }),
+	)
 }

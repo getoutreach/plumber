@@ -6,7 +6,7 @@
 *.dylib
 
 # Editor files
-*.swp
+[._]*.sw[a-p]
 *~
 \#*\#
 .idea/*
@@ -65,6 +65,10 @@ Pulumi.*.yaml
 .terraform.lock.hcl
 
 ### Start ignores inserted by other modules
+# Avoid checking in go.work and friends.
+# See: https://github.com/golang/website/commit/80af5f5f42a708fad470699f7f3fe7eb1d1e6851
+go.work
+go.work.sum
 ### End ignores inserted by other modules
 
 ## <<Stencil::Block(extras)>>

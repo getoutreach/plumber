@@ -1,8 +1,8 @@
 module github.com/getoutreach/plumber
 
-go 1.23.0
+go 1.25.0
 
-toolchain go1.23.4
+toolchain go1.25.7
 
 require (
 	github.com/samber/lo v1.52.0

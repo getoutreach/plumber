@@ -14,6 +14,13 @@ import (
 	"github.com/samber/lo"
 )
 
+// ContainerLike represents a container that can register cleanup functions and be closed
+type ContainerLike interface {
+	Cleanup(func(context.Context))
+	CleanupError(func(context.Context) error)
+	Close(context.Context) error
+}
+
 // Container represents a root dependency container
 type Container struct {
 	cleanup []func(context.Context) error
