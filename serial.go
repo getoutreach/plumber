@@ -71,6 +71,8 @@ func runnersToClose(o *PipelineOptions, started []runningRunner, all []Runner) [
 }
 
 // Run executes Run method on internal runners one by one with given order.
+// nolint:gocyclo,funlen // Why: This method is the main event loop of the SerialPipeline and its complexity is justified
+// by the need to handle multiple events
 func (r *SerialPipeline) Run(ctx context.Context) error {
 	runCtx, runCancel := context.WithCancelCause(ctx)
 	defer runCancel(nil)
@@ -93,28 +95,88 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 		// so close will wait for errors to be reported
 		r.running.Store(true)
 
+		// startNextWorker starts the next runner if there is one to start.
+		// Called directly from handlers instead of self-sending an
+		// eventRunnerStart through r.messages (which would risk deadlocking
+		// the event loop on its own channel when the buffer is full).
+		startNextWorker := func() {
+			workerID++
+			if closing || workerID > len(r.runners) {
+				if !closing && workerID > len(r.runners) {
+					// We are all ready and running
+					r.ready.Notify()
+				}
+				return
+			}
+			id := workerID
+			runner := runningRunner{
+				runner: r.runners[id-1],
+				id:     id,
+			}
+			runningWorkers = append(runningWorkers, runner)
+			startedWorkers = append(startedWorkers, runner)
+
+			go func(running runningRunner) {
+				// Wait for the runner to become ready and then signal to start another runner
+				ready := RunnerReady(running.runner)
+				go func() {
+					select {
+					case <-ready:
+						// Guard the send with runCtx so this goroutine
+						// cannot leak after the pipeline shuts down.
+						select {
+						case r.messages <- &eventRunnerStart{}:
+						case <-runCtx.Done():
+						}
+					case <-runCtx.Done():
+					}
+				}()
+
+				go r.options.ErrorNotifier.Forward(ctx, running.runner, r.closed, r.errSignal)
+
+				err := running.runner.Run(runCtx)
+				if err != nil {
+					r.options.ErrorNotifier.Notify(r.errSignal)
+				}
+
+				// Notify the event loop that this worker has finished.
+				// This send MUST NOT be guarded by runCtx, because the
+				// event loop relies on these notifications to know when
+				// to terminate, and runCtx may already be cancelled by
+				// the time we get here (close sequence cancels runCtx).
+				// The channel has capacity len(runners) so each worker
+				// has its own slot.
+				r.messages <- &eventRunnerClose{id: running.id, err: err}
+			}(runner)
+		}
+
+		// doClose performs the close-all-workers sequence used by an
+		// incoming eventClose. Refactored out so the eventRunnerClose
+		// handler can run the same logic in-line without self-sending an
+		// eventClose through r.messages.
+		doClose := func(closerContext context.Context) {
+			if !closing {
+				if closerContext == nil {
+					closerContext = ctx
+				}
+				workers := runnersToClose(r.options, startedWorkers, r.runners)
+				for i := len(workers) - 1; i >= 0; i-- {
+					runner := workers[i]
+					if err := RunnerClose(closerContext, runner); err != nil {
+						closeErrors = append(closeErrors, err)
+					}
+				}
+				startedWorkers = startedWorkers[:0]
+			}
+			closing = true
+		}
+
 		for m := range r.messages {
 			switch m := m.(type) {
 			// close requested
 			case *eventClose:
 				terminate = m.terminate || terminate
-				if !closing {
-					closerContext := m.closerContext
-					if closerContext == nil {
-						closerContext = ctx
-					}
-
-					workers := runnersToClose(r.options, startedWorkers, r.runners)
-
-					for i := len(workers) - 1; i >= 0; i-- {
-						runner := workers[i]
-						if err := RunnerClose(closerContext, runner); err != nil {
-							closeErrors = append(closeErrors, err)
-						}
-					}
-					startedWorkers = startedWorkers[:0]
-				}
-				closing = true
+				doClose(m.closerContext)
 
 				if m.done != nil {
 					m.done <- errors.Join(closeErrors...)
@@ -123,7 +185,7 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 				if len(runningWorkers) > 0 {
 					continue
 				}
-				// Terminate from the loo
+				// Terminate from the loop
 				if terminate {
 					return
 				}
@@ -132,7 +194,7 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 					continue
 				}
 				running = true
-				r.messages <- &eventRunnerStart{}
+				startNextWorker()
 				// runner has finished running
 			case *eventRunnerClose:
 				if m.err != nil {
@@ -144,53 +206,23 @@ func (r *SerialPipeline) Run(ctx context.Context) error {
 						return e.id != m.id
 					})
 				}
-				// Signal close event since something has finished
-				r.messages <- &eventClose{}
+
+				// A worker exited unexpectedly (or as part of shutdown).
+				// Run the same close logic as an incoming eventClose, but
+				// in-line, to avoid self-sending an eventClose through
+				// r.messages which could deadlock the loop on its own
+				// channel.
+				doClose(nil)
 
 				// no more working workers so we can return from Run method
 				if len(runningWorkers) == 0 {
 					returnCh <- errors.Join(errs...)
+					if terminate {
+						return
+					}
 				}
 			case *eventRunnerStart:
-				workerID++
-				if closing || workerID > len(r.runners) {
-					if !closing {
-						// We are all ready and running
-						r.ready.Notify()
-					}
-					// we are all running or closing
-					continue
-				}
-				func(id int) {
-					runner := runningRunner{
-						runner: r.runners[id-1],
-						id:     id,
-					}
-					runningWorkers = append(runningWorkers, runner)
-					startedWorkers = append(startedWorkers, runner)
-
-					go func(running runningRunner) {
-						// Wait for the runner to become ready and then signal to start another runner
-						ready := RunnerReady(running.runner)
-						go func() {
-							select {
-							case <-ready:
-								r.messages <- &eventRunnerStart{}
-							case <-runCtx.Done():
-							}
-						}()
-
-						go r.options.ErrorNotifier.Forward(ctx, running.runner, r.closed, r.errSignal)
-
-						err := running.runner.Run(runCtx)
-						if err != nil {
-							r.options.ErrorNotifier.Notify(r.errSignal)
-						}
-
-						// we can close another runner or start closing the pipeline
-						r.messages <- &eventRunnerClose{id: running.id, err: err}
-					}(runner)
-				}(workerID)
+				startNextWorker()
 				// some error occurred
 			}
 		}
