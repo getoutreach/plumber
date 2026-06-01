@@ -67,8 +67,41 @@ func (mdFunctionsFormatter) FormatFunctions(desc FunctionsDescription) ([]byte, 
 		for _, fn := range section.Functions {
 			fmt.Fprintf(&b, "### %s\n\n", fn.Name)
 			writeDoc(&b, fn.Doc)
+			writeFunctionParams(&b, fn.Params)
+			writeFunctionResults(&b, fn.Results)
 		}
 	}
 
 	return []byte(b.String()), nil
+}
+
+// writeFunctionParams renders the input parameters of a function as a
+// bulleted list. Each entry shows the FQN of the parameter type. The
+// final parameter is prefixed with `...` when the function is variadic.
+func writeFunctionParams(b *strings.Builder, params []ParamDescription) {
+	if len(params) == 0 {
+		return
+	}
+	b.WriteString("**Parameters:**\n\n")
+	for _, p := range params {
+		prefix := ""
+		if p.Variadic {
+			prefix = "..."
+		}
+		fmt.Fprintf(b, "- `%s%s`\n", prefix, p.Type)
+	}
+	b.WriteString("\n")
+}
+
+// writeFunctionResults renders the result types of a function as a
+// bulleted list. Each entry shows the FQN of the result type.
+func writeFunctionResults(b *strings.Builder, results []ResultDescription) {
+	if len(results) == 0 {
+		return
+	}
+	b.WriteString("**Returns:**\n\n")
+	for _, r := range results {
+		fmt.Fprintf(b, "- `%s`\n", r.Type)
+	}
+	b.WriteString("\n")
 }

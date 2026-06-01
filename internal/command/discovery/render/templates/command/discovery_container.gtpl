@@ -1,5 +1,5 @@
  {{ define "plumber/command/discovery/container" }}
-    {{ module_include "context" -}}
+    {{ module_import "context" -}}
     // {{ .Scope.Container.Name }} dependency container
     type {{ .Scope.Container.Name }} struct {}
 

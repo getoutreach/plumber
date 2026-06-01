@@ -6,7 +6,7 @@
 {{ end }}
 {{define "plumber/command/shape/struct/field/method/getter"}}
     {{ $methodName := printf "Get%s" $.Scope.Field.Name -}}
-    {{ if type_method_undefined $methodName -}}
+    {{ if type_method_definable $methodName -}}
     // Get{{ $.Scope.Field.Name }} returns the {{ $.Scope.Field.Name }} field.
     func ({{ $.Scope.Receiver }} {{ type $.Type.Spec }}) {{$methodName  }}() {{ type $.Scope.Field.Type.Spec }} {
         return {{ $.Scope.Receiver }}.{{ $.Scope.Field.Name }}
@@ -15,7 +15,7 @@
 {{end}}
 {{define "plumber/command/shape/struct/field/method/setter"}}
     {{ $methodName := printf "Set%s" $.Scope.Field.Name -}}
-    {{ if type_method_undefined $methodName -}}
+    {{ if type_method_definable $methodName -}}
     // Set{{ $.Scope.Field.Name }} sets the {{ $.Scope.Field.Name }} field.
     func ({{ $.Scope.Receiver }} {{ type $.Type.Spec }}) {{$methodName  }}(value {{ type $.Scope.Field.Type.Spec }}) {
         {{ $.Scope.Receiver }}.{{ $.Scope.Field.Name }} = value

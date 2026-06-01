@@ -290,3 +290,231 @@ func TestFunctionsFormatUnknown(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
+
+// TestBuildFunctionsWithSignatures verifies that when a source implements
+// contract.FunctionSignaturesProvider (as FunctionDescriptors[T] does), the
+// resulting FunctionDescription entries carry FQN-formatted parameter and
+// result types, including a variadic flag on the final parameter.
+func TestBuildFunctionsWithSignatures(t *testing.T) {
+	type ctx struct{}
+	descriptors := contract.FunctionDescriptors[*ctx]{
+		{
+			Description: contract.FunctionDescription{Name: "concat"},
+			Func: func(_ *ctx) any {
+				return func(prefix string, parts ...string) (string, error) {
+					return prefix, nil
+				}
+			},
+		},
+		{
+			Description: contract.FunctionDescription{Name: "noop"},
+			Func: func(_ *ctx) any {
+				return func() {}
+			},
+		},
+	}
+
+	desc := BuildFunctions([]FunctionSectionInput{{
+		Title:   "Sigs",
+		Sources: []contract.FunctionDescriptions{descriptors},
+	}})
+
+	if len(desc.Sections) != 1 || len(desc.Sections[0].Functions) != 2 {
+		t.Fatalf("unexpected sections/functions: %+v", desc)
+	}
+
+	concat := desc.Sections[0].Functions[0]
+	if concat.Name != "concat" {
+		t.Fatalf("expected concat, got %q", concat.Name)
+	}
+	if len(concat.Params) != 2 {
+		t.Fatalf("expected 2 params, got %d", len(concat.Params))
+	}
+	if concat.Params[0].Type != "string" || concat.Params[0].Variadic {
+		t.Errorf("first param: got %+v, want {Type:string Variadic:false}", concat.Params[0])
+	}
+	if concat.Params[1].Type != "string" || !concat.Params[1].Variadic {
+		t.Errorf("second param: got %+v, want {Type:string Variadic:true}", concat.Params[1])
+	}
+	if len(concat.Results) != 2 || concat.Results[0].Type != "string" || concat.Results[1].Type != "error" {
+		t.Errorf("unexpected results: %+v", concat.Results)
+	}
+
+	noop := desc.Sections[0].Functions[1]
+	if len(noop.Params) != 0 || len(noop.Results) != 0 {
+		t.Errorf("expected zero params/results for noop, got params=%v results=%v", noop.Params, noop.Results)
+	}
+}
+
+// TestBuildFunctionsSignaturePanicRecovers verifies that a constructor
+// panicking on a zero context does not abort BuildFunctions and is reported
+// with empty params/results.
+func TestBuildFunctionsSignaturePanicRecovers(t *testing.T) {
+	type ctx struct{ name string }
+	descriptors := contract.FunctionDescriptors[*ctx]{
+		{
+			Description: contract.FunctionDescription{Name: "panicker"},
+			Func: func(c *ctx) any {
+				// Dereferencing the zero (nil) *ctx panics.
+				_ = c.name
+				return func() {}
+			},
+		},
+	}
+
+	desc := BuildFunctions([]FunctionSectionInput{{
+		Title:   "Panics",
+		Sources: []contract.FunctionDescriptions{descriptors},
+	}})
+
+	if len(desc.Sections[0].Functions) != 1 {
+		t.Fatalf("expected 1 function, got %d", len(desc.Sections[0].Functions))
+	}
+	fn := desc.Sections[0].Functions[0]
+	if fn.Name != "panicker" {
+		t.Errorf("expected panicker, got %q", fn.Name)
+	}
+	if len(fn.Params) != 0 || len(fn.Results) != 0 {
+		t.Errorf("expected empty params/results after recover, got params=%v results=%v", fn.Params, fn.Results)
+	}
+}
+
+// TestFunctionsMDFormatterParamsAndResults verifies that the markdown
+// formatter renders the new Parameters and Returns sections with FQN-formatted
+// types and the variadic prefix.
+func TestFunctionsMDFormatterParamsAndResults(t *testing.T) {
+	desc := FunctionsDescription{
+		Sections: []FunctionSectionDescription{
+			{
+				Title: "Sigs",
+				Functions: []FunctionDescription{
+					{
+						Name: "concat",
+						Params: []ParamDescription{
+							{Type: "string"},
+							{Type: "string", Variadic: true},
+						},
+						Results: []ResultDescription{
+							{Type: "string"},
+							{Type: "error"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	f, err := FunctionsFormat("md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.FormatFunctions(desc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, "**Parameters:**") {
+		t.Error("missing Parameters header")
+	}
+	if !strings.Contains(s, "- `string`") {
+		t.Error("missing first parameter line")
+	}
+	if !strings.Contains(s, "- `...string`") {
+		t.Error("missing variadic parameter line")
+	}
+	if !strings.Contains(s, "**Returns:**") {
+		t.Error("missing Returns header")
+	}
+	if !strings.Contains(s, "- `error`") {
+		t.Error("missing error result line")
+	}
+}
+
+func TestNormalizeDoc(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", ""},
+		{"single line", "hello", "hello"},
+		{"single line with trailing newline", "hello\n", "hello"},
+		{
+			name: "leading and trailing blank lines stripped",
+			in:   "\n    hello\n    ",
+			want: "hello",
+		},
+		{
+			name: "first-line indent removed; nested indent preserved",
+			in: `
+                Top.
+                    Nested.
+                Back.
+                `,
+			want: "Top.\n    Nested.\nBack.",
+		},
+		{
+			name: "interior blank lines collapse to empty",
+			in: `
+                first
+
+                third
+                `,
+			want: "first\n\nthird",
+		},
+		{
+			name: "tabs as prefix",
+			in:   "\n\tfirst\n\t\tnested\n\tlast\n",
+			want: "first\n\tnested\nlast",
+		},
+		{
+			name: "no leading prefix on first line leaves rest untouched",
+			in:   "first\n  indented\nthird",
+			want: "first\n  indented\nthird",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := normalizeDoc(c.in)
+			if got != c.want {
+				t.Errorf("normalizeDoc(%q) =\n%q\nwant:\n%q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// TestBuildFunctionsNormalizesDoc verifies that BuildFunctions runs each
+// description and usage string through normalizeDoc before emitting it.
+func TestBuildFunctionsNormalizesDoc(t *testing.T) {
+	descriptors := contract.FunctionDescriptors[*struct{}]{
+		{
+			Description: contract.FunctionDescription{
+				Name: "fn",
+				Description: `
+                    Line one.
+                        Nested line.
+                    Line three.
+                `,
+				Usage: `
+                    {{ fn "x" }}
+                `,
+			},
+			Func: func(_ *struct{}) any { return func() {} },
+		},
+	}
+
+	desc := BuildFunctions([]FunctionSectionInput{{
+		Title:   "T",
+		Sources: []contract.FunctionDescriptions{descriptors},
+	}})
+
+	got := desc.Sections[0].Functions[0].Doc
+	wantDesc := "Line one.\n    Nested line.\nLine three."
+	if got.Description != wantDesc {
+		t.Errorf("Description =\n%q\nwant:\n%q", got.Description, wantDesc)
+	}
+	if got.Usage != `{{ fn "x" }}` {
+		t.Errorf("Usage = %q, want %q", got.Usage, `{{ fn "x" }}`)
+	}
+}

@@ -33,7 +33,7 @@
 {{define "plumber/command/shape/interface/methods"}}
 {{ range $m := $.Type.Interface.Methods }}
     {{ with $scope := extend $ "Method" $m "Receiver" (receiver $.Scope.Subject) -}}
-        {{ if type_method_undefined $m.Name -}}
+        {{ if type_method_definable $m.Name -}}
         {{template "plumber/command/shape/interface/method" $scope -}}{{- end -}}
         {{ end }}
     {{ end }}

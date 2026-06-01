@@ -42,7 +42,7 @@ func FunctionsDescription() (desc contract.FunctionDescriptions,
 		{
 			Description: contract.FunctionDescription{
 				Name:        "macro_defaults_name",
-				Description: `Determine a default name for a macro based on the context's source arguments or type information.`,
+				Description: `Determine a default name for an output type based on the context's source arguments or input type information.`,
 				Usage:       `{{ macro_defaults_name }}`,
 			},
 			Func: macroDefaultsName,

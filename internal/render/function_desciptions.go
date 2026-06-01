@@ -28,9 +28,16 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 	d := contract.FunctionDescriptors[*EvaluationContext]{
 		{
 			Description: contract.FunctionDescription{
-				Name:        "extend",
-				Description: `Extend the current scope with additional variables`,
-				Usage:       `{{ extend . "Key1" "value1" "Key2" "value2" }}`,
+				Name: "extend",
+				Description: `
+                    Extend the current scope with additional variables. It is useful for passing multiple variables to a template without having to create a new
+                    struct or map. Usually used in combination with template inclusion for readability and loops to pass loop variable into the included template.
+                    `,
+				Usage: `
+                    {{ with $scope := extend $ "Field1" "Value1" "Field2" "Value2" -}}
+                        {{template "plumber/command/shape/struct/field/method" $scope -}}
+                    {{ end }}
+                    `,
 			},
 			Func: func(c *EvaluationContext) any {
 				return extend
@@ -38,9 +45,18 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		},
 		{
 			Description: contract.FunctionDescription{
-				Name:        "file_description",
-				Description: `Sets the description comment for the current file.`,
-				Usage:       `{{ file_description "description text" }}`,
+				Name: "file_description",
+				Description: `
+                    Sets the description comment for the current file. So second code gen pass that is responsible for file header can pick it up and render it as a comment in the generated code.
+                    Example:
+                    ` + "```golang" + `
+
+                    // Description: This file contains generated code for MyType and its methods.
+
+                    package sample
+                    ` + "```" + `
+                    `,
+				Usage: `{{ file_description "This file contains generated code for MyType and its methods." }}`,
 			},
 			Func: func(c *EvaluationContext) any {
 				return fileDescription(c.Scope)
@@ -48,9 +64,17 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		},
 		{
 			Description: contract.FunctionDescription{
-				Name:        "file_package_description",
-				Description: `Sets the description comment for the current file's package.`,
-				Usage:       `{{ file_package_description "description text" }}`,
+				Name: "file_package_description",
+				Description: `
+                Sets the description comment for the current file's package.
+                Example:
+                ` + "```golang" + `
+
+                // Package sample contains generated code for MyType and its methods.
+                package sample
+                ` + "```" + `
+                `,
+				Usage: `{{ file_package_description "contains generated code for MyType and its methods." }}`,
 			},
 			Func: func(c *EvaluationContext) any {
 				return filePackageDescription(c.Scope)
@@ -58,9 +82,18 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		},
 		{
 			Description: contract.FunctionDescription{
-				Name:        "comment_wrap",
-				Description: `Wrap a given text into comment lines.`,
-				Usage:       `{{ comment_wrap "This is a long comment \n\nthat needs to be wrapped." }}`,
+				Name: "comment_wrap",
+				Description: `
+                    Render text as wrapped comments.
+
+                    Example:
+                    ` + "```golang" + `
+                    // This is a long comment
+                    //
+                    // that needs to be wrapped.
+                    ` + "```" + `
+                `,
+				Usage: `{{ comment_wrap "This is a long comment \n\nthat needs to be wrapped." }}`,
 			},
 			Func: func(c *EvaluationContext) any {
 				return commentWrap
@@ -68,9 +101,11 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		},
 		{
 			Description: contract.FunctionDescription{
-				Name:        "type",
-				Description: `Render a type as a string.`,
-				Usage:       `{{ type .Type }}`,
+				Name: "type",
+				Description: `
+                    Render a type by given type specification. It takes into account the imports and aliases defined in the current context to render the type in the most concise way possible.
+                `,
+				Usage: `{{ type .Type.Spec }}`,
 			},
 			Func: func(c *EvaluationContext) any {
 				return TypesRenderer(c.Context.GetPkgPath(), c.Context.GetModules(), c.Context.GetPathResolver())
@@ -79,7 +114,7 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		{
 			Description: contract.FunctionDescription{
 				Name:        "type_set",
-				Description: `Set the current type in the evaluation context.`,
+				Description: `Set the current type in the evaluation context. So the methods like type_method_definable can use it.`,
 				Usage:       `{{ type_set "MyType" }}`,
 			},
 			Func: func(c *EvaluationContext) any {
@@ -90,11 +125,11 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		},
 		{
 			Description: contract.FunctionDescription{
-				Name: "type_method_undefined",
-				Description: `Check if a method is undefined or defined within ` +
-					`same file as the current output. for the current type. ` +
-					`User type_set to set the type first.`,
-				Usage: `{{ type_method_undefined "MethodName" }}`,
+				Name: "type_method_definable",
+				Description: `
+                    Check if a method is undefined or defined within same file as the current output.
+					It requires function type_set to set the type first.`,
+				Usage: `{{ type_method_definable "MethodName" }}`,
 			},
 			Func: func(c *EvaluationContext) any {
 				return typeMethodUndefined(c.Context, c.Type)
@@ -103,7 +138,7 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		{
 			Description: contract.FunctionDescription{
 				Name:        "placeholder",
-				Description: `Insert a placeholder in the template. Usage: {{ placeholder "placeholder_name" }}`,
+				Description: `Insert a placeholder in the template so it enables editing within designated area in the output. When generating code with ` + "`inplace`" + ` mode, the placeholder is not rendered.`,
 				Usage:       `{{ placeholder "placeholder_name" }}`,
 			},
 			Func: func(c *EvaluationContext) any {
@@ -113,7 +148,7 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		{
 			Description: contract.FunctionDescription{
 				Name:        "fragment_start",
-				Description: `Mark the start of a fragment. Usage: {{ fragment_start "fragment_name" }}`,
+				Description: `Renders a start of a fragment. Fragments are similar to placeholders, but allows redefine bigger areas that might contain placeholders.`,
 				Usage:       `{{ fragment_start "fragment_name" }}`,
 			},
 			Func: func(c *EvaluationContext) any {
@@ -123,7 +158,7 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		{
 			Description: contract.FunctionDescription{
 				Name:        "fragment_end",
-				Description: `Mark the end of a fragment. Usage: {{ fragment_end "fragment_name" }}`,
+				Description: `Renderers the end of a fragment.`,
 				Usage:       `{{ fragment_end "fragment_name" }}`,
 			},
 			Func: func(c *EvaluationContext) any {
@@ -132,19 +167,30 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		},
 		{
 			Description: contract.FunctionDescription{
-				Name:        "module_include",
-				Description: `Include a module's content. Usage: {{ module_include "module_name" }}`,
-				Usage:       `{{ module_include "module_name" }}`,
+				Name:        "module_import",
+				Description: `Schedules a module for import, so in second pass it will be included in the imports section of the generated file. See module function for more details.`,
+				Usage:       `{{ module_import "module_name" }}`,
 			},
 			Func: func(c *EvaluationContext) any {
-				return moduleInclude(c.Context)
+				return moduleImport(c.Context)
 			},
 		},
 		{
 			Description: contract.FunctionDescription{
-				Name:        "module",
-				Description: `Render a module. Usage: {{ module "module_name" }}`,
-				Usage:       `{{ module "module_name" }}`,
+				Name: "module",
+				Description: `
+                Schedules a module for import, so in second pass it will be included in the imports section of the generated file.
+                Additionally, it returns a reference to the module that can be used as helper in rendering the module's types.
+
+                It can accept:
+                - absolute path like ` + "`github.com/getoutreach/module`" + ` or ` + "`context`" + `
+                - relative path like ` + "`../module`" + ` . The relative path is resolved based on the current output path
+                - structure path like ` + "`structure:domain.entity`" + ` that resolves to the module containing the specified structure.
+                `,
+				Usage: `
+                {{ $entity      := module "structure:domain.entity" -}}
+                {{ $entity.Ident "TypeName" }}
+                `,
 			},
 			Func: func(c *EvaluationContext) any {
 				return module(c.Context)
@@ -166,8 +212,8 @@ func GenericFunctionsDescription() (desc contract.FunctionDescriptions, funcs te
 		{
 			Description: contract.FunctionDescription{
 				Name:        "annotation",
-				Description: `Get the annotation with the specified name from an object. Usage: {{ annotation . "annotation_name" }}`,
-				Usage:       `{{ annotation . "annotation_name" }}`,
+				Description: `Get the annotation with the specified name from an object.`,
+				Usage:       `{{ annotation .Type "annotation_name" }}`,
 			},
 			Func: func(c contract.VoidContext) any {
 				return annotation
@@ -176,8 +222,8 @@ func GenericFunctionsDescription() (desc contract.FunctionDescriptions, funcs te
 		{
 			Description: contract.FunctionDescription{
 				Name:        "annotation_value",
-				Description: `Get the value of an annotation with the specified name from an object. Usage: {{ annotation_value . "annotation_name" }}`,
-				Usage:       `{{ annotation_value . "annotation_name" }}`,
+				Description: `Get the value of an annotation with the specified name from an object.`,
+				Usage:       `{{ annotation_value .Type "annotation_name" }}`,
 			},
 			Func: func(c contract.VoidContext) any {
 				return AnnotationValue
@@ -185,9 +231,16 @@ func GenericFunctionsDescription() (desc contract.FunctionDescriptions, funcs te
 		},
 		{
 			Description: contract.FunctionDescription{
-				Name:        "fqn_mask",
-				Description: `Mask a fully qualified name (FQN) using a specified mask. Usage: {{ fqn_mask .Type.Spec "mask_pattern" }}`,
-				Usage:       `{{ fqn_mask .Type.Spec "mask_pattern" }}`,
+				Name: "fqn_mask",
+				Description: `
+                Derive new FQN from given and mask that will change the name of the type but keep the same package and import path.
+                It is useful for rendering types that are related to each other and should be placed in the same package, like filters, parameters, results etc.
+
+                For example, if you have a type ` + "`User`" + ` with FQN ` + "`github.com/getoutreach/api.User`" + `
+                and you want to render a filter type for it, you can use mask ` + "`%s_Filter`" + ` to get FQN ` + "`github.com/getoutreach/api.User_Filter`" + ` for the filter type.
+
+                `,
+				Usage: `{{ fqn_mask .Type.Spec "%s_Filter" }}`,
 			},
 			Func: func(c contract.VoidContext) any {
 				return func(spec model.TypeSpec, mask string) (string, error) {

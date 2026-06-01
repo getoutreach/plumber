@@ -127,8 +127,25 @@ type NamedArgItem struct {
 
 // FunctionDescriptions is node describing a function
 type FunctionDescription struct {
-	Name string         `json:"name" yaml:"name"`
-	Doc  DocDescription `json:"doc" yaml:"doc"`
+	Name    string              `json:"name" yaml:"name"`
+	Doc     DocDescription      `json:"doc" yaml:"doc"`
+	Params  []ParamDescription  `json:"params,omitempty" yaml:"params,omitempty"`
+	Results []ResultDescription `json:"results,omitempty" yaml:"results,omitempty"`
+}
+
+// ParamDescription describes a single input parameter of a template function.
+// Type is the fully qualified name (FQN) representation of the parameter's
+// Go type (predeclared types are bare; named types use the
+// quoted-package-path form, e.g. *"net/url".URL).
+type ParamDescription struct {
+	Type     string `json:"type" yaml:"type"`
+	Variadic bool   `json:"variadic,omitempty" yaml:"variadic,omitempty"`
+}
+
+// ResultDescription describes a single result of a template function.
+// Type is the fully qualified name (FQN) of the result's Go type.
+type ResultDescription struct {
+	Type string `json:"type" yaml:"type"`
 }
 
 // Build extracts macros, options, and handlers from the given shape config

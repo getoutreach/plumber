@@ -163,7 +163,7 @@ func fragmentEnd(scope Scope) func() string {
 	}
 }
 
-func moduleInclude(context Context) func(modulePath ...string) (string, error) {
+func moduleImport(context Context) func(modulePath ...string) (string, error) {
 	return func(modulePath ...string) (string, error) {
 		m, err := module(context)(modulePath...)
 		if err != nil {
