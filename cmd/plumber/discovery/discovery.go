@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -243,6 +244,9 @@ func collectContainerInfo(
 
 		// Resolve container path
 		containerPath := containerCfg.Container.Path
+
+		containerModule := getSourceModulePath(baseDir, path.Dir(containerPath), app.Module)
+
 		if !filepath.IsAbs(containerPath) {
 			containerPath = filepath.Join(baseDir, containerPath)
 		}
@@ -255,7 +259,10 @@ func collectContainerInfo(
 			if containerCfg.Source != nil {
 				sourceModule := getSourceModulePath(baseDir, containerCfg.Source.Path, app.Module)
 
-				if err := renderContainerFromTemplate(containerPath, containerCfg.Name, app, sourceModule, containerOpts); err != nil {
+				fmt.Println("!!!!!!!!!!2", containerModule, sourceModule)
+
+				if err := renderContainerFromTemplate(
+					containerPath, containerCfg.Name, app, containerModule, sourceModule, containerOpts); err != nil {
 					fmt.Printf("    ⚠ Warning: Failed to render template: %v\n", err)
 					fmt.Printf("    ⚠ Warning: Container file does not exist at %s (skipping)\n", containerPath)
 					continue
@@ -534,14 +541,14 @@ func renderContainerFromTemplate(
 	containerPath string,
 	containerName string,
 	app *discovery.Application,
-	sourceModule string,
+	containerModule, sourceModule string,
 	templateOpts []gen.RenderOptionsFunc,
 ) error {
 	// Create template renderer with container opts (application opts not needed here)
 	renderer := discovery.NewTemplateRenderer(templateOpts, nil)
 
 	// Render the container file
-	return renderer.RenderContainer(containerPath, containerName, app, sourceModule)
+	return renderer.RenderContainer(containerPath, containerName, app, containerModule, sourceModule)
 }
 
 // getSourceModulePath determines the module path for the source package

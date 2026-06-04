@@ -2,15 +2,10 @@ package example
 
 import (
 	"context"
-	// <<plumber::Block(imports)>>
-	// <</plumber::Block>>
 
 	"github.com/getoutreach/plumber"
 	"github.com/getoutreach/plumber/example/adapter/outbound/redis"
 )
-
-// <<plumber::Block(header)>>
-// <</plumber::Block>>
 
 // OutboundRedis dependency container
 type OutboundRedis struct {
@@ -31,7 +26,6 @@ func (c *OutboundRedis) Define(ctx context.Context, cf *Config, a *Container) {
 			r.ResolveError(redis.NewDep1Named())
 		})
 	})
-
 	c.Client.Resolver(func(r *plumber.Resolution[*redis.Client]) {
 		r.Require(
 			&c.Dep1,
@@ -42,6 +36,3 @@ func (c *OutboundRedis) Define(ctx context.Context, cf *Config, a *Container) {
 		})
 	})
 }
-
-// <<plumber::Block(footer)>>
-// <</plumber::Block>>

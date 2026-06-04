@@ -177,6 +177,7 @@ func moduleImport(context Context) func(modulePath ...string) (string, error) {
 func module(context Context) func(modulePath ...string) (ModuleRef, error) {
 	modules := context.GetModules()
 	return func(modulePath ...string) (ModuleRef, error) {
+		var err error
 		if len(modulePath) == 0 {
 			return ModuleRef{}, fmt.Errorf("module path is required")
 		}
@@ -191,14 +192,16 @@ func module(context Context) func(modulePath ...string) (ModuleRef, error) {
 		}
 
 		resolve := context.GetPathResolver()
-		p, err := resolve(p)
-		if err != nil {
-			return ModuleRef{}, fmt.Errorf("failed to resolve path: %w", err)
+
+		if resolve != nil {
+			p, err = resolve(p)
+			if err != nil {
+				return ModuleRef{}, fmt.Errorf("failed to resolve path: %w", err)
+			}
 		}
 
 		if alias == "." {
 			modules.Dot(p)
-			fmt.Println("!!!!!! dot")
 			return ModuleRef{}, nil
 		}
 

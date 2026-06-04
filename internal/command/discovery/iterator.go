@@ -164,12 +164,7 @@ var TemplateFuncMap = template.FuncMap{
 	"slug": Slug,
 }
 
-// Capitalize converts a (possibly path-separated) string to PascalCase.
-// Each segment separated by "/" has its first letter uppercased, then segments are joined.
-//
-//	"async"          -> "Async"
-//	"outbound/redis" -> "OutboundRedis"
-func Capitalize(s string) string {
+func capitalize(s, sep string) string {
 	if s == "" {
 		return s
 	}
@@ -182,15 +177,33 @@ func Capitalize(s string) string {
 		runes[0] = unicode.ToUpper(runes[0])
 		parts[i] = string(runes)
 	}
-	return strings.Join(parts, "")
+	return strings.Join(parts, sep)
+}
+
+// Capitalize converts a (possibly path-separated) string to PascalCase.
+// Each segment separated by "/" has its first letter uppercased, then segments are joined.
+//
+//	"async"          -> "Async"
+//	"outbound/redis" -> "OutboundRedis"
+func Capitalize(s string) string {
+	return capitalize(s, "")
+}
+
+// Capitalize converts a (possibly path-separated) string to PascalCase.
+// Each segment separated by "/" has its first letter uppercased, then segments are joined.
+//
+//	"async"          -> "Async"
+//	"outbound/redis" -> "Outbound_Redis"
+func CapitalizeSnake(s string) string {
+	return capitalize(s, "_")
 }
 
 // Slug replaces "/" with "_" in a string.
 //
-//	"outbound/redis" -> "outbound_redis"
+//	"Outbound/Redis" -> "outbound_redis"
 //	"async"          -> "async"
 func Slug(s string) string {
-	return strings.ReplaceAll(s, "/", "_")
+	return strings.ToLower(strings.ReplaceAll(s, "/", "_"))
 }
 
 // HydrateTemplate replaces template variables in a string with actual values using Go templates.

@@ -72,7 +72,7 @@ plumber.discovery:
             container:
               path: ./application_{{ .module_slug }}.go
             source:
-              path: ./adapter/{{ .module_path }}/
+              path: ./adapter/{{ .module }}/
             matchers:
               - constructors:
                   - New(?P<name>.*)
@@ -254,4 +254,4 @@ These compile but panic at runtime, making issues visible during `ContainerResol
 - **Imports are managed automatically** — discovery adds all necessary imports for generated code.
 - **Application file is auto-synced** — discovery adds missing sub-container fields, `new()` inits, and `DefineContainers` args automatically.
 - **Use `[\w/]+` in loop regex** to capture nested subdirectories (e.g., `adapter/outbound/redis`).
-- **Use `{{ .module }}` for Go identifiers** (PascalCase), `{{ .module_slug }}` for filenames, `{{ .module_path }}` for filesystem paths in source/container path templates.
+- **Use `{{ .module }}` for Go identifiers** (PascalCase), `{{ .module_slug }}` for filenames, `{{ .module }}` for filesystem paths in source/container path templates.

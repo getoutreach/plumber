@@ -173,6 +173,7 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 				Usage:       `{{ module_import "module_name" }}`,
 			},
 			Func: func(c *EvaluationContext) any {
+				fmt.Println("!!!!", c)
 				return moduleImport(c.Context)
 			},
 		},

@@ -59,13 +59,15 @@ func (r *TemplateRenderer) RenderContainer(
 	containerPath string,
 	containerName string,
 	app *Application,
-	sourceModule string,
+	containerModule, sourceModule string,
 ) error {
 	var (
-		ctx = r.buildContext(containerPath, app, sourceModule)
+		ctx = r.buildContext(containerPath, app, containerModule)
 		// Build template context as a map for easy template access
-		scope = r.buildScope(containerName, app, sourceModule)
+		scope = r.buildScope(containerName, app, containerModule)
 	)
+
+	fmt.Println("!!!!!!!!!!1", containerModule, sourceModule, ctx.GetPackage().Dir, ctx.GetPackage().Path)
 
 	// Ensure directory exists
 	dir := filepath.Dir(containerPath)

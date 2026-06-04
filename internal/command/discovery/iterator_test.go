@@ -25,13 +25,13 @@ func TestHydrateTemplate(t *testing.T) {
 			name:      "single variable",
 			template:  "{{ .module }}",
 			variables: map[string]string{"module": "async"},
-			expected:  "async",
+			expected:  "Async",
 		},
 		{
 			name:      "multiple variables",
 			template:  "{{ .prefix }}_{{ .module }}",
 			variables: map[string]string{"prefix": "app", "module": "database"},
-			expected:  "app_database",
+			expected:  "App_Database",
 		},
 		{
 			name:      "no variables",
@@ -41,7 +41,7 @@ func TestHydrateTemplate(t *testing.T) {
 		},
 		{
 			name:      "path with variables",
-			template:  "./adapter/{{ .module }}/{{ .module }}.go",
+			template:  "./adapter/{{ .module_slug }}/{{ .module_slug }}.go",
 			variables: map[string]string{"module": "grpc"},
 			expected:  "./adapter/grpc/grpc.go",
 		},
@@ -77,13 +77,13 @@ func TestHydrateTemplate(t *testing.T) {
 		},
 		{
 			name:      "slug nested path",
-			template:  "{{ .module | slug }}",
+			template:  "{{ .module_slug }}",
 			variables: map[string]string{"module": "outbound/redis"},
 			expected:  "outbound_redis",
 		},
 		{
 			name:      "slug deep nested path",
-			template:  "{{ .module | slug }}",
+			template:  "{{ .module_slug }}",
 			variables: map[string]string{"module": "adapter/inbound/redis"},
 			expected:  "adapter_inbound_redis",
 		},
@@ -91,7 +91,7 @@ func TestHydrateTemplate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := discovery.HydrateTemplate(tt.template, tt.variables)
+			result := discovery.HydrateTemplate(tt.template, discovery.DeriveVariables(tt.variables))
 			assert.Equal(t, result, tt.expected)
 		})
 	}
