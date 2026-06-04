@@ -78,6 +78,132 @@ The catalog of helpers available inside a template (Sprig, plumber
 generic, render-stage helpers like `module`, `annotation`,
 `path_join`) is described in `or-plumber-shape-functions`.
 
+## Built-in command templates
+
+The shape renderer ships a fragmented scaffold under the
+`plumber/command/shape/...` namespace, split across three files. The
+top-level dispatcher routes to either the **struct** branch or the
+**interface** branch based on the subject's kind. The default block
+bodies are intentionally minimal (some are empty stubs) so individual
+blocks can be redefined without replacing the surrounding structure.
+
+To customise output:
+
+1. Author a template body that uses
+   `{{ define "plumber/command/shape/..." }}` to override one or more
+   blocks.
+2. Register it in `plumber.shape.yaml` under
+   `plumber.shape.templates.content` (or expose it via
+   `plumber.shape.sources`) — give it a **registered name**.
+3. Reference the registered name from source comments with
+   `plumber:template <registered-name>`. The annotation may be repeated;
+   `define` blocks across all referenced templates are merged into the
+   render. Blocks not redefined fall back to the defaults below.
+
+`plumber:template` takes the **registered template name**, never a
+built-in block name. The block names below are an internal contract for
+`{{ define }}`/`{{ template }}` only.
+
+### `command_shape.gtpl` — dispatcher
+
+| Block | Default behaviour | Override use |
+|---|---|---|
+| `plumber/command/shape` | Resolves `plumber:name` and dispatches to `…/shape/interface` or `…/shape/struct` based on subject kind. | Replace the entire shape scaffold (rare). |
+| `plumber/command/shape/comment/shaped` | Emits `// <Name> is shaped from <FQN>.`. Used by the interface branch as a header. | Customise the generated-type header comment. |
+
+### `command_shape_struct.gtpl` — struct branch
+
+| Block | Default behaviour | Override use |
+|---|---|---|
+| `plumber/command/shape/struct` | A single line: `// to be overridden by the user's template`. | **Primary override target** for struct-shaped types — the user-registered template provides the actual struct body. |
+
+> **Caveat.** A `plumber:shape` on a struct **without a registered
+> template that defines `plumber/command/shape/struct`** produces
+> effectively empty output (just the placeholder comment). Always
+> register at least one template when shaping struct types.
+
+### `command_shape_interface.gtpl` — interface branch
+
+The interface branch generates a forwarding wrapper struct, a
+`New<Name>` constructor, and per-method stubs inside a
+`fragment_start "struct" / fragment_end` pair.
+
+| Block | Default behaviour | Override use |
+|---|---|---|
+| `plumber/command/shape/interface` | Top-level: emits the header comment, `type <Name> struct { … }`, `New<Name>(…)` constructor, and the methods loop. | Replace the entire interface scaffold (rare). |
+| `plumber/command/shape/interface/struct` | Empty (struct body of the wrapper). | Add fields the wrapper holds (delegate, logger, metrics, …). |
+| `plumber/command/shape/interface/initializer/params` | Empty. | Constructor parameter list. |
+| `plumber/command/shape/interface/initializer/body` | Empty. | Constructor field assignments. |
+| `plumber/command/shape/interface/methods` | Iterates `.Type.Interface.Methods`, skips non-definable ones, renders each via `…/interface/method`. | Restrict, group, or reorder forwarded methods. |
+| `plumber/command/shape/interface/method` | Emits `func (<recv> *<Name>) <Method>(<params>) (<results>) { <body> }`. | Replace the per-method scaffolding wholesale. |
+| `plumber/command/shape/interface/method/comment` | Empty. | Per-method doc comment. |
+| `plumber/command/shape/interface/method/params` | Renders `<name> <type>,` per arg. | Customise param rendering (e.g. drop `ctx`). |
+| `plumber/command/shape/interface/method/results` | Renders `<name> <type>,` per result. | Customise result rendering. |
+| `plumber/command/shape/interface/method/body` | Single statement: `return`. | Insert real forwarding (e.g. via `…/method/forward`), tracing, error wrapping. |
+| `plumber/command/shape/interface/method/forward` | Helper — emits `<results> = <Ident>.<Method>(<args>)`. Not invoked by default. | Call from a custom `…/method/body` to build a forwarder. Caller must `extend` the scope with `Ident`. |
+| `plumber/command/shape/interface/method/call/arguments` | Renders comma-separated arg/result names (used by `…/method/forward`). | Helper; rarely overridden. |
+
+### Scope variables
+
+Variables exposed to the blocks above:
+
+| Variable | Available in | Description |
+|---|---|---|
+| `$.Type` | All blocks | The annotated source type. `.Type.Interface` / `.Type.Struct` selects the dispatch branch. `.Type.Interface.Methods` drives the methods loop. `.Type.Spec.FQN`, `.Type.Name`. |
+| `$.Scope.Subject` | All blocks | The annotated node carrying the `plumber:shape` block (used by `annotation_value`, `comment`, `receiver`). |
+| `$.Scope.Name` | All blocks under `…/shape` | Resolved generated-type name (from `plumber:name` or default). |
+| `$.Scope.Receiver` | Interface method blocks | Receiver identifier (e.g. `r`) — produced by `receiver $.Scope.Subject`. |
+| `$.Scope.Method` | Interface method blocks | Current `*model.Method` — `.Args`, `.Results`, `.Name`. |
+| `$.Scope.Ident` | `…/method/forward` | Identifier the forwarder calls into. The caller must supply it via `extend . "Ident" "..."` before invoking the helper. |
+
+### Worked example — interface forwarder
+
+Two registered templates, merged at render time. The first adds a
+delegate field plus constructor wiring; the second supplies the method
+body that forwards through the delegate using the built-in
+`…/method/forward` helper.
+
+```yaml
+plumber.shape:
+  templates:
+    content:
+      - name: forwarder.struct
+        content: |
+          {{ define "plumber/command/shape/interface/struct" -}}
+              delegate {{ .Type.Spec.FQN | type }}
+          {{- end }}
+          {{ define "plumber/command/shape/interface/initializer/params" -}}
+              delegate {{ .Type.Spec.FQN | type }},
+          {{- end }}
+          {{ define "plumber/command/shape/interface/initializer/body" -}}
+              delegate: delegate,
+          {{- end }}
+      - name: forwarder.body
+        content: |
+          {{ define "plumber/command/shape/interface/method/body" -}}
+              {{ template "plumber/command/shape/interface/method/forward"
+                 (extend . "Ident" (printf "%s.delegate" .Scope.Receiver)) }}
+          {{- end }}
+```
+
+Reference both registered names from the source type:
+
+```go
+// plumber:shape WorkerForwarder
+// plumber:template forwarder.struct
+// plumber:template forwarder.body
+type Worker interface { ... }
+```
+
+The scaffold (struct declaration, constructor, methods loop, method
+signature) is preserved — only the holes are overridden.
+
+For the catalog of helpers callable inside these blocks (`type`,
+`coalesce`, `receiver`, `type_method_definable`, `type_set`,
+`fragment_start`, `fragment_end`, `comment`, `extend`, …) see
+`or-plumber-shape-functions`. For the matching scaffold on the
+`plumber:derive` side see `or-plumber-shape-derive`.
+
 ## Modes
 
 `plumber:shape` honours `plumber:mode`:
@@ -207,3 +333,12 @@ The macro `@shape` must be configured in `plumber.shape.macros` — see
 - **Discover available templates, scopes, and helpers** via
   `or-plumber-shape-annotations` (registered options) and
   `or-plumber-shape-functions` (template helpers).
+- **`plumber:template` takes a registered template name**, not a
+  built-in block name. Register a template in
+  `plumber.shape.templates.content` (or via a source) whose body uses
+  `{{ define "plumber/command/shape/..." }}` to override scaffold
+  blocks. Repeat the annotation to merge overrides from multiple
+  registered templates.
+- **A `plumber:shape` on a struct without an override of
+  `plumber/command/shape/struct`** produces empty output — always
+  register at least one template when shaping struct types.

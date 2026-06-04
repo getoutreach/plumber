@@ -259,8 +259,6 @@ func collectContainerInfo(
 			if containerCfg.Source != nil {
 				sourceModule := getSourceModulePath(baseDir, containerCfg.Source.Path, app.Module)
 
-				fmt.Println("!!!!!!!!!!2", containerModule, sourceModule)
-
 				if err := renderContainerFromTemplate(
 					containerPath, containerCfg.Name, app, containerModule, sourceModule, containerOpts); err != nil {
 					fmt.Printf("    ⚠ Warning: Failed to render template: %v\n", err)

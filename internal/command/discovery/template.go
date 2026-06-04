@@ -67,8 +67,6 @@ func (r *TemplateRenderer) RenderContainer(
 		scope = r.buildScope(containerName, app, containerModule)
 	)
 
-	fmt.Println("!!!!!!!!!!1", containerModule, sourceModule, ctx.GetPackage().Dir, ctx.GetPackage().Path)
-
 	// Ensure directory exists
 	dir := filepath.Dir(containerPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

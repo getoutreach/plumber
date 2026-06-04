@@ -154,6 +154,85 @@ the filter would otherwise include it.
 The catalog of available filter functions is project-specific; see
 `or-plumber-shape-annotations` for the registered options and schemas.
 
+## Built-in command templates
+
+The derive renderer ships `command_derive.gtpl`, which defines the
+output scaffold as a set of named blocks under the
+`plumber/command/derive/...` namespace. The default bodies are
+intentionally minimal so individual blocks can be redefined without
+replacing the surrounding structure.
+
+To customise output:
+
+1. Author a template body that uses `{{ define "plumber/command/derive/..." }}`
+   to override one or more blocks.
+2. Register it in `plumber.shape.yaml` under
+   `plumber.shape.templates.content` (or expose it via
+   `plumber.shape.sources`) — give it a **registered name**.
+3. Reference the registered name from source comments with
+   `plumber:template <registered-name>`. The annotation may be repeated;
+   `define` blocks across all referenced templates are merged into the
+   render. Blocks not redefined fall back to the defaults below.
+
+`plumber:template` takes the **registered template name**, never a
+built-in block name. The block names below are an internal contract for
+`{{ define }}`/`{{ template }}` only.
+
+### `command_derive.gtpl`
+
+| Block | Default behaviour | Typical override use |
+|---|---|---|
+| `plumber/command/derive` | Top-level: emits `type <Name> struct { ... }` with filtered fields, plus a `placeholder "extra" <Name>` block when not in `inplace` mode. | Replace the entire derive scaffold (rare). |
+| `plumber/command/derive/struct/comment` | Empty. | Inject leading comments, build tags, or annotations above the generated struct. |
+| `plumber/command/derive/field` | `{{ Name }} {{ type }}` per field, prefixed by per-field comment. | Add struct tags, change field layout, emit auxiliaries alongside the field. |
+| `plumber/command/derive/field/comment` | Empty. | Per-field doc comment. |
+| `plumber/command/derive/field/type` | `{{ type_wrap … }}` — applies configured `field_wrapper`s. | Override how each field's type is rendered (force pointer, custom wrapper, etc.). |
+
+### Scope variables
+
+Variables and helpers exposed to the blocks above:
+
+| Variable | Available in | Description |
+|---|---|---|
+| `$.Type` | All blocks | The annotated source type (`*model.Type`). `.Type.Struct.Fields`, `.Type.Spec.FQN`, `.Type.Name`. |
+| `$.Scope.Subject` | All blocks | The annotated node carrying the `plumber:derive` block. Used by helpers `annotation_value`, `comment`, `filter_elements`. |
+| `$.Scope.Mode` | All blocks | Resolved `plumber:mode` value. Controls whether the `extra` placeholder is emitted by the top-level block. |
+| `$.Scope.Field` | `field`, `field/comment`, `field/type` | Current field (`Name`, `Type.Spec`, …) bound by the iteration in `plumber/command/derive`. |
+
+### Worked example — JSON-tagged fields
+
+Register a template that redefines the per-field block to add a JSON tag
+from the field name:
+
+```yaml
+plumber.shape:
+  templates:
+    content:
+      - name: model.derive.tagged
+        content: |
+          {{ define "plumber/command/derive/field" -}}
+              {{ .Scope.Field.Name }} {{ template "plumber/command/derive/field/type" . }} `json:"{{ .Scope.Field.Name | snakecase }}"`
+          {{- end }}
+```
+
+Reference it by its registered name:
+
+```go
+// plumber:derive ModelFilter
+// plumber:template model.derive.tagged
+type Model struct { ... }
+```
+
+The surrounding scaffold (`type ... struct { ... }`, the `extra`
+placeholder, leading comments, the field-type wrapping) is preserved —
+only the per-field rendering is overridden.
+
+For the catalog of helpers callable inside these blocks (`type_wrap`,
+`filter_elements`, `comment`, `placeholder`, `expand_name`,
+`annotation_value`, `extend`, …) see `or-plumber-shape-functions`. For
+the matching scaffold on the `plumber:shape` side see
+`or-plumber-shape-shape`.
+
 ## Field wrappers
 
 `plumber:field_wrapper <name>` applies a configured type wrapper to each
@@ -284,3 +363,10 @@ current project and `or-plumber-shape` for the broader CLI surface.
   clean or when generating for a third-party type.
 - **Discover filters, wrappers, and macros via the annotations skill** —
   they are project-specific and live in the resolved configuration.
+- **`plumber:template` takes a registered template name** declared in
+  `plumber.shape.templates.content` (or via a source), not a built-in
+  block name. Register a template whose body uses
+  `{{ define "plumber/command/derive/..." }}` to override scaffold
+  blocks; unredefined blocks fall back to the defaults shipped in
+  `command_derive.gtpl`. The annotation may be repeated to merge
+  overrides from multiple registered templates.
