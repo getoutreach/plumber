@@ -135,6 +135,7 @@ The interface branch generates a forwarding wrapper struct, a
 | `plumber/command/shape/interface/initializer/params` | Empty. | Constructor parameter list. |
 | `plumber/command/shape/interface/initializer/body` | Empty. | Constructor field assignments. |
 | `plumber/command/shape/interface/methods` | Iterates `.Type.Interface.Methods`, skips non-definable ones, renders each via `…/interface/method`. | Restrict, group, or reorder forwarded methods. |
+| `plumber/command/shape/interface/methods/extra` | Empty. | Add extra methods outside the main loop (e.g. unexported helpers). |
 | `plumber/command/shape/interface/method` | Emits `func (<recv> *<Name>) <Method>(<params>) (<results>) { <body> }`. | Replace the per-method scaffolding wholesale. |
 | `plumber/command/shape/interface/method/comment` | Empty. | Per-method doc comment. |
 | `plumber/command/shape/interface/method/params` | Renders `<name> <type>,` per arg. | Customise param rendering (e.g. drop `ctx`). |
