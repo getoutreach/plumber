@@ -285,8 +285,9 @@ func typeSet(context Context, set func(*model.Type)) func(string) (string, error
 	}
 }
 
-func typeMethodUndefined(context Context, tp *model.Type) func(methodName string) (bool, error) {
+func typeMethodUndefined(context Context, tpFunc func() *model.Type) func(methodName string) (bool, error) {
 	return func(methodName string) (bool, error) {
+		tp := tpFunc()
 		if tp == nil {
 			return false, fmt.Errorf("type not set by type_set function")
 		}

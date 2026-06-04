@@ -133,7 +133,7 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 				Usage: `{{ type_method_definable "MethodName" }}`,
 			},
 			Func: func(c *EvaluationContext) any {
-				return typeMethodUndefined(c.Context, c.Type)
+				return typeMethodUndefined(c.Context, func() *model.Type { return c.Type })
 			},
 		},
 		{

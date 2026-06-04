@@ -17,6 +17,11 @@
 {{end}}
 {{define "plumber/command/shape/interface/initializer/params"}}
 {{end}}
+
+{{define "plumber/command/shape/interface/extra" -}}
+{{end}}
+
+
 {{define "plumber/command/shape/interface/method/body"}}
     return
 {{end}}
@@ -32,7 +37,7 @@
 {{end}}
 {{define "plumber/command/shape/interface/methods"}}
 {{ range $m := $.Type.Interface.Methods }}
-    {{ with $scope := extend $ "Method" $m "Receiver" (receiver $.Scope.Subject) -}}
+    {{ with $scope := extend $ "Method" $m -}}
         {{ if type_method_definable $m.Name -}}
         {{template "plumber/command/shape/interface/method" $scope -}}{{- end -}}
         {{ end }}
@@ -71,6 +76,9 @@ func New{{ $.Scope.Name }}(
     }
 }
 {{ fragment_end }}
-{{ template "plumber/command/shape/interface/methods" $ -}}
+{{ with $scope := extend $ "Receiver" (receiver $.Scope.Subject) -}}
+    {{ template "plumber/command/shape/interface/methods" $scope -}}
+    {{ template "plumber/command/shape/interface/methods/extra" $scope -}}
+{{end}}
 {{end}}
 
