@@ -1,3 +1,8 @@
+---
+name: or-plumber-shape
+description: "Provides guidance on plumber's shape command for annotation-driven code generation: deriving filtered structs, rendering Go templates, and populating slices from pattern-matched entities."
+---
+
 # Shape — Annotation-Driven Code Generation
 
 The `shape` command scans Go packages for `plumber:*` comment annotations and generates or

@@ -23,50 +23,77 @@ plumber.shape:
     - plumber.structure:
         name: hexagonal.v1
         path: internal/{{ .Module.NormalizedName }}
-        description: Hexagonal architecture structure
+        title: Hexagonal architecture structure
+        documentation: |
+          This structure is based on the hexagonal architecture, which is a software design pattern that emphasizes the separation of concerns and
+          the use of ports and adapters to decouple the application from external dependencies.
+
+          The structure includes paths for domain entities, domain use cases, domain services, ports (inbound and outbound),
+          and adapters (inbound for HTTP, gRPC, GraphQL, and outbound for PostgreSQL). Each path is associated with a
+          template that defines the code generation for that path.
         paths:
-          - name: domain.entity
-            description: Domain entities
-            path: domain/entity
-            template: hexagonal.v1/domain.entity
+          - plumber.path:
+              name: domain.entity
+              title: Domain entities
+              description: Domain entities
+              path: domain/entity
+              template: hexagonal.v1/domain.entity
 
-          - name: domain.usecase
-            description: Domain use cases
-            path: domain/usecase
-            template: hexagonal.v1/domain.usecase
+          - plumber.path:
+              name: domain.usecase
+              title: Domain use cases
+              description: Domain use cases
+              path: domain/usecase
+              template: hexagonal.v1/domain.usecase
 
-          - name: domain.service
-            description: Domain services
-            path: domain/service
-            template: hexagonal.v1/domain.service
+          - plumber.path:
+              name: domain.service
+              title: Domain services
+              description: Domain services
+              path: domain/service
+              template: hexagonal.v1/domain.service
 
-          - name: port.inbound
-            description: Ports inbound
-            path: port/inbound
-            template: hexagonal.v1/port.inbound
+          - plumber.path:
+              name: port.inbound
+              title: Ports inbound
+              description: Ports inbound
+              path: port/inbound
+              template: hexagonal.v1/port.inbound
 
-          - name: port.outbound
-            description: Ports outbound
-            path: port/outbound
-            template: hexagonal.v1/port.outbound
+          - plumber.path:
+              name: port.outbound
+              title: Ports outbound
+              description: Ports outbound
+              path: port/outbound
+              template: hexagonal.v1/port.outbound
 
-          - name: adapter.inbound.http
-            description: HTTP adapter inbound
-            path: adapter/inbound/http
-            template: hexagonal.v1/adapter.inbound.http
+          - plumber.path:
+              name: adapter.inbound.http
+              title: HTTP adapter inbound
+              description: HTTP adapter inbound
+              path: adapter/inbound/http
+              template: hexagonal.v1/adapter.inbound.http
 
-          - name: adapter.inbound.grpc
-            description: gRPC adapter inbound
-            path: adapter/inbound/grpc
-            template: hexagonal.v1/adapter.inbound.grpc
+          - plumber.path:
+              name: adapter.inbound.grpc
+              title: gRPC adapter inbound
+              description: gRPC adapter inbound
+              path: adapter/inbound/grpc
+              template: hexagonal.v1/adapter.inbound.grpc
 
-          - name: adapter.inbound.graphql
-            description: GraphQL adapter inbound
-            path: adapter/inbound/graphql
-            template: hexagonal.v1/adapter.inbound.graphql
+          - plumber.path:
+              name: adapter.inbound.graphql
+              title: GraphQL adapter inbound
+              description: GraphQL adapter inbound
+              path: adapter/inbound/graphql
+              template: hexagonal.v1/adapter.inbound.graphql
 
-          - name: adapter.outbound.pgsql
-            description: PostgreSQL adapter outbound
-            flavor: gojet
-            path: adapter/outbound/pgsql
-            template: hexagonal.v1/adapter.outbound.pgsql
+          - plumber.path:
+              name: adapter.outbound.pgsql
+              title: PostgreSQL adapter outbound
+              description: PostgreSQL adapter outbound
+              documentation: |
+                This path is for PostgreSQL adapter outbound. It contains the implementation of the repository pattern for PostgreSQL database.
+              flavor: gojet
+              path: adapter/outbound/pgsql
+              template: hexagonal.v1/adapter.outbound.pgsql

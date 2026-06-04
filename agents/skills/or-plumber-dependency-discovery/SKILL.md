@@ -1,3 +1,8 @@
+---
+name: or-plumber-dependency-discovery
+description: "Provides guidance on plumber's discovery CLI that auto-generates container struct fields, resolvers, and dependency wiring from a YAML config."
+---
+
 # Discovery
 
 Discovery automates plumber container wiring by scanning Go source code for constructor

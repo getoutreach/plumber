@@ -12,6 +12,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Const
+const (
+	// Yes indicates bool value true in markdown tables.
+	Yes = "yes"
+	// No indicates bool value false in markdown tables.
+	No = "no"
+)
+
 // mdFormatter implements the Formatter interface to render the Description in Markdown format.
 type mdFormatter struct{}
 
@@ -109,7 +117,11 @@ func writeMetadata(b *strings.Builder, meta MetadataDescription) {
 		}
 		fmt.Fprintf(b, "| Source | [%s](%s) @ `%s` |\n", repoName, meta.Source.Repository, ref)
 	}
-	fmt.Fprintf(b, "| Singular | %v |\n", meta.Singular)
+	singular := No
+	if meta.Singular {
+		singular = Yes
+	}
+	fmt.Fprintf(b, "| Singular | %s |\n", singular)
 	if meta.Handler != "" {
 		fmt.Fprintf(b, "| Handler | `%s` |\n", meta.Handler)
 	}
@@ -150,9 +162,9 @@ func writePositionalTable(b *strings.Builder, ps *PositionalSchema) {
 		b.WriteString("| # | Type | Description | Required | Details |\n")
 		b.WriteString("|---|------|-------------|----------|---------|\n")
 		for _, item := range ps.Items {
-			req := "no"
+			req := No
 			if item.Required {
-				req = "yes"
+				req = Yes
 			}
 			fmt.Fprintf(b, "| %s | %s | %s | %s | %s |\n",
 				item.Position, item.Type, escapeMDTable(item.Description), req, escapeMDTable(item.Details))
@@ -167,9 +179,9 @@ func writeNamedTable(b *strings.Builder, ns *NamedSchema) {
 		b.WriteString("| Name | Type | Description | Required | Details |\n")
 		b.WriteString("|------|------|-------------|----------|---------|\n")
 		for _, item := range ns.Properties {
-			req := "no"
+			req := No
 			if item.Required {
-				req = "yes"
+				req = Yes
 			}
 			fmt.Fprintf(b, "| %s | %s | %s | %s | %s |\n",
 				item.Name, item.Type, escapeMDTable(item.Description), req, escapeMDTable(item.Details))

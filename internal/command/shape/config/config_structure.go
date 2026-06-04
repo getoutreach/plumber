@@ -6,10 +6,11 @@ import "fmt"
 
 // PlumberStructureConfig represents the configuration for a structure in the shape command,
 type PlumberStructureConfig struct {
-	Name        string                `yaml:"name"`
-	Description string                `yaml:"description,omitempty"`
-	Path        string                `yaml:"path,omitempty"`
-	Paths       []StructurePathConfig `yaml:"paths,omitempty"`
+	Name          string                `yaml:"name"`
+	Title         string                `yaml:"title,omitempty"`
+	Documentation string                `yaml:"documentation,omitempty"`
+	Path          string                `yaml:"path,omitempty"`
+	Paths         []StructurePathConfig `yaml:"paths,omitempty"`
 }
 
 // StructureConfig represents the overall configuration for the shape command,
@@ -77,8 +78,11 @@ func ResolveStructureDefinitions(cfg StructureConfig, available []*StructureDefi
 // Fields from other override non-empty values; paths from other take
 // precedence when names conflict, otherwise they are appended.
 func (c *PlumberStructureConfig) MergeFrom(other PlumberStructureConfig) {
-	if other.Description != "" {
-		c.Description = other.Description
+	if other.Title != "" {
+		c.Title = other.Title
+	}
+	if other.Documentation != "" {
+		c.Documentation = other.Documentation
 	}
 	if other.Path != "" {
 		c.Path = other.Path
@@ -112,6 +116,7 @@ type StructurePathConfig struct {
 // PlumberStructurePathConfig represents the configuration for a structure path in the shape command,
 type PlumberStructurePathConfig struct {
 	Name               string   `yaml:"name"`
+	Title              string   `yaml:"title,omitempty"`
 	Description        string   `yaml:"description,omitempty"`
 	PackageDescription string   `yaml:"package_description,omitempty"`
 	Path               string   `yaml:"path,omitempty"`

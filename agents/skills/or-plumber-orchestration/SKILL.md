@@ -1,3 +1,8 @@
+---
+name: or-plumber-orchestration
+description: "Provides guidance on plumber task orchestration: starting, sequencing, and gracefully shutting down long-running services using Pipeline, Parallel, runners, and lifecycle options."
+---
+
 # Task Orchestration
 
 Plumber provides lifecycle-managed task orchestration for long-running services. Tasks are

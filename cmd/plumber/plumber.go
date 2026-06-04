@@ -86,8 +86,10 @@ func main() {
 			},
 		},
 		{
-			Name:   "shape",
-			Usage:  "Run shape command",
+			Name:  "shape",
+			Usage: "Run shape command",
+			Description: "The --config and --interactive flags apply to all subcommands and " +
+				"must be passed before the subcommand name (e.g. `plumber shape -c plumber.yaml describe structure`).",
 			Action: shape.RunCommand("shape", shape.Run),
 			Flags: []cli.Flag{
 				fc,
@@ -101,12 +103,6 @@ func main() {
 				{
 					Name: "target",
 					Flags: []cli.Flag{
-						fc,
-						&cli.BoolFlag{
-							Name:    "interactive",
-							Aliases: []string{"i"},
-							Usage:   "Enable interactive TUI reporter",
-						},
 						&cli.StringFlag{
 							Name:     "type",
 							Usage:    "FQN of the target type (single-type mode, requires --macro)",
@@ -131,16 +127,13 @@ func main() {
 				{
 					Name:        "structure",
 					Description: "Initiate project structure",
-					Flags: []cli.Flag{
-						fc,
-					},
-					Action: shape.RunCommand("structure", shape.RunStructure),
+					Flags:       []cli.Flag{},
+					Action:      shape.RunCommand("structure", shape.RunStructure),
 				},
 				{
 					Name:        "describe",
 					Description: "Describe all registered macros, options, and handlers",
 					Flags: []cli.Flag{
-						fc,
 						&cli.StringFlag{
 							Name:    "format",
 							Aliases: []string{"f"},
@@ -154,7 +147,6 @@ func main() {
 							Name:        "functions",
 							Description: "Describe available template functions by category",
 							Flags: []cli.Flag{
-								fc,
 								&cli.StringFlag{
 									Name:    "format",
 									Aliases: []string{"f"},
@@ -163,6 +155,54 @@ func main() {
 								},
 							},
 							Action: shape.RunCommand("describe-functions", shape.RunDescribeFunctions),
+						},
+						{
+							Name:        "structure",
+							Description: "Describe registered structures and their paths",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "format",
+									Aliases: []string{"f"},
+									Usage:   "Output format: md, json, yaml",
+									Value:   "md",
+								},
+							},
+							Action: shape.RunCommand("describe-structure", shape.RunDescribeStructures),
+						},
+					},
+				},
+				{
+					Name:        "skills",
+					Description: "Manage plumber skills (agent-facing documentation bundles)",
+					Subcommands: []*cli.Command{
+						{
+							Name:      "install",
+							Usage:     "Install embedded plumber skills onto a coding-agent platform",
+							ArgsUsage: "<platform> [skill...]",
+							Description: "Platform must be one of: agents, claude, copilot, autodetect. " +
+								"When skill names are provided only those skills are installed; " +
+								"otherwise every embedded skill is installed.",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:  "dest",
+									Usage: "Destination root directory",
+									Value: ".",
+								},
+								&cli.BoolFlag{
+									Name:  "force",
+									Usage: "Overwrite existing destination files",
+								},
+								&cli.BoolFlag{
+									Name:  "dry-run",
+									Usage: "Print install actions without writing files",
+								},
+							},
+							Action: shape.RunCommand("skills-install", shape.RunSkillsInstall),
+						},
+						{
+							Name:   "list",
+							Usage:  "List embedded plumber skills",
+							Action: shape.RunCommand("skills-list", shape.RunSkillsList),
 						},
 					},
 				},

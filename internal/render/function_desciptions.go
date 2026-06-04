@@ -1,6 +1,7 @@
 // Copyright 2024 Outreach Corporation. All Rights Reserved.
 
 // Description: Function descriptions and builders for template functions.
+// nolint: lll //Why: Long lines are used for readability in documentation strings.
 package render
 
 import (

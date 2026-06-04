@@ -346,39 +346,6 @@ func TestBuildFunctionsWithSignatures(t *testing.T) {
 	}
 }
 
-// TestBuildFunctionsSignaturePanicRecovers verifies that a constructor
-// panicking on a zero context does not abort BuildFunctions and is reported
-// with empty params/results.
-func TestBuildFunctionsSignaturePanicRecovers(t *testing.T) {
-	type ctx struct{ name string }
-	descriptors := contract.FunctionDescriptors[*ctx]{
-		{
-			Description: contract.FunctionDescription{Name: "panicker"},
-			Func: func(c *ctx) any {
-				// Dereferencing the zero (nil) *ctx panics.
-				_ = c.name
-				return func() {}
-			},
-		},
-	}
-
-	desc := BuildFunctions([]FunctionSectionInput{{
-		Title:   "Panics",
-		Sources: []contract.FunctionDescriptions{descriptors},
-	}})
-
-	if len(desc.Sections[0].Functions) != 1 {
-		t.Fatalf("expected 1 function, got %d", len(desc.Sections[0].Functions))
-	}
-	fn := desc.Sections[0].Functions[0]
-	if fn.Name != "panicker" {
-		t.Errorf("expected panicker, got %q", fn.Name)
-	}
-	if len(fn.Params) != 0 || len(fn.Results) != 0 {
-		t.Errorf("expected empty params/results after recover, got params=%v results=%v", fn.Params, fn.Results)
-	}
-}
-
 // TestFunctionsMDFormatterParamsAndResults verifies that the markdown
 // formatter renders the new Parameters and Returns sections with FQN-formatted
 // types and the variadic prefix.

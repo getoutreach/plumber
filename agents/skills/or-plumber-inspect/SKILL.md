@@ -1,3 +1,8 @@
+---
+name: or-plumber-inspect
+description: "Provides guidance on plumber's inspect command for emitting structured JSON/YAML metadata about Go packages, types, functions, and annotations."
+---
+
 # Inspect
 
 The `inspect` command scans Go packages and emits structured metadata about packages,

@@ -99,11 +99,6 @@ func (fds FunctionDescriptors[T]) Signatures() []FunctionSignature {
 // guarding against panics during closure construction.
 func signatureOf[T any](fd FunctionDescriptor[T], zero T) (sig FunctionSignature) {
 	sig.Description = fd.Description
-	defer func() {
-		// If the constructor panics on a zero context, fall back to an
-		// empty signature; the description metadata is still emitted.
-		_ = recover()
-	}()
 	fn := fd.Func(zero)
 	if fn == nil {
 		return sig

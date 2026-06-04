@@ -22,11 +22,11 @@ type FunctionsFormatter interface {
 // or an error if no formatter with that name exists.
 func FunctionsFormat(name string) (FunctionsFormatter, error) {
 	switch name {
-	case "json":
+	case FormatJSON:
 		return jsonFunctionsFormatter{}, nil
-	case "yaml":
+	case FormatYAML:
 		return yamlFunctionsFormatter{}, nil
-	case "md":
+	case FormatMD:
 		return mdFunctionsFormatter{}, nil
 	default:
 		return nil, fmt.Errorf("unknown format %q; available: json, yaml, md", name)

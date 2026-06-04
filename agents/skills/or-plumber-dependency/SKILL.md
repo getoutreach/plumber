@@ -1,3 +1,8 @@
+---
+name: or-plumber-dependency
+description: "Provides guidance on plumber's type-safe dependency injection: declaring service dependencies with D[T] and R[T], structuring containers, and writing resolvers."
+---
+
 # Dependency Injection
 
 Plumber provides a declarative, type-safe dependency management system for Go. Dependencies
