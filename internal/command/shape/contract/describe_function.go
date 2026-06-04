@@ -99,6 +99,13 @@ func (fds FunctionDescriptors[T]) Signatures() []FunctionSignature {
 // guarding against panics during closure construction.
 func signatureOf[T any](fd FunctionDescriptor[T], zero T) (sig FunctionSignature) {
 	sig.Description = fd.Description
+	defer func() {
+		if r := recover(); r != nil {
+			sig.Variadic = false
+			sig.ParamTypes = nil
+			sig.ResultTypes = nil
+		}
+	}()
 	fn := fd.Func(zero)
 	if fn == nil {
 		return sig

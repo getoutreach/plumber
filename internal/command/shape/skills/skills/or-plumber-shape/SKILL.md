@@ -1,43 +1,59 @@
 ---
 name: or-plumber-shape
-description: "Provides guidance on plumber's shape command for annotation-driven code generation: deriving filtered structs, rendering Go templates, and populating slices from pattern-matched entities."
+description: "Overview of plumber's shape command for annotation-driven code generation — entry-point annotations (derive, shape, query), package-level `plumber:context`, modes, configuration, and pointers to the per-feature skills (derive, shape, query, annotations, functions, structure)."
 ---
 
 # Shape — Annotation-Driven Code Generation
 
-The `shape` command scans Go packages for `plumber:*` comment annotations and generates or
-transforms code — deriving filtered structs, rendering Go templates, or populating slices
-from pattern-matched entities.
+The `shape` command scans Go packages for `plumber:*` comment
+annotations and runs the matching transformations — deriving filtered
+structs, rendering Go templates, populating slices from pattern-matched
+entities, or merging generated content into existing files.
+
+This skill is the **entry-point overview**. Each entry-point annotation
+has its own deep-dive skill:
+
+| Skill | Covers |
+|---|---|
+| `or-plumber-shape-derive` | `plumber:derive` — projecting a filtered subset struct, with `generated` vs `inplace` modes, idempotent merge mechanics, filters, field wrappers. |
+| `or-plumber-shape-shape` | `plumber:shape` — template-driven rendering for structs and interfaces, scopes, multi-template output. |
+| `or-plumber-shape-query` | `plumber:query` — populating slice variables with regex-matched functions/methods/fields. |
+| `or-plumber-shape-annotations` | Project-resolved catalog of registered options (`plumber:<name>`) and macros (`@<name>`) with schemas. |
+| `or-plumber-shape-functions` | Template helper functions available during rendering and macro/mixin expansion. |
+| `or-plumber-structure` | Resolved structure paths and the `structure:<name>` references emitted by options/macros. |
 
 ## When to use
 
-- Deriving a subset struct from an existing struct (e.g., filter models, API DTOs).
-- Generating boilerplate code from templates based on type metadata.
-- Populating slices with functions/fields matching a regex pattern (`plumber:query`).
-- Merging derived fields into existing structs (inplace mode).
+- You are about to add or modify a `plumber:*` annotation in source and
+  need to know which entry point fits the task.
+- You need the cross-cutting CLI surface (`shape`, `shape target`,
+  `shape describe ...`) and the configuration shape.
+- You are deciding between annotating the type directly versus using a
+  package-level `plumber:context` group.
 
 ## CLI
 
 ### Running using mise (preferred when project is managed by mise)
 
 ```bash
-mise exec -- plumber shape [--config plumber.yaml] [file[:line] ...]
+mise exec -- plumber shape [--config plumber.shape.yaml] [file[:line] ...]
 ```
 
 ### Running using remote path
 
 ```bash
-go run github.com/getoutreach/outreach/plumber@latest/cmd/plumber shape [--config plumber.yaml] [file[:line] ...]
+go run github.com/getoutreach/outreach/plumber@latest/cmd/plumber \
+  shape [--config plumber.shape.yaml] [file[:line] ...]
 ```
 
-Positional arguments are optional file paths with optional line numbers for filtering
-transformations. When omitted, all transformations from `workingDirs` (or `./...` by
-default) are processed.
+Positional arguments are optional file paths with optional line numbers
+for filtering transformations. When omitted, all transformations from
+`workingDirs` (or `./...` by default) are processed.
 
 | Flag | Alias | Default | Description |
 |---|---|---|---|
-| `--config` | `-c` | — | Path to `plumber.shape.yaml` (optional) |
-| `--interactive` | `-i` | `false` | Enable interactive TUI reporter |
+| `--config` | `-c` | — | Path to `plumber.shape.yaml`. Lives on the `shape` command — must come **before** any subcommand. |
+| `--interactive` | `-i` | `false` | Enable interactive TUI reporter. |
 
 ### File targeting
 
@@ -56,19 +72,18 @@ plumber shape ./pkg/a.go:15 ./pkg/b.go
 
 | Line points to | Behaviour |
 |---|---|
-| An entry-point annotation (`plumber:derive`, `plumber:shape`, `plumber:render`) | Only that specific transformation runs |
-| A modifier annotation (`plumber:template`, `plumber:filter`, etc.) | The nearest entry-point annotation **above** is selected |
-| The type declaration itself or a non-annotation doc line | All transformations for that node run |
+| An entry-point annotation (`plumber:derive`, `plumber:shape`, `plumber:query`, `plumber:render`) | Only that specific transformation runs |
+| A modifier annotation (`plumber:template`, `plumber:filter`, …) | The nearest entry-point annotation **above** is selected |
+| The type / declaration itself or a non-annotation doc line | All transformations on that node run |
 | A line outside any annotated node | Error |
 
-Standard Go package patterns are now configured via the `workingDirs` property in config
-rather than passed as CLI arguments.
+Standard Go package patterns are configured via the `workingDirs`
+property in config rather than passed as CLI arguments.
 
 ### Single-type mode
 
-When `--type` and `--macro` are both set, the command skips annotation scanning and
-processes only the specified type with the named macro. The macro must exist in config.
-These flags are available on the `shape target` subcommand.
+When `--type` and `--macro` are both set, the command skips annotation
+scanning and processes only the named type with the named macro:
 
 ```bash
 plumber shape target \
@@ -79,145 +94,161 @@ plumber shape target \
   --macro-named-arg mode=inplace
 ```
 
-The type can be a full FQN (`"github.com/pkg".Type`) or an unqualified name (`Type`).
+The macro must exist in `plumber.shape.macros` (see
+`or-plumber-shape-annotations`). The type accepts a full FQN
+(`"github.com/pkg".Type`) or an unqualified name (`Type`).
 
-## Annotations
+## Entry-point annotations at a glance
 
-Annotations are written in Go doc-comments:
+Each annotation below has a dedicated skill. Read this section to pick
+the right one; read the linked skill for the full reference.
+
+### `plumber:derive` — filtered subset structs
+
+Mechanically derives a new struct containing a **subset of the source
+struct's fields**, optionally wrapped, renamed, or merged into an
+existing type via `plumber:mode inplace`. Accepts struct types only.
 
 ```go
-// plumber:<option> [arg1 arg2 ...]
+// plumber:derive ModelFilter
+// plumber:filter annotation.has is:filtrable
+// plumber:output {{ filename_suffixed "filter" }}
+type Model struct { ... }
 ```
 
-### Entry-point annotations
+Deep-dive — including the inplace merge semantics, filters, field
+wrappers, and renaming — in the `or-plumber-shape-derive` skill.
 
-These start a new transformation block:
+### `plumber:shape` — template-driven rendering
 
-| Annotation | Description |
+Hands the annotated struct **or interface** to one or more Go
+`text/template`s and writes the rendered output. Use this when codegen
+is fully programmable (converters, registries, gRPC stubs, …) or when
+you need interface metadata that `plumber:derive` cannot provide.
+
+```go
+// plumber:shape Converter
+// plumber:template converter
+// plumber:output {{ filename_suffixed "converter" }}
+type OrderModel struct { ... }
+```
+
+Deep-dive — including templates, scopes, multi-template output, and
+notifications — in the `or-plumber-shape-shape` skill.
+
+### `plumber:query` — slice population from regex matches
+
+Populates an annotated `var ... = []T{}` slice with entities (functions,
+methods, fields) matching a regex pattern within a configurable scope.
+Rewrites the slice literal in place, idempotently.
+
+```go
+// plumber:query "^Init.*" scope="."
+var InitFunctions = []func(){}
+```
+
+Deep-dive — including scope syntax, type-scoped queries, and external
+packages — in the `or-plumber-shape-query` skill.
+
+## Modifier annotations
+
+`plumber:*` annotations placed alongside an entry-point refine its
+behaviour (`plumber:template`, `plumber:filter`, `plumber:mode`,
+`plumber:scope`, `plumber:depends_on`, `plumber:notify`, …). The full
+list is **project-specific**: it is composed of plumber's defaults plus
+options declared via `plumber.shape.options` and `includes`.
+
+Use the **`or-plumber-shape-annotations`** skill to inspect the
+catalog (option names, YAML schemas, registered macros). Do not rely on
+memory — registered annotations vary by project.
+
+## Detached annotations via `plumber:context`
+
+By default, an entry-point annotation block lives on the source type's
+doc-comment. You can also declare it from **any free-floating comment
+group** in any `.go` file of the package — the package doc-comment, a
+detached block between two declarations, or a comment group above an
+unrelated function — by pairing it with `plumber:context`. The
+annotation block is applied to the type referenced by `plumber:context`,
+leaving the target type's own doc-comment untouched.
+
+```go
+package contract
+
+// some unrelated declaration above ...
+
+// plumber:context "github.com/example/contract".Worker
+// plumber:derive WorkerFilterBlended
+// plumber:mode inplace
+
+// plumber:context "github.com/example/contract".Worker
+// plumber:shape WorkerStub
+// plumber:template worker_stub
+// plumber:output {{ filename_suffixed "stub" }}
+
+// NewWorker constructs a Worker.
+func NewWorker(...) *Worker { ... }
+```
+
+Plumber scans every detached comment group in the package — only groups
+that are **not attached to a declaration's doc-comment** are eligible.
+Place the block on a blank line above or below the surrounding code so
+Go's parser treats it as free-floating.
+
+`plumber:context` supports two forms:
+
+| Form | Effect |
 |---|---|
-| `plumber:derive` | Derive a new struct with a filtered subset of fields. Struct types only. |
-| `plumber:shape` | Shape a type using a Go template. Works on structs and interfaces. |
+| `plumber:context "pkg/path".Type` | **Single-type** — the annotation block applies to one specific type. |
+| `plumber:context pkg/path matcher=<name>` | **Package + matcher** — the block applies to every type in the package matched by the named matcher (see `plumber.shape.matchers` in config). |
 
-### Modifier annotations
+Use `plumber:context` when:
 
-These refine the active transformation:
+- The target type lives in a third-party / generated file you cannot
+  edit.
+- The model type's doc-comment must stay free of codegen directives.
+- You want one comment group to fan out across many types in a package
+  via a matcher.
 
-| Annotation | Args | Description |
-|---|---|---|
-| `plumber:name` | `<Name>` | Name of the generated type/function. |
-| `plumber:output` | `<file>` | Output filename. Rendered as a Go `text/template` exposing `.Filename`, `.Name`, `.Ext`, and the `suffixed` helper. |
-| `plumber:mode` | `generated` \| `inplace` | Generation mode. |
-| `plumber:template` | `<name>` | Go template to apply. Can be repeated. |
-| `plumber:mixin` | `<name>` | Expand a named mixin (modifier annotation bundle from config). |
-| `plumber:filter` | `<fn> [arg...]` | Field filter predicate. E.g., `annotation.has is:filtrable`. |
-| `plumber:ignore` | `<FieldName>` | Exclude a specific field. |
-| `plumber:field_wrapper` | `<name>` | Apply a type wrapper to each included field. |
-| `plumber:receiver` | `<Type>` | Override receiver type for generated methods. |
-| `plumber:comment` | `<text>` | Append comment to the generated declaration. |
-| `plumber:context` | `<pkg/Type>` | Package-level: point transformation at a specific model type. |
-| `plumber:scope` | `"<Name>" type="<FQN>" \| value="<VALUE>"` | Inject a resolved type into template scope as `.Scope.Custom.<Name>`. |
-| `plumber:depends_on` | `<FQN>` | Silently skip the transformation when the FQN cannot be resolved in the inspected packages. May appear multiple times — all dependencies must resolve. |
-| `plumber:notify` | `<handler> [key=value ...]` | Trigger a named handler at the end of the shape run. Named arguments are aggregated across all notifications targeting the same handler. |
+Each `plumber:context` block is parsed independently — multiple
+context groups can coexist in the same file (or across files in the
+same package).
+
+The schema of `plumber:context` (positional argument, `matcher=` named
+arg) is documented in `or-plumber-shape-annotations`.
 
 ## Modes
 
-### `generated` (default)
+`plumber:mode` controls how output is written for `plumber:derive` and
+`plumber:shape`. Both annotations share the same modes:
 
-Creates a new Go file with a `// Generated file...` header. Preserves `plumber::Block(...)`
-comment fences for hand-written extensions:
-
-```go
-// plumber:derive DerivedModel
-// plumber:filter annotation.has is:filtrable
-// plumber:output generated.go
-type Model struct {
-    // Name
-    //
-    // is:filtrable
-    Name string
-
-    Concurrency int  // excluded — not filtrable
-}
-```
-
-Produces:
-
-```go
-// Generated file by plumber shape function. DON'T edit manually.
-type DerivedModel struct {
-    Name string
-    // <<plumber::Block(extra-DerivedModel)>>
-    // <</plumber::Block>>
-}
-```
-
-**Do not edit lines outside `plumber::Block` fences** — they will be overwritten on
-re-generation.
-
-### `inplace`
-
-Merges derived fields into an existing struct. Only adds fields that are not already
-present (idempotent). Imports are managed automatically.
-
-If the target type does not yet exist in the package, the generated declaration is
-appended to the file named by `plumber:output` (defaults to `generated.go`). The file
-is created on demand, so inplace mode is safe to use for both initial generation and
-subsequent merges.
-
-```go
-// plumber:derive
-// plumber:mode  inplace
-// plumber:name  ModelBlended
-type Model struct {
-    Name   string
-    Closer OpenCloser
-}
-```
-
-#### Inplace merge mechanics
-
-The merge is idempotent — running twice produces the same result. It adds what is missing
-without removing anything the user has written.
-
-**Struct fields:** Matched by field name. Missing fields appended; existing fields
-preserved as-is (type, tags, comments).
-
-**Functions/methods:** Matched by name. Missing functions are added entirely. Existing
-functions with empty bodies receive all template statements. Existing functions with
-non-empty bodies require template statements as an **ordered subsequence** — if a template
-statement is missing from the existing body, the merge fails (removed statements are
-treated as intentional user changes). Parameters are merged positionally (template params
-must be a prefix; missing ones are appended).
-
-**Variables:** Matched by name. Added if missing, skipped if exists.
-
-**Statement matching (shallow key):**
-
-| Statement type | Match key |
+| Mode | Behaviour |
 |---|---|
-| Assignment | LHS expression(s) |
-| Expression (call) | Call target function name |
-| Return | Keyword (always matches) |
-| Declaration | Variable name(s) |
-| Switch | Tag expression |
-| If / For / Range | Same Go type |
+| `generated` (default) | Writes a new file with a `// Generated file...` header. Re-running fully overwrites everything outside `plumber::Block(...)` fences. |
+| `inplace` | Idempotently merges generated declarations into an existing file. Adds missing fields/methods/vars; preserves existing ones. Conservative — never deletes user content. |
 
-**Deep merge of matched statements:**
-- **Call arguments:** template args must be present; extra existing args preserved; missing appended.
-- **Composite literals:** template key-value entries must be present; matched by key name; missing appended. Recursive at any AST depth.
-- **Switch cases:** cases matched by expression values; missing template cases inserted after last matched preceding case; extra existing cases preserved; matched case bodies deep-merged.
+Inplace merge mechanics (matching keys, deep merge of call args /
+composite literals / switch cases) are documented in the
+`or-plumber-shape-derive` skill — they apply identically to
+`plumber:shape`.
+
+**Do not edit lines outside `plumber::Block` fences** in generated
+files — they will be overwritten on re-generation.
 
 ## Output filename templates
 
-`plumber:output` is rendered as a Go `text/template`. Plain values without `{{` are
-returned verbatim.
+`plumber:output` is rendered as a Go `text/template`. Plain values
+without `{{` are returned verbatim.
 
-| Expression                | Expands to |
-|---------------------------|---|
-| `{{ .Filename }}`         | Full base filename, e.g., `model.go` |
-| `{{ .Name }}`             | Filename without extension, e.g., `model` |
-| `{{ .Ext }}`              | Extension including dot, e.g., `.go` |
-| `{{ filename_suffixed "str" }}`    | `<.Name>_str<.Ext>`, e.g., `{{ filename_suffixed "filter" }}` -> `model_filter.go` |
+| Expression | Expands to |
+|---|---|
+| `{{ .Filename }}` | Full base filename, e.g. `model.go` |
+| `{{ .Name }}` | Filename without extension, e.g. `model` |
+| `{{ .Ext }}` | Extension including dot, e.g. `.go` |
+| `{{ filename_suffixed "str" }}` | `<.Name>_str<.Ext>` |
+
+Always use `{{ filename_suffixed "..." }}` (or another distinct path)
+for `generated` mode — otherwise the source file is overwritten.
 
 ## Configuration (`plumber.shape.yaml`)
 
@@ -226,7 +257,7 @@ includes:
   - path: plumber.d/*.yaml
 
 plumber.shape:
-  workingDirs:          # directories to scan for Go source files (default: ["./..."])
+  workingDirs:          # directories to scan (default: ["./..."])
     - ./internal/...
     - ./pkg/...
 
@@ -283,12 +314,15 @@ plumber.shape:
 
 ### Config hierarchy
 
-`includes` expands globs and merges by appending: sources, templates, macros, mixins,
-wrappers, handlers. Git sources can declare their own `includes` for co-located config.
+`includes` expands globs and merges by appending: sources, templates,
+macros, mixins, wrappers, handlers. Git sources can declare their own
+`includes` for co-located config.
 
-Template sources can also be defined at root level under `plumber.templates:` — these are
-shared across all commands (shape, discovery). Shape-specific sources under `plumber.shape.sources`
-and `plumber.shape.templates.content` are automatically promoted to the root level at load time.
+Template sources can also be defined at root level under
+`plumber.templates:` — those are shared across all commands. Shape-only
+sources under `plumber.shape.sources` and
+`plumber.shape.templates.content` are promoted to the root level at
+load time.
 
 ## Macros vs mixins
 
@@ -301,24 +335,23 @@ and `plumber.shape.templates.content` are automatically promoted to the root lev
 
 ### Macros
 
-Referenced with `@<name>` in source comments. Expand **before** transformers are built,
-so they can inject any annotation including `plumber:derive` and `plumber:shape`.
+Referenced with `@<name>` in source comments. Expand **before**
+transformers are built, so they can inject any annotation including
+`plumber:derive` and `plumber:shape`.
 
-Annotations produced by macros (and mixins) support Go `text/template` with
-`.Source.Args`, `.Source.NamedArgs`, `.Package.Name`, `.Package.Path`, and
-`.Type` (the AST node being processed — typically a `*model.Type`, exposing
-methods such as `.Type.Name` and `.Type.GetPosition.Filename`). Templates are
-evaluated lazily in the transformer stage on a per-annotation basis: only
-annotations carrying an `ImpliedBy` reference (i.e. those produced by a macro
-or mixin) are template-expanded, which means the same template context works
-uniformly for both macros and mixins.
+Annotations produced by macros and mixins support Go `text/template`
+with `.Source.Args`, `.Source.NamedArgs`, `.Package.Name`,
+`.Package.Path`, and `.Type`. Templates are evaluated lazily per
+annotation in the transformer stage; only annotations carrying an
+`ImpliedBy` reference (i.e. those produced by a macro or mixin) are
+template-expanded, so the same template context works uniformly for
+both.
 
 ```go
 // @tderive Widget file=generated.go
 type Order struct { ... }
 ```
 
-With macro config:
 ```yaml
 - plumber.macro:
     name: "@tderive"
@@ -330,8 +363,8 @@ With macro config:
 
 ### Mixins
 
-Referenced with `plumber:mixin <name>`. Expand **during** transformer building. Can only
-inject modifier annotations.
+Referenced with `plumber:mixin <name>`. Expand **during** transformer
+building. Can only inject modifier annotations.
 
 ```go
 // plumber:derive
@@ -339,61 +372,14 @@ inject modifier annotations.
 type Worker struct { ... }
 ```
 
-## Queries
-
-The `plumber:query` annotation populates a slice variable with entities matching a regex
-pattern. Queries run after template rendering and modify the source file in-place.
-
-```
-plumber:query "<regex>" scope="<scope>" [receiver="<var>"]
-```
-
-### Scope values
-
-| Scope | Searches |
-|---|---|
-| `"."` | Current package |
-| `".TypeName"` | Fields/methods of a type in current package |
-| `"./relpath"` | Relative package |
-| `"github.com/pkg"` | External package |
-| `"github.com/pkg.TypeName"` | Type in external package |
-
-### Package-level variable
-
-```go
-// plumber:query "^Init.*" scope="."
-var InitFunctions = []func(){}
-```
-
-Populates `InitFunctions` with all exported `func()` matching `^Init.*` in the current
-package.
-
-### Function-body variable
-
-```go
-func Setup() {
-    // plumber:query "^Init.*" scope="."
-    var initFuncs = []func(){}
-    for _, f := range initFuncs { f() }
-}
-```
-
-Only explicit `var` declarations with composite literals are supported (not `:=`).
-
-### Type-scoped query
-
-```go
-var r Registry
-// plumber:query "^Get.*" scope=".Registry" receiver="r"
-var Getters = []func() string{}
-```
-
-Populates with `r.GetAlpha`, `r.GetBeta`, etc.
+The catalog of registered macros and mixins is project-specific — list
+it via `or-plumber-shape-annotations`.
 
 ## Notifications and handlers
 
-`plumber:notify` triggers a named handler command at the end of the shape run. This is
-useful for running post-generation tools (e.g., `goverter`, `protoc`) on generated output.
+`plumber:notify` triggers a named handler command at the end of the
+shape run. This is useful for running post-generation tools (e.g.
+`goverter`, `protoc`) on generated output.
 
 ```go
 // plumber:shape
@@ -402,10 +388,9 @@ useful for running post-generation tools (e.g., `goverter`, `protoc`) on generat
 type Converter struct { ... }
 ```
 
-The first positional argument is the handler name. Named arguments are aggregated across
-all `plumber:notify` annotations targeting the same handler.
-
-### Handler config
+The first positional argument is the handler name. Named arguments are
+aggregated across all `plumber:notify` annotations targeting the same
+handler.
 
 ```yaml
 plumber.shape:
@@ -415,14 +400,27 @@ plumber.shape:
         command: "goverter gen {{ .Source.NamedArgs.path | join \" \" }}"
 ```
 
-The command is a Go `text/template` with access to `.Source.NamedArgs` (`map[string][]string`).
-Sprig and plumber generic functions are available. Commands execute via `sh -c`; failures
-cause the shape command to fail.
+The command is a Go `text/template` with `.Source.NamedArgs`
+(`map[string][]string`). Sprig and plumber generic helpers are
+available. Commands execute via `sh -c`; failures fail the shape run.
 
 ## Key rules for agents
 
-- **Do not edit outside `plumber::Block` fences** in generated files — changes will be lost.
-- **Use `{{ filename_suffixed "..." }}` for output filenames** to avoid overwriting source files.
-- **Macros for entry-point injection**, mixins for modifier bundles — do not confuse them.
-- **Queries require explicit `var` with composite literal** — short declarations (`:=`) are not supported.
-- **Re-run shape after adding/modifying annotations** to regenerate output.
+- **Pick the right entry-point annotation:** `plumber:derive` for
+  filtered struct projections, `plumber:shape` for template-driven
+  rendering, `plumber:query` for slice population. Each has a dedicated
+  skill — load it before writing annotations.
+- **Discover modifier annotations and macros via
+  `or-plumber-shape-annotations`** — never rely on memory; the catalog
+  is project-specific.
+- **Use `plumber:context` in a free-floating comment group** when
+  annotations must live outside the target type's doc-comment, or when
+  applying a bundle to many types via a configured matcher.
+- **`plumber::Block(...)` fences** mark hand-written islands in
+  generated files; everything outside is rewritten.
+- **Use `{{ filename_suffixed "..." }}`** for `plumber:output` in
+  `generated` mode to avoid overwriting source files.
+- **Macros for entry-point injection**, mixins for modifier bundles —
+  do not confuse them.
+- **Re-run shape after adding or modifying annotations** to regenerate
+  or refresh in-place output.
