@@ -12,6 +12,7 @@ package handler
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"sync"
@@ -67,7 +68,7 @@ type handlerTemplateData struct {
 // handlerSourceData exposes the aggregated named arguments from all notifications
 // targeting a handler, with each key mapping to a slice of all collected values.
 type handlerSourceData struct {
-	NamedArgs map[string][]string
+	NamedArgs map[string]string
 }
 
 // Execute runs all handlers that received notifications. For each configured handler
@@ -85,6 +86,7 @@ func (r *Registry) Execute(ctx *contract.ShapingContext) error {
 	// Group notifications by handler name
 	byHandler := make(map[string][]Notification)
 	for _, n := range r.notifications {
+		fmt.Println("Received:", n.Handler)
 		byHandler[n.Handler] = append(byHandler[n.Handler], n)
 	}
 
@@ -95,50 +97,58 @@ func (r *Registry) Execute(ctx *contract.ShapingContext) error {
 		h := hc.PlumberHandler
 		notifications, ok := byHandler[h.Name]
 		if !ok {
+			// no notifications for this handler, skip
 			continue
 		}
 
-		// Aggregate named args: map[string][]string (all values, no dedup)
-		aggregated := make(map[string][]string)
+		seen := make(map[string]struct{})
+
 		for _, n := range notifications {
-			for k, v := range n.NamedArgs {
-				aggregated[k] = append(aggregated[k], v)
+			b, err := json.Marshal(n.NamedArgs)
+			if err != nil {
+				return fmt.Errorf("failed to marshal named args for handler %q: %w", h.Name, err)
 			}
-		}
 
-		// Expand command template
-		expanded, err := expandCommand(h.Command, aggregated)
-		if err != nil {
-			ctx.HandlerError(h.Name, h.Command, fmt.Errorf("failed to expand handler command template: %w", err))
-			return fmt.Errorf("handler %q: failed to expand command template: %w", h.Name, err)
-		}
-
-		ctx.HandlerExecuting(h.Name, expanded)
-
-		// Execute via sh -c
-		cmd := exec.CommandContext(ctx, "sh", "-c", expanded)
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-
-		if err := cmd.Run(); err != nil {
-			output := stderr.String()
-			if output == "" {
-				output = stdout.String()
+			// Skip duplicate notifications with the same named args
+			if _, exists := seen[string(b)]; exists {
+				continue
 			}
-			execErr := fmt.Errorf("handler %q: command failed: %w\noutput: %s", h.Name, err, output)
-			ctx.HandlerError(h.Name, expanded, execErr)
-			return execErr
-		}
+			seen[string(b)] = struct{}{}
 
-		ctx.HandlerCompleted(h.Name, expanded)
+			// Expand command template
+			expanded, err := expandCommand(h.Command, n.NamedArgs)
+			if err != nil {
+				ctx.HandlerError(h.Name, h.Command, fmt.Errorf("failed to expand handler command template: %w", err))
+				return fmt.Errorf("handler %q: failed to expand command template: %w", h.Name, err)
+			}
+
+			ctx.HandlerExecuting(h.Name, expanded, n.NamedArgs)
+
+			// Execute via sh -c
+			cmd := exec.CommandContext(ctx, "sh", "-c", expanded)
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+
+			if err := cmd.Run(); err != nil {
+				output := stderr.String()
+				if output == "" {
+					output = stdout.String()
+				}
+				execErr := fmt.Errorf("handler %q: command failed: %w\noutput: %s", h.Name, err, output)
+				ctx.HandlerError(h.Name, expanded, execErr)
+				return execErr
+			}
+
+			ctx.HandlerCompleted(h.Name, expanded)
+		}
 	}
 
 	return nil
 }
 
 // expandCommand expands the handler command template with the aggregated named arguments.
-func expandCommand(commandTemplate string, namedArgs map[string][]string) (string, error) {
+func expandCommand(commandTemplate string, namedArgs map[string]string) (string, error) {
 	data := handlerTemplateData{
 		Source: &handlerSourceData{
 			NamedArgs: namedArgs,

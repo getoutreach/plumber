@@ -191,7 +191,13 @@ func (t *BasicTransformer) Expand(
 	node model.Node,
 	scope baserender.Scope,
 	singularNames map[string]bool) error {
-	annotations, err := expand.TransformerAnnotations(ctx.StructurePathResolver, node, t.Annotations, scope, singularNames)
+
+	dir := path.Dir(t.Position.Filename)
+	if dir == "" || dir == "." {
+		dir = node.GetPackage().Dir
+	}
+
+	annotations, err := expand.TransformerAnnotations(ctx.StructurePathResolver, node, dir, t.Annotations, scope, singularNames)
 	if err != nil {
 		return err
 	}
@@ -201,17 +207,13 @@ func (t *BasicTransformer) Expand(
 	if output := t.Annotations.Find(contract.OptionOutput); output != nil {
 		value := output.Value()
 		if !strings.HasPrefix(value, "/") {
-			dir := path.Dir(t.Position.Filename)
-			if dir == "" || dir == "." {
-				dir = node.GetPackage().Dir
-			}
 			value = strings.TrimPrefix(value, "./")
 			value = path.Join(dir, value)
 			output.SetValue(path.Clean(value))
 		}
 	}
 
-	dir := path.Dir(t.Output())
+	dir = path.Dir(t.Output())
 
 	pkgPath, err := ctx.DeriveModulePath(dir)
 	if err != nil {

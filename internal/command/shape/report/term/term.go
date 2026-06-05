@@ -85,7 +85,7 @@ func (r *TerminalReporter) Notify(event contract.ReporterEvent) {
 			fmt.Printf("  from transformer: %s\n", event.Transformer.GetName())
 		}
 	case contract.EventHandlerExecuting:
-		println("Executing handler:", event.Message, "-", event.Path)
+		println("Executing handler:", event.Message, "-", event.Path, "with args:", fmt.Sprintf("%v", event.Args))
 	case contract.EventHandlerCompleted:
 		println("Handler completed:", event.Message)
 	case contract.EventHandlerError:

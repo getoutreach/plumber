@@ -125,12 +125,13 @@ func (c *ShapingContext) HandlerTriggered(handlerName string, transformer Transf
 	}
 }
 
-func (c *ShapingContext) HandlerExecuting(handlerName, command string) {
+func (c *ShapingContext) HandlerExecuting(handlerName, command string, args map[string]string) {
 	if c.Reporter != nil {
 		c.Reporter.Notify(ReporterEvent{
 			Kind:    EventHandlerExecuting,
 			Message: handlerName,
 			Path:    command,
+			Args:    args,
 		})
 	}
 }

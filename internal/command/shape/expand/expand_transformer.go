@@ -32,6 +32,7 @@ import (
 func TransformerAnnotations(
 	structurePathResolver contract.StructurePathResolver,
 	node model.Node,
+	dir string,
 	annotations model.Annotations,
 	scope render.Scope,
 	singularNames map[string]bool,
@@ -57,6 +58,7 @@ func TransformerAnnotations(
 			node,
 			pkg,
 			ann,
+			dir,
 			annotations.FindOr(contract.OptionName).Value(),
 			annotations.FindOr(contract.OptionOutput, "generated.go").Value(),
 		)
@@ -78,8 +80,14 @@ func expandAnnotationValue(
 	node model.Node,
 	pkg *model.Package,
 	ann model.Annotation,
-	name, output string,
+	dir, name, output string,
 ) (model.Annotation, error) {
+	filename := node.GetPosition().Filename
+
+	if dir != "" && dir != "." {
+		filename = path.Join(dir, path.Base(filename))
+	}
+
 	var n any = node
 	if tn, ok := node.(*model.Type); ok {
 		n = tn
@@ -88,7 +96,8 @@ func expandAnnotationValue(
 		Package: packageTemplateData(pkg),
 		Type:    n,
 		Name:    name,
-		Output:  toOutputTemplateData(node.GetPosition().Filename),
+		// Needs fix for context maybe
+		Output: toOutputTemplateData(filename),
 	}
 
 	impliedBy := ""

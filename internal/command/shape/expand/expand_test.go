@@ -61,7 +61,7 @@ func expandAndTransform(
 	if err != nil {
 		return nil, err
 	}
-	return expand.TransformerAnnotations(&structure.NoopResolver{}, node, expanded, render.Scope{}, nil)
+	return expand.TransformerAnnotations(&structure.NoopResolver{}, node, "", expanded, render.Scope{}, nil)
 }
 
 func TestExpandAnnotations_NoMacro(t *testing.T) {
@@ -258,7 +258,7 @@ func TestTransformerAnnotations_PassthroughWithoutImpliedBy(t *testing.T) {
 			model.WithImpliedBy(model.NewAnnotation("plumber:mixing", []string{"arg"})),
 		),
 	}
-	result, err := expand.TransformerAnnotations(&structure.NoopResolver{}, fixtureNode(), input, render.Scope{}, nil)
+	result, err := expand.TransformerAnnotations(&structure.NoopResolver{}, fixtureNode(), "", input, render.Scope{}, nil)
 	assert.NilError(t, err)
 	assert.Equal(t, len(result), 1)
 	assert.Equal(t, result[0].Args[0], `arg`)

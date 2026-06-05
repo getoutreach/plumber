@@ -309,7 +309,8 @@ plumber.shape:
   handlers:
     - plumber.handler:
         name: goverter
-        command: "goverter gen {{ .Source.NamedArgs.path | join \" \" }}"
+        command: "goverter gen"
+        args: [{{ .Source.NamedArgs.path }}]
 ```
 
 ### Config hierarchy

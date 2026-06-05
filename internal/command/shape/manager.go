@@ -260,8 +260,7 @@ func (m *InplaceManager) Render(
 	return outputs, nil
 }
 
-// Postprocess is not needed for InplaceManager since the merging is done during the Render phase,
-// so we can omit it or leave it as a no-op.
+// runTransformations executes the provided transformations in order, handling the common logic of inflating custom scope variables,
 func runTransformations(
 	ctx *contract.ShapingContext,
 	cfg *Config,
@@ -326,8 +325,6 @@ func runTransformations(
 // dependsOnSatisfied evaluates every plumber:depends_on annotation on the transformer
 // and reports whether all referenced FQNs resolve to a type within the inspected
 // packages. The boolean result is true when every dependency resolves (or when no
-// dependency annotations are present); it is false as soon as a single dependency
-// cannot be resolved. An error is returned only when an annotation is malformed
 // (missing argument or invalid FQN), mirroring the behavior of inflateCustomScope.
 func dependsOnSatisfied(ctx *contract.ShapingContext, transformer Transformer, node model.Node, pkgs []*model.Package) (bool, error) {
 	dependsOn := transformer.GetAnnotations().FindAll(contract.OptionDependsOn)
@@ -427,6 +424,7 @@ func collectNotifications(ctx *contract.ShapingContext, t Transformation) {
 			continue
 		}
 		handlerName := na.Args[0]
+		fmt.Printf("Collecting notification for handler %q from transformer %q\n", handlerName, t.Transformer.GetName()) // Debug log to trace notification collection
 		ctx.HandlerTriggered(handlerName, t.Transformer, t.Node)
 		ctx.Notifications.Notify(handlerName, na.NamedArgs)
 	}

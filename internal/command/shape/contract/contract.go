@@ -148,6 +148,7 @@ type ReporterEvent struct {
 	Node        model.Node
 	Path        string
 	Error       error
+	Args        any
 }
 
 // Reporter defines the interface for reporting events during the transformation process,
