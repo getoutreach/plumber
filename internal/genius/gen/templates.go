@@ -42,6 +42,7 @@ var (
 		"pascal":    conv.PascalCase,
 		"camel":     conv.CamelCase,
 		"snake":     conv.SnakeCase,
+		"slug":      conv.Slug,
 		"tovalue": func(s string) string {
 			return strings.TrimPrefix(s, "*")
 		},

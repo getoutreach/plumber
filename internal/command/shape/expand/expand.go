@@ -18,6 +18,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/command/shape/validate"
+	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/getoutreach/plumber/query/model"
 	"github.com/samber/lo"
@@ -333,6 +334,7 @@ func expandTemplateStr(
 		Option("missingkey=error").
 		Funcs(render.GenericFunctions()).
 		Funcs(sprig.TxtFuncMap()).
+		Funcs(gen.BaseFuncMap).
 		Funcs(fm).
 		Parse(s)
 

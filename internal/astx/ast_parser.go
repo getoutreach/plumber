@@ -136,7 +136,7 @@ func NewParser(paths []string, options ...ParserOption) (*Parser, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to load packages: %w", err)
 		}
-		return nil, fmt.Errorf("no packages found for pathsx: %v, dirs: %v", paths, dirs)
+		return nil, fmt.Errorf("no packages found for path: %v, dirs: %v", paths, dirs)
 	}
 
 	// Check for errors in packages
@@ -160,6 +160,7 @@ func (p *Parser) GetParsedFile(filePath string) (f *dst.File, pkg *decorator.Pac
 	// Find the package that contains this file
 	for _, pkg := range p.pkgs {
 		for _, file := range pkg.Syntax {
+			fmt.Println("FILE:", pkg.Decorator.Filenames[file])
 			if pkg.Decorator.Filenames[file] == filePath {
 				return file, pkg, nil
 			}

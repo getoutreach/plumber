@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sort"
 	"strings"
 
 	"github.com/dave/dst"
@@ -413,30 +414,72 @@ func renderTransformations(
 }
 
 func restoreOutputs(ctx *contract.ShapingContext, output []*ManagerOutput) error {
-	filenames := []string{}
-	overlay := make(map[string][]byte)
+	// Group AST-restored outputs by the set of positive build tags declared in
+	// their //go:build directive so that each group can be re-parsed with the
+	// appropriate astx.WithBuildFlags(...). Files without a directive (or with
+	// purely negative constraints) fall into the empty-tag group, which is
+	// parsed with no extra build flags — matching the historical behavior.
+	// Dst-backed outputs bypass the parser entirely and are handled below.
+	type buildGroup struct {
+		tags    []string
+		outputs []*ManagerOutput
+	}
+	groups := map[string]*buildGroup{}
+	var groupKeys []string
 
-	// restore generated files out of rendered output
 	for _, o := range output {
-		// Dst files are processed in a separate loop below
 		if o.Output.Dst != nil {
 			continue
 		}
-		filenames = append(filenames, o.Output.Filename)
-		overlay[o.Output.Filename] = o.Output.Content
+		tags, perr := astx.PositiveBuildTags(o.Output.Content)
+		if perr != nil {
+			fmt.Printf(
+				"WARN: malformed //go:build directive in %q, parsing without build flags: %v\n",
+				o.Output.Filename, perr,
+			)
+			tags = nil
+		}
+		key := strings.Join(tags, ",")
+		g, ok := groups[key]
+		if !ok {
+			g = &buildGroup{tags: tags}
+			groups[key] = g
+			groupKeys = append(groupKeys, key)
+		}
+		g.outputs = append(g.outputs, o)
 	}
+	// Deterministic processing order so logs/errors are stable across runs.
+	// The empty key ("" — no build tags) sorts first.
+	sort.Strings(groupKeys)
 
-	if len(filenames) > 0 {
-		parser, err := astx.NewParser(filenames, astx.WithReplacement(), astx.WithOverlay(overlay))
-		if err != nil {
-			return fmt.Errorf("failed to create parser for files %v, post-processing: %w", filenames, err)
+	for _, key := range groupKeys {
+		g := groups[key]
+		filenames := make([]string, 0, len(g.outputs))
+		overlay := make(map[string][]byte, len(g.outputs))
+		for _, o := range g.outputs {
+			filenames = append(filenames, o.Output.Filename)
+			overlay[o.Output.Filename] = o.Output.Content
 		}
 
-		for _, o := range output {
-			if o.Output.Dst != nil {
-				continue
-			}
-			fmt.Println("Re-parsing file ", o.Output.Filename)
+		opts := []astx.ParserOption{
+			astx.WithReplacement(),
+			astx.WithOverlay(overlay),
+		}
+		if len(g.tags) > 0 {
+			opts = append(opts, astx.WithBuildFlags(append([]string{"-tags"}, g.tags...)))
+		}
+
+		parser, err := astx.NewParser(filenames, opts...)
+		if err != nil {
+			return fmt.Errorf(
+				"failed to create parser for files %v with build tags %v, post-processing: %w",
+				filenames, g.tags, err,
+			)
+		}
+
+		for _, o := range g.outputs {
+			fmt.Println("Re-parsing file ", o.Output.Filename, " with build tags ", g.tags)
+
 			content, pkg, err := parser.GetParsedFile(o.Output.Filename)
 			if err != nil {
 				return fmt.Errorf("failed to parse generated file %q: %w", o.Output.Filename, err)

@@ -54,6 +54,14 @@ func SnakeLowerCase(s string) string {
 	return stringy.New(s).SnakeCase().ToLower()
 }
 
+// Slug replaces "/" with "_" in a string.
+//
+//	"Outbound/Redis" -> "outbound_redis"
+//	"async"          -> "async"
+func Slug(s string) string {
+	return strings.ToLower(strings.ReplaceAll(s, "/", "_"))
+}
+
 // NormalizeFieldmask converts any string slice to slice of snake cased strings
 func NormalizeFieldmask(fieldmask []string) []string {
 	normalized := make([]string, len(fieldmask))

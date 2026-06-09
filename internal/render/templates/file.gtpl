@@ -22,6 +22,7 @@
 {{define "plumber/file/build_constraint" -}}
 {{ if $.Scope.File.BuildConstraint -}}
 //go:build {{ $.Scope.File.BuildConstraint | join " " }}
+// +build {{ $.Scope.File.BuildConstraint | join " " }}
 {{end}}
 {{end}}
 

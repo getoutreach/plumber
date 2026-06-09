@@ -33,6 +33,14 @@ func FunctionsDescription() (desc contract.FunctionDescriptions,
 		},
 		{
 			Description: contract.FunctionDescription{
+				Name:        "filename_prefixed",
+				Description: `Prepend a prefix to a filename.`,
+				Usage:       `{{ filename_prefixed "prefix" }}`,
+			},
+			Func: filenamePrefixed,
+		},
+		{
+			Description: contract.FunctionDescription{
 				Name:        "path_join",
 				Description: `Join multiple path segments together using the context's path resolver.`,
 				Usage:       `{{ path_join "segment1" "segment2" }}`,

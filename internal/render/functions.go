@@ -268,7 +268,9 @@ func fileBuildConstraint(scope Scope) func(s string) string {
 	return func(s string) string {
 		if f, ok := scope["File"].(Scope); ok {
 			if a, ok := f["BuildConstraint"].([]string); ok {
-				f["BuildConstraint"] = append(a, s)
+				if !lo.Contains(a, s) {
+					f["BuildConstraint"] = append(a, s)
+				}
 			} else {
 				f["BuildConstraint"] = []string{s}
 			}

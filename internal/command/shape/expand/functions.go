@@ -20,6 +20,14 @@ func filenameSuffixed(c *EvaluationContext) any {
 	}
 }
 
+func filenamePrefixed(c *EvaluationContext) any {
+	return func(prefix string) string {
+		pos := c.node.GetPosition()
+		output := toOutputTemplateData(path.Join(c.node.GetPackage().Dir, pos.Filename))
+		return fmt.Sprintf("%s_%s%s", prefix, output.Name, output.Ext)
+	}
+}
+
 func pathJoin(c *EvaluationContext) any {
 	return func(parts ...string) (string, error) {
 		var err []error

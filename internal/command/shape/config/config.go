@@ -71,6 +71,10 @@ type MixinConfig struct {
 type PlumberMixinConfig struct {
 	Name        string             `yaml:"name"`
 	Annotations []AnnotationConfig `yaml:"annotations,omitempty"`
+	// Content is optional raw commented-annotation text (e.g. "// plumber:filter ...")
+	// that is parsed into additional annotations alongside Annotations at expansion time,
+	// mirroring the behavior of PlumberMacroConfig.Content.
+	Content string `yaml:"content,omitempty"`
 }
 
 // MacroConfig represents the configuration for a macro that expands into a set of annotations
