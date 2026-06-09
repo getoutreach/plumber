@@ -231,7 +231,10 @@ func (m *InplaceManager) Render(
 			}
 
 			if len(mergedFiles) == 0 {
-				ctx.TransformerInfo(t.Transformer, fmt.Sprintf("no elements found, nothing was merged in for transformation %q", t.Transformer.Output()))
+				ctx.TransformerInfo(
+					t.Transformer,
+					fmt.Sprintf("no elements found, nothing was merged in for transformation %q", t.Transformer.Output()),
+				)
 			}
 
 			// A single transformation may touch multiple files (struct in one file,
@@ -424,7 +427,6 @@ func collectNotifications(ctx *contract.ShapingContext, t Transformation) {
 			continue
 		}
 		handlerName := na.Args[0]
-		fmt.Printf("Collecting notification for handler %q from transformer %q\n", handlerName, t.Transformer.GetName()) // Debug log to trace notification collection
 		ctx.HandlerTriggered(handlerName, t.Transformer, t.Node)
 		ctx.Notifications.Notify(handlerName, na.NamedArgs)
 	}

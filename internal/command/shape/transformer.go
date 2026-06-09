@@ -190,8 +190,8 @@ func (t *BasicTransformer) Expand(
 	pkgs []*model.Package,
 	node model.Node,
 	scope baserender.Scope,
-	singularNames map[string]bool) error {
-
+	singularNames map[string]bool,
+) error {
 	dir := path.Dir(t.Position.Filename)
 	if dir == "" || dir == "." {
 		dir = node.GetPackage().Dir
