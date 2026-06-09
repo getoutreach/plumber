@@ -85,16 +85,31 @@ func (r *TerminalReporter) Notify(event contract.ReporterEvent) {
 			fmt.Printf("  from transformer: %s\n", event.Transformer.GetName())
 		}
 	case contract.EventHandlerExecuting:
-		println("Executing handler:", event.Message, "-", event.Path, "with args:", fmt.Sprintf("%v", event.Args))
+		println("Executing handler:", event.ID, "-", event.Path, "with args:", fmt.Sprintf("%v", event.Args))
 	case contract.EventHandlerCompleted:
-		println("Handler completed:", event.Message)
+		println("Handler completed:", event.ID, "-", event.Path)
+		if event.Message != "" {
+			println(ident(event.Message, 4))
+		}
 	case contract.EventHandlerError:
 		if event.Error != nil {
-			println("Handler error:", event.Message, "-", event.Error.Error())
+			println("Handler error:", event.ID, "-", event.Path, "-", event.Error.Error())
 		} else {
-			println("Handler error:", event.Message)
+			println("Handler error:", event.ID, "-", event.Path)
+		}
+		if event.Message != "" {
+			println(ident(event.Message, 4))
 		}
 	default:
 		println("Unknown event type:", string(event.Kind))
 	}
+}
+
+func ident(s string, size int) string {
+	s = strings.TrimSpace(s)
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = strings.Repeat(" ", size) + line
+	}
+	return strings.Join(lines, "\n")
 }

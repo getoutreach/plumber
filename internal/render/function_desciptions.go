@@ -83,6 +83,25 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		},
 		{
 			Description: contract.FunctionDescription{
+				Name: "file_build_constraint",
+				Description: `
+                    Sets the build constraint for the current file. So second code gen pass that is responsible for file header can pick it up and render it as a go build constraint.
+                    Example:
+                    ` + "```golang" + `
+
+                    //go:build !goverter
+
+                    package sample
+                    ` + "```" + `
+                    `,
+				Usage: `{{ file_build_constraint "!goverter" }}`,
+			},
+			Func: func(c *EvaluationContext) any {
+				return fileBuildConstraint(c.Scope)
+			},
+		},
+		{
+			Description: contract.FunctionDescription{
 				Name: "comment_wrap",
 				Description: `
                     Render text as wrapped comments.

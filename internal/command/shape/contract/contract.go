@@ -142,6 +142,7 @@ const (
 // ReporterEvent represents an event that can be reported by the Reporter interface,
 // containing information about the event type and any relevant data.
 type ReporterEvent struct {
+	ID          string
 	Message     string
 	Kind        ReporterEventType
 	Transformer Transformer

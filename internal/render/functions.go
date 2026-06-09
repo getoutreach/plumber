@@ -264,6 +264,19 @@ func filePackageDescription(scope Scope) func(s string) string {
 	}
 }
 
+func fileBuildConstraint(scope Scope) func(s string) string {
+	return func(s string) string {
+		if f, ok := scope["File"].(Scope); ok {
+			if a, ok := f["BuildConstraint"].([]string); ok {
+				f["BuildConstraint"] = append(a, s)
+			} else {
+				f["BuildConstraint"] = []string{s}
+			}
+		}
+		return ""
+	}
+}
+
 func typeSet(context Context, set func(*model.Type)) func(string) (string, error) {
 	return func(name string) (string, error) {
 		fqn, err := astx.CraftFQN(context.GetPkgPath(), name)

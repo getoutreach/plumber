@@ -19,10 +19,16 @@
 {{end}}
 {{end}}
 
+{{define "plumber/file/build_constraint" -}}
+{{ if $.Scope.File.BuildConstraint -}}
+//go:build {{ $.Scope.File.BuildConstraint | join " " }}
+{{end}}
+{{end}}
 
 {{define "plumber/file/content"}}
     {{ template "plumber/file/copyright" $ -}}
     {{ template "plumber/file/description" $ -}}
+    {{ template "plumber/file/build_constraint" $ -}}
     {{ template "plumber/file/comment" $ -}}
     {{ template "plumber/file/package_description" $ -}}
     package {{ $.Scope.Package.Name }}

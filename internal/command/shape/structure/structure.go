@@ -65,12 +65,21 @@ func (r *Resolver) resolve(p string) (
 	mod *contract.ModuleInfo,
 	structureConfig *config.PlumberStructureConfig,
 	structurePath *config.StructurePathConfig,
+	extra string,
 	err error,
 ) {
 	if !strings.HasPrefix(p, StructurePathPrefix) {
-		return nil, nil, nil, nil
+		return nil, nil, nil, "", nil
 	}
 	name := strings.TrimPrefix(p, StructurePathPrefix)
+
+	parts := strings.SplitN(name, "/", 2)
+
+	name = parts[0]
+
+	if len(parts) > 1 {
+		extra = parts[1]
+	}
 
 	// Search across all structures, first match wins.
 	for _, s := range r.definitions.Structures {
@@ -78,7 +87,7 @@ func (r *Resolver) resolve(p string) (
 			return pt.Path.Name == name
 		})
 		if found {
-			return &r.module, &s, &sp, nil
+			return &r.module, &s, &sp, extra, nil
 		}
 	}
 
@@ -91,11 +100,11 @@ func (r *Resolver) resolve(p string) (
 		allNames = append(allNames, names...)
 	}
 
-	return nil, nil, nil, fmt.Errorf("structure path '%s' not found in any structure definition. Available paths: %v", name, allNames)
+	return nil, nil, nil, "", fmt.Errorf("structure path '%s' not found in any structure definition. Available paths: %v", name, allNames)
 }
 
 func (r *Resolver) ResolveStructurePath(p string) (string, error) {
-	m, sc, sp, err := r.resolve(p)
+	m, sc, sp, extra, err := r.resolve(p)
 	if err != nil {
 		return "", err
 	}
@@ -103,11 +112,11 @@ func (r *Resolver) ResolveStructurePath(p string) (string, error) {
 		return p, nil
 	}
 
-	return path.Join(m.Dir, sc.Path, sp.Path.Path), nil
+	return path.Join(m.Dir, sc.Path, sp.Path.Path, extra), nil
 }
 
 func (r *Resolver) ResolvePackagePath(p string) (string, error) {
-	m, sc, sp, err := r.resolve(p)
+	m, sc, sp, extra, err := r.resolve(p)
 	if err != nil {
 		return "", err
 	}
@@ -115,5 +124,5 @@ func (r *Resolver) ResolvePackagePath(p string) (string, error) {
 		return p, nil
 	}
 
-	return path.Join(m.Path, sc.Path, sp.Path.Path), nil
+	return path.Join(m.Path, sc.Path, sp.Path.Path, extra), nil
 }

@@ -231,7 +231,7 @@ func (m *InplaceManager) Render(
 			}
 
 			if len(mergedFiles) == 0 {
-				ctx.TransformerInfo(t.Transformer, "no elements found, nothing was merged in")
+				ctx.TransformerInfo(t.Transformer, fmt.Sprintf("no elements found, nothing was merged in for transformation %q", t.Transformer.Output()))
 			}
 
 			// A single transformation may touch multiple files (struct in one file,

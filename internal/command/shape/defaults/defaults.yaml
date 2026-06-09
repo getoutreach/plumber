@@ -2,7 +2,6 @@ plumber.shape:
   options:
     # --- Option annotations ---
     - name: "plumber:template"
-      singular: true
       doc:
         description: >-
           Specifies the template to use for code generation. Multiple template

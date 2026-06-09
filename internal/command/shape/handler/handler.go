@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strings"
 	"sync"
 	"text/template"
 
@@ -116,9 +117,9 @@ func (r *Registry) Execute(ctx *contract.ShapingContext) error {
 			seen[string(b)] = struct{}{}
 
 			// Expand command template
-			expanded, err := expandCommand(h.Command, n.NamedArgs)
+			expanded, err := expandCommand(h.Command, h.Args, n.NamedArgs)
 			if err != nil {
-				ctx.HandlerError(h.Name, h.Command, fmt.Errorf("failed to expand handler command template: %w", err))
+				ctx.HandlerError(h.Name, h.Command, "", fmt.Errorf("failed to expand handler command template: %w", err))
 				return fmt.Errorf("handler %q: failed to expand command template: %w", h.Name, err)
 			}
 
@@ -130,17 +131,16 @@ func (r *Registry) Execute(ctx *contract.ShapingContext) error {
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
 
-			if err := cmd.Run(); err != nil {
-				output := stderr.String()
-				if output == "" {
-					output = stdout.String()
-				}
+			err = cmd.Run()
+			output := stderr.String()
+			output += stdout.String()
+			if err != nil {
 				execErr := fmt.Errorf("handler %q: command failed: %w\noutput: %s", h.Name, err, output)
-				ctx.HandlerError(h.Name, expanded, execErr)
+				ctx.HandlerError(h.Name, expanded, output, execErr)
 				return execErr
 			}
 
-			ctx.HandlerCompleted(h.Name, expanded)
+			ctx.HandlerCompleted(h.Name, expanded, output)
 		}
 	}
 
@@ -148,7 +148,25 @@ func (r *Registry) Execute(ctx *contract.ShapingContext) error {
 }
 
 // expandCommand expands the handler command template with the aggregated named arguments.
-func expandCommand(commandTemplate string, namedArgs map[string]string) (string, error) {
+func expandCommand(commandTemplate string, args []string, namedArgs map[string]string) (string, error) {
+	commandTemplate, err := expandValue(commandTemplate, namedArgs)
+	if err != nil {
+		return "", fmt.Errorf("expanding command template: %w", err)
+	}
+
+	for i, arg := range args {
+		expandedArg, err := expandValue(arg, namedArgs)
+		if err != nil {
+			return "", fmt.Errorf("expanding command arg %d: %w", i, err)
+		}
+		args[i] = fmt.Sprintf("%q", expandedArg)
+	}
+
+	return commandTemplate + " " + strings.Join(args, " "), nil
+}
+
+// expandValue expands the handler command template with the aggregated named arguments.
+func expandValue(value string, namedArgs map[string]string) (string, error) {
 	data := handlerTemplateData{
 		Source: &handlerSourceData{
 			NamedArgs: namedArgs,
@@ -159,7 +177,7 @@ func expandCommand(commandTemplate string, namedArgs map[string]string) (string,
 		Option("missingkey=error").
 		Funcs(render.GenericFunctions()).
 		Funcs(sprig.TxtFuncMap()).
-		Parse(commandTemplate)
+		Parse(value)
 	if err != nil {
 		return "", fmt.Errorf("parsing command template: %w", err)
 	}

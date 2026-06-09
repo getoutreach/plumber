@@ -118,7 +118,7 @@ func (c *ShapingContext) HandlerTriggered(handlerName string, transformer Transf
 	if c.Reporter != nil {
 		c.Reporter.Notify(ReporterEvent{
 			Kind:        EventHandlerTriggered,
-			Message:     handlerName,
+			ID:          handlerName,
 			Transformer: transformer,
 			Node:        node,
 		})
@@ -128,30 +128,32 @@ func (c *ShapingContext) HandlerTriggered(handlerName string, transformer Transf
 func (c *ShapingContext) HandlerExecuting(handlerName, command string, args map[string]string) {
 	if c.Reporter != nil {
 		c.Reporter.Notify(ReporterEvent{
-			Kind:    EventHandlerExecuting,
-			Message: handlerName,
-			Path:    command,
-			Args:    args,
+			Kind: EventHandlerExecuting,
+			ID:   handlerName,
+			Path: command,
+			Args: args,
 		})
 	}
 }
 
-func (c *ShapingContext) HandlerCompleted(handlerName, command string) {
+func (c *ShapingContext) HandlerCompleted(handlerName, command string, message string) {
 	if c.Reporter != nil {
 		c.Reporter.Notify(ReporterEvent{
 			Kind:    EventHandlerCompleted,
-			Message: handlerName,
+			ID:      handlerName,
 			Path:    command,
+			Message: message,
 		})
 	}
 }
 
-func (c *ShapingContext) HandlerError(handlerName, command string, err error) {
+func (c *ShapingContext) HandlerError(handlerName, command string, message string, err error) {
 	if c.Reporter != nil {
 		c.Reporter.Notify(ReporterEvent{
 			Kind:    EventHandlerError,
-			Message: handlerName,
+			ID:      handlerName,
 			Path:    command,
+			Message: message,
 			Error:   err,
 		})
 	}
