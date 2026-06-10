@@ -34,7 +34,6 @@ func typeToAST(t types.Type) ast.Expr {
 	switch t := t.(type) {
 	case *types.Basic:
 		return &ast.Ident{Name: t.Name()}
-
 	case *types.Named:
 		obj := t.Obj()
 		var base ast.Expr
@@ -101,6 +100,16 @@ func typeToAST(t types.Type) ast.Expr {
 	case *types.TypeParam:
 		return &ast.Ident{Name: t.Obj().Name()}
 
+	case *types.Alias:
+		obj := t.Obj()
+		if pkg := obj.Pkg(); pkg != nil {
+			base := &ast.SelectorExpr{
+				X:   &ast.Ident{Name: strconv.Quote(pkg.Path())},
+				Sel: &ast.Ident{Name: obj.Name()},
+			}
+			return base
+		}
+		return &ast.Ident{Name: t.String()}
 	default:
 		// Fallback: use the types package string representation
 		return &ast.Ident{Name: t.String()}
