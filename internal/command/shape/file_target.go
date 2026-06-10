@@ -105,6 +105,16 @@ func matchTarget(transformations []Transformation, target FileTarget) ([]Transfo
 	for _, t := range transformations {
 		if t.Transformer.GetOptions().Source != nil {
 			p := t.Transformer.GetOptions().Source.GetPosition()
+
+			if strings.HasSuffix(target.Path, "/...") {
+				// Directory target: check if the file is under the specified directory.
+				dir := strings.TrimSuffix(target.Path, "/...")
+				if strings.HasPrefix(p.Filename, dir) {
+					result = append(result, t)
+					continue
+				}
+			}
+
 			if p.Filename == target.Path {
 				result = append(result, t)
 			}

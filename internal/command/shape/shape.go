@@ -38,7 +38,7 @@ func Run(ctx *contract.ShapingContext, cfg *Config, targets []FileTarget) error 
 	if len(dirs) == 0 {
 		dirs = []string{"./..."}
 	}
-	fmt.Println("DIRS", dirs, cfg.WorkingDirs)
+	fmt.Println("DIRS", dirs, cfg.WorkingDirs, "targets", targets)
 
 	filenames, err := inspect.ScanFiles("./", dirs)
 	if err != nil {
@@ -270,7 +270,7 @@ func collectCommentTransformations(
 
 			if matcherName != "" {
 				// Package + matcher mode: match all types in the target package.
-				if err := collectMatcherContextTransformations(cfg, pkgs, comment, m.Value(), matcherName, appendTransformer); err != nil {
+				if err := collectMatcherContextTransformations(cfg, ctx.StructurePathResolver, pkgs, comment, m.Value(), matcherName, appendTransformer); err != nil {
 					return err
 				}
 				continue
@@ -320,18 +320,28 @@ func collectCommentTransformations(
 // match the named matcher's rules and builds transformations for each.
 func collectMatcherContextTransformations(
 	cfg *Config,
+	resolver contract.StructurePathResolver,
 	pkgs model.Packages,
 	comment *model.CommentGroup,
 	pkgPath string,
 	matcherName string,
 	appendTransformer func(node model.Node, ts []Transformer),
 ) error {
-	if strings.HasPrefix(pkgPath, "..") {
+	if strings.HasPrefix(pkgPath, ".") {
 		pkgPath = path.Clean(path.Join(comment.Package.Path, pkgPath))
 	}
+
+	pkgPath, err := resolver.ResolvePackagePath(pkgPath)
+	if err != nil {
+		return err
+	}
+
 	targetPkg, found := lo.Find(pkgs, func(p *model.Package) bool {
 		return p.Path == pkgPath
 	})
+
+	fmt.Println("Collecting", pkgPath, " using matcher:", matcherName, targetPkg)
+
 	if !found {
 		return fmt.Errorf("package %q not found in inspected packages", pkgPath)
 	}
@@ -342,6 +352,7 @@ func collectMatcherContextTransformations(
 	}
 
 	for _, t := range targetPkg.Types {
+		fmt.Println("Checking type ", t.Name, " with FQN ", t.Spec.FQN) // Debug log to trace matcher evaluation
 		if !matcher.MatchRules(m.Matches, &t.Spec, t) {
 			continue
 		}

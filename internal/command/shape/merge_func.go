@@ -49,6 +49,11 @@ func mergeFunc(
 		)
 	}
 
+	// Merge doc comment using the preserve-manual rule: only adopt the generated
+	// doc when the existing function has no comment at all. Inline trailing
+	// comments (Decs.End) are intentionally left untouched.
+	mergeDocComment(&existingDecl.Decs.Start, generated.Decs.Start)
+
 	// Merge parameters: ensure all template params are present
 	if err := mergeParams(existingDecl, generated, importMap); err != nil {
 		return nil, fmt.Errorf("failed to merge params for %q: %w", generated.Name.Name, err)

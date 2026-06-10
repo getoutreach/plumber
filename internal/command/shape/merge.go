@@ -89,7 +89,7 @@ func Merge(pkg *model.Package, file *dst.File, output string) ([]*dst.File, erro
 							recordFile(f)
 							continue
 						}
-						f, err := mergeStruct(currentType, t, importMap)
+						f, err := mergeStruct(currentType, d, s, t, importMap)
 						if err != nil {
 							return nil, fmt.Errorf("failed to merge struct %q: %w", s.Name.Name, err)
 						}
@@ -117,7 +117,7 @@ func Merge(pkg *model.Package, file *dst.File, output string) ([]*dst.File, erro
 							recordFile(f)
 							continue
 						}
-						f, err := mergeInterface(currentType, t, importMap)
+						f, err := mergeInterface(currentType, d, s, t, importMap)
 						if err != nil {
 							return nil, fmt.Errorf("failed to merge interface %q: %w", s.Name.Name, err)
 						}
@@ -302,8 +302,12 @@ func hasGenerateOnce(decs ...dst.Decorations) bool {
 
 // mergeStruct takes the current model.Type and the generated dst.StructType, and merges the fields from the generated struct
 // into the existing struct in the source file, ensuring that existing fields are not overwritten and that new fields are
-// properly annotated with imports.
-func mergeStruct(current *model.Type, generated *dst.StructType, importMap map[string]string) (*dst.File, error) {
+// properly annotated with imports. Doc comments on the type declaration and on individual fields are merged using the
+// preserve-manual rule: generated docs are adopted only when the existing entity has no comment.
+func mergeStruct(
+	current *model.Type, genDecl *dst.GenDecl, genSpec *dst.TypeSpec,
+	generated *dst.StructType, importMap map[string]string,
+) (*dst.File, error) {
 	pkg := current.GetPackage()
 
 	file := pkg.File(current.Position.Filename)
@@ -330,6 +334,18 @@ func mergeStruct(current *model.Type, generated *dst.StructType, importMap map[s
 		return nil, fmt.Errorf("type %q is not a struct in file %q", current.Name, current.Position.Filename)
 	}
 
+	// Merge type-level doc comments. The doc for `type Foo struct {...}` lives on the
+	// containing GenDecl. For grouped `type ( ... )` declarations the comment lives on
+	// the inner TypeSpec instead, so both sources/targets are considered.
+	if genDecl != nil {
+		if existingGenDecl := findContainingGenDecl(file, typeSpec); existingGenDecl != nil {
+			mergeDocComment(&existingGenDecl.Decs.Start, genDecl.Decs.Start)
+		}
+	}
+	if genSpec != nil {
+		mergeDocComment(&typeSpec.Decs.Start, genSpec.Decs.Start)
+	}
+
 	// Build a set of existing field names in the target struct.
 	existingNames := make(map[string]bool)
 	if structType.Fields != nil {
@@ -340,13 +356,21 @@ func mergeStruct(current *model.Type, generated *dst.StructType, importMap map[s
 		}
 	}
 
-	// Merge fields from the generated struct; skip if any name already exists.
+	// Merge fields from the generated struct; for fields whose name already exists,
+	// merge the field-level doc comment using the preserve-manual rule. Inline
+	// (Decs.End) comments on existing fields are intentionally left untouched.
 	if generated.Fields != nil {
 		for _, field := range generated.Fields.List {
 			alreadyExists := lo.SomeBy(fieldNames(field), func(name string) bool {
 				return existingNames[name]
 			})
 			if alreadyExists {
+				for _, name := range fieldNames(field) {
+					if existing := findFieldByName(structType.Fields, name); existing != nil {
+						mergeDocComment(&existing.Decs.Start, field.Decs.Start)
+						break
+					}
+				}
 				continue
 			}
 			astx.AnnotateFieldIdents(field, importMap)
@@ -363,8 +387,13 @@ func mergeStruct(current *model.Type, generated *dst.StructType, importMap map[s
 // mergeInterface takes the current model.Type (which has Interface set) and the generated
 // dst.InterfaceType, and merges methods and embedded interfaces from the generated interface
 // into the existing interface in the source file. Methods are deduplicated by name; embedded
-// interfaces are deduplicated by their type expression key.
-func mergeInterface(current *model.Type, generated *dst.InterfaceType, importMap map[string]string) (*dst.File, error) {
+// interfaces are deduplicated by their type expression key. Doc comments on the type
+// declaration and on individual methods/embeds are merged using the preserve-manual rule:
+// generated docs are adopted only when the existing entity has no comment.
+func mergeInterface(
+	current *model.Type, genDecl *dst.GenDecl, genSpec *dst.TypeSpec,
+	generated *dst.InterfaceType, importMap map[string]string,
+) (*dst.File, error) {
 	pkg := current.GetPackage()
 
 	file := pkg.File(current.Position.Filename)
@@ -391,6 +420,16 @@ func mergeInterface(current *model.Type, generated *dst.InterfaceType, importMap
 		return nil, fmt.Errorf("type %q is not an interface in file %q", current.Name, current.Position.Filename)
 	}
 
+	// Merge type-level doc comments. Same dual GenDecl/TypeSpec strategy as for structs.
+	if genDecl != nil {
+		if existingGenDecl := findContainingGenDecl(file, typeSpec); existingGenDecl != nil {
+			mergeDocComment(&existingGenDecl.Decs.Start, genDecl.Decs.Start)
+		}
+	}
+	if genSpec != nil {
+		mergeDocComment(&typeSpec.Decs.Start, genSpec.Decs.Start)
+	}
+
 	// Separate existing entries into methods (named) and embeds (anonymous).
 	existingMethodNames := make(map[string]bool)
 	existingEmbeds := make(map[string]bool)
@@ -406,7 +445,7 @@ func mergeInterface(current *model.Type, generated *dst.InterfaceType, importMap
 		}
 	}
 
-	// Merge entries from generated interface; skip duplicates.
+	// Merge entries from generated interface; for duplicates, apply field-level doc merge.
 	if generated.Methods != nil {
 		for _, entry := range generated.Methods.List {
 			if len(entry.Names) > 0 {
@@ -415,10 +454,19 @@ func mergeInterface(current *model.Type, generated *dst.InterfaceType, importMap
 					return existingMethodNames[n.Name]
 				})
 				if alreadyExists {
+					for _, n := range entry.Names {
+						if existing := findFieldByName(ifaceType.Methods, n.Name); existing != nil {
+							mergeDocComment(&existing.Decs.Start, entry.Decs.Start)
+							break
+						}
+					}
 					continue
 				}
 			} else if existingEmbeds[embedKey(entry.Type)] {
 				// Embedded interface — deduplicate by type expression.
+				if existing := findFieldByEmbedKey(ifaceType.Methods, embedKey(entry.Type)); existing != nil {
+					mergeDocComment(&existing.Decs.Start, entry.Decs.Start)
+				}
 				continue
 			}
 			astx.AnnotateFieldIdents(entry, importMap)

@@ -8,6 +8,7 @@ package shape
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dave/dst"
@@ -1169,4 +1170,1034 @@ type Container struct {
 	if len(resultFiles) != 0 {
 		t.Fatalf("expected no merged files (struct merge skipped), but got %d", len(resultFiles))
 	}
+}
+
+// --- Doc comment merging tests ---
+
+func TestHasDocComment(t *testing.T) {
+	tests := []struct {
+		name string
+		decs dst.Decorations
+		want bool
+	}{
+		{name: "nil", decs: nil, want: false},
+		{name: "empty", decs: dst.Decorations{}, want: false},
+		{name: "only newline", decs: dst.Decorations{"\n"}, want: false},
+		{name: "line comment", decs: dst.Decorations{"// hello"}, want: true},
+		{name: "block comment", decs: dst.Decorations{"/* hello */"}, want: true},
+		{name: "mixed", decs: dst.Decorations{"\n", "// hello", "\n"}, want: true},
+		{name: "leading spaces", decs: dst.Decorations{"   // hello"}, want: true},
+		{name: "non comment string", decs: dst.Decorations{"hello"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasDocComment(tt.decs); got != tt.want {
+				t.Errorf("hasDocComment() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMergeDocComment(t *testing.T) {
+	// extractItems pulls only the comment items from a Decorations slice so
+	// tests can assert ordering and content without depending on the "\n"
+	// separator pattern produced by rebuildDecorations.
+	extractItems := func(decs dst.Decorations) []string {
+		out := []string{}
+		for _, s := range decs {
+			t := strings.TrimSpace(s)
+			if strings.HasPrefix(t, "//") || strings.HasPrefix(t, "/*") {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+
+	t.Run("empty existing adopts generated", func(t *testing.T) {
+		existing := dst.Decorations{}
+		generated := dst.Decorations{"// generated doc"}
+		changed := mergeDocComment(&existing, generated)
+		if !changed {
+			t.Fatal("expected mergeDocComment to report change")
+		}
+		got := extractItems(existing)
+		if len(got) != 1 || got[0] != "// generated doc" {
+			t.Fatalf("expected existing to be adopted from generated, got %v", existing)
+		}
+	})
+
+	t.Run("duplicate generated line is not re-added", func(t *testing.T) {
+		existing := dst.Decorations{"// manual doc", "\n"}
+		generated := dst.Decorations{"// manual doc"}
+		changed := mergeDocComment(&existing, generated)
+		if changed {
+			t.Fatal("expected mergeDocComment to be a no-op when line already present")
+		}
+		got := extractItems(existing)
+		if len(got) != 1 || got[0] != "// manual doc" {
+			t.Fatalf("expected existing unchanged, got %v", existing)
+		}
+	})
+
+	t.Run("inserts after common anchor", func(t *testing.T) {
+		// existing = [c1, c3], generated = [c1, c2] → [c1, c2, c3]
+		existing := dst.Decorations{"// c1", "\n", "// c3", "\n"}
+		generated := dst.Decorations{"// c1", "\n", "// c2"}
+		changed := mergeDocComment(&existing, generated)
+		if !changed {
+			t.Fatal("expected mergeDocComment to report change")
+		}
+		got := extractItems(existing)
+		want := []string{"// c1", "// c2", "// c3"}
+		if !equalStringSlices(got, want) {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
+	})
+
+	t.Run("appends when no common anchor", func(t *testing.T) {
+		// existing = [m1], generated = [g1] → [m1, g1]
+		existing := dst.Decorations{"// m1", "\n"}
+		generated := dst.Decorations{"// g1"}
+		changed := mergeDocComment(&existing, generated)
+		if !changed {
+			t.Fatal("expected mergeDocComment to report change")
+		}
+		got := extractItems(existing)
+		want := []string{"// m1", "// g1"}
+		if !equalStringSlices(got, want) {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
+	})
+
+	t.Run("progressive anchors", func(t *testing.T) {
+		// existing = [c1, manual, c3], generated = [c1, c2, c3]
+		// → [c1, c2, manual, c3]: c2 inserted after c1; c3 anchors to existing c3.
+		existing := dst.Decorations{"// c1", "\n", "// manual", "\n", "// c3", "\n"}
+		generated := dst.Decorations{"// c1", "\n", "// c2", "\n", "// c3"}
+		changed := mergeDocComment(&existing, generated)
+		if !changed {
+			t.Fatal("expected mergeDocComment to report change")
+		}
+		got := extractItems(existing)
+		want := []string{"// c1", "// c2", "// manual", "// c3"}
+		if !equalStringSlices(got, want) {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
+	})
+
+	t.Run("multiple new lines after last anchor", func(t *testing.T) {
+		// existing = [c1], generated = [c1, c2, c3] → [c1, c2, c3]
+		existing := dst.Decorations{"// c1", "\n"}
+		generated := dst.Decorations{"// c1", "\n", "// c2", "\n", "// c3"}
+		changed := mergeDocComment(&existing, generated)
+		if !changed {
+			t.Fatal("expected mergeDocComment to report change")
+		}
+		got := extractItems(existing)
+		want := []string{"// c1", "// c2", "// c3"}
+		if !equalStringSlices(got, want) {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
+	})
+
+	t.Run("prefix-trim equality matches whitespace and double-slash variants", func(t *testing.T) {
+		// Different leading whitespace and slash spacing should compare equal.
+		existing := dst.Decorations{" //   hello", "\n"}
+		generated := dst.Decorations{"//hello"}
+		changed := mergeDocComment(&existing, generated)
+		if changed {
+			t.Fatalf("expected mergeDocComment to be a no-op for whitespace-equivalent line, got %v", existing)
+		}
+		got := extractItems(existing)
+		if len(got) != 1 || got[0] != " //   hello" {
+			t.Fatalf("expected existing's raw form preserved, got %v", existing)
+		}
+	})
+
+	t.Run("block comment dedup", func(t *testing.T) {
+		existing := dst.Decorations{"/* foo */", "\n"}
+		generated := dst.Decorations{"/* foo */"}
+		changed := mergeDocComment(&existing, generated)
+		if changed {
+			t.Fatal("expected mergeDocComment to be a no-op for duplicate block comment")
+		}
+		got := extractItems(existing)
+		if len(got) != 1 || got[0] != "/* foo */" {
+			t.Fatalf("expected existing unchanged, got %v", existing)
+		}
+	})
+
+	t.Run("block comment added", func(t *testing.T) {
+		existing := dst.Decorations{}
+		generated := dst.Decorations{"/* foo */"}
+		changed := mergeDocComment(&existing, generated)
+		if !changed {
+			t.Fatal("expected mergeDocComment to report change")
+		}
+		got := extractItems(existing)
+		if len(got) != 1 || got[0] != "/* foo */" {
+			t.Fatalf("expected block comment adopted, got %v", existing)
+		}
+	})
+
+	t.Run("empty paragraph break is deduped", func(t *testing.T) {
+		// Two empty // lines collapse — they normalize to "" and dedup.
+		existing := dst.Decorations{"// c1", "\n", "//", "\n"}
+		generated := dst.Decorations{"// c1", "\n", "//", "\n", "// c2"}
+		changed := mergeDocComment(&existing, generated)
+		if !changed {
+			t.Fatal("expected mergeDocComment to report change")
+		}
+		got := extractItems(existing)
+		want := []string{"// c1", "//", "// c2"}
+		if !equalStringSlices(got, want) {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
+	})
+
+	t.Run("empty existing and empty generated stays empty", func(t *testing.T) {
+		existing := dst.Decorations{}
+		generated := dst.Decorations{}
+		changed := mergeDocComment(&existing, generated)
+		if changed {
+			t.Fatal("expected mergeDocComment to be a no-op")
+		}
+		if len(existing) != 0 {
+			t.Fatalf("expected existing to remain empty, got %v", existing)
+		}
+	})
+
+	t.Run("only newlines counts as empty existing", func(t *testing.T) {
+		existing := dst.Decorations{"\n"}
+		generated := dst.Decorations{"// generated doc"}
+		changed := mergeDocComment(&existing, generated)
+		if !changed {
+			t.Fatal("expected mergeDocComment to report change")
+		}
+		got := extractItems(existing)
+		if len(got) != 1 || got[0] != "// generated doc" {
+			t.Fatalf("expected existing to be adopted, got %v", existing)
+		}
+	})
+
+	t.Run("nil existing pointer is a no-op", func(t *testing.T) {
+		// Should not panic.
+		changed := mergeDocComment(nil, dst.Decorations{"// x"})
+		if changed {
+			t.Fatal("expected mergeDocComment(nil, ...) to be no-op")
+		}
+	})
+
+	t.Run("copy is independent", func(t *testing.T) {
+		existing := dst.Decorations{}
+		generated := dst.Decorations{"// generated doc"}
+		mergeDocComment(&existing, generated)
+		// Mutating generated must not affect existing.
+		generated[0] = "// mutated"
+		got := extractItems(existing)
+		if len(got) != 1 || got[0] != "// generated doc" {
+			t.Fatalf("mutation leaked across copy: existing=%v", existing)
+		}
+	})
+}
+
+// equalStringSlices reports element-wise equality of two []string values.
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestFindContainingGenDecl(t *testing.T) {
+	t.Run("single type declaration", func(t *testing.T) {
+		src := `package p
+
+// doc for Foo
+type Foo struct {
+	A int
+}
+`
+		f := parseFile(t, src)
+		gd := f.Decls[0].(*dst.GenDecl)
+		ts := gd.Specs[0].(*dst.TypeSpec)
+		got := findContainingGenDecl(f, ts)
+		if got != gd {
+			t.Fatalf("expected to find containing GenDecl, got %v", got)
+		}
+	})
+
+	t.Run("grouped type declaration", func(t *testing.T) {
+		src := `package p
+
+type (
+	Foo struct{ A int }
+	Bar struct{ B int }
+)
+`
+		f := parseFile(t, src)
+		gd := f.Decls[0].(*dst.GenDecl)
+		barSpec := gd.Specs[1].(*dst.TypeSpec)
+		got := findContainingGenDecl(f, barSpec)
+		if got != gd {
+			t.Fatalf("expected to find containing GenDecl for Bar, got %v", got)
+		}
+	})
+
+	t.Run("typespec not in file returns nil", func(t *testing.T) {
+		src := `package p
+type Foo struct{ A int }
+`
+		f := parseFile(t, src)
+		other := &dst.TypeSpec{Name: dst.NewIdent("Bogus")}
+		if got := findContainingGenDecl(f, other); got != nil {
+			t.Fatalf("expected nil for unknown TypeSpec, got %v", got)
+		}
+	})
+
+	t.Run("nil arguments", func(t *testing.T) {
+		if got := findContainingGenDecl(nil, nil); got != nil {
+			t.Fatalf("expected nil, got %v", got)
+		}
+	})
+}
+
+func TestFindFieldByName(t *testing.T) {
+	src := `package p
+type T struct {
+	A int
+	B string
+	C int
+}
+`
+	f := parseFile(t, src)
+	gd := f.Decls[0].(*dst.GenDecl)
+	ts := gd.Specs[0].(*dst.TypeSpec)
+	st := ts.Type.(*dst.StructType)
+
+	if got := findFieldByName(st.Fields, "B"); got == nil || got.Names[0].Name != "B" {
+		t.Fatalf("expected to find field B, got %v", got)
+	}
+	if got := findFieldByName(st.Fields, "Missing"); got != nil {
+		t.Fatalf("expected nil for missing field, got %v", got)
+	}
+	if got := findFieldByName(nil, "A"); got != nil {
+		t.Fatalf("expected nil for nil FieldList, got %v", got)
+	}
+}
+
+func TestFindFieldByEmbedKey(t *testing.T) {
+	src := `package p
+import "io"
+type I interface {
+	io.Reader
+	io.Closer
+	Do() error
+}
+`
+	f := parseFile(t, src)
+	gd := f.Decls[1].(*dst.GenDecl) // import is decl[0]
+	ts := gd.Specs[0].(*dst.TypeSpec)
+	iface := ts.Type.(*dst.InterfaceType)
+
+	if got := findFieldByEmbedKey(iface.Methods, "io.Reader"); got == nil {
+		t.Fatal("expected to find io.Reader embed")
+	}
+	if got := findFieldByEmbedKey(iface.Methods, "io.Writer"); got != nil {
+		t.Fatalf("expected nil for missing embed, got %v", got)
+	}
+	// Named methods must never be returned by an embed lookup.
+	if got := findFieldByEmbedKey(iface.Methods, "Do"); got != nil {
+		t.Fatalf("expected nil for named method, got %v", got)
+	}
+}
+
+// --- Integration tests: doc merging through Merge() ---
+
+// TestMergeDocs_FuncAdoptsGeneratedDocWhenMissing verifies that when an existing
+// function has no doc comment, the generated function's doc is adopted.
+func TestMergeDocs_FuncAdoptsGeneratedDocWhenMissing(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_docs_func_adopt")
+
+	existingSrc := `package merge_docs_func_adopt
+
+func Greet(name string) string {
+	return "hello"
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "greet.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "greet.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_docs_func_adopt
+
+// Greet returns a greeting for the given name.
+func Greet(name string) string {
+	return "hello"
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	fd := findFuncDecl(resultFiles[0], "Greet")
+	if fd == nil {
+		t.Fatal("Greet function not found in result file")
+	}
+	if !hasDocComment(fd.Decs.Start) {
+		t.Fatalf("expected doc comment on Greet, got %v", fd.Decs.Start)
+	}
+}
+
+// TestMergeDocs_FuncAppendsGeneratedToManualDoc verifies that when an existing
+// function already has a doc comment (manual) and the generated function has
+// its own (different) doc, the line-level merger appends the generated line(s)
+// rather than overwriting the manual ones. Both must be present in the result.
+func TestMergeDocs_FuncAppendsGeneratedToManualDoc(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_docs_func_append")
+
+	existingSrc := `package merge_docs_func_append
+
+// Greet says hi in a friendly, customized way.
+func Greet(name string) string {
+	return "hello"
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "greet.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "greet.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_docs_func_append
+
+// Greet returns a generic greeting (auto-generated description).
+func Greet(name string) string {
+	return "hello"
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	fd := findFuncDecl(resultFiles[0], "Greet")
+	if fd == nil {
+		t.Fatal("Greet function not found")
+	}
+	if !containsCommentSubstring(fd.Decs.Start, "friendly, customized") {
+		t.Fatalf("expected manual doc preserved, got %v", fd.Decs.Start)
+	}
+	if !containsCommentSubstring(fd.Decs.Start, "auto-generated") {
+		t.Fatalf("expected generated doc appended, got %v", fd.Decs.Start)
+	}
+}
+
+// TestMergeDocs_Func_LineLevelInterleave verifies that when both the existing
+// and generated docs share a common opening line, a generated line that does
+// NOT exist in the result is inserted right after the last common anchor —
+// preserving any trailing manual-only lines that follow.
+//
+// existing = ["// Greet does the thing.", "//", "// Manual: extra note."]
+// generated = ["// Greet does the thing.", "//", "// Returns nil on success."]
+// want order: "Greet does the thing." → "" → "Returns nil on success." → "Manual: extra note."
+func TestMergeDocs_Func_LineLevelInterleave(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_docs_func_interleave")
+
+	existingSrc := `package merge_docs_func_interleave
+
+// Greet does the thing.
+//
+// Manual: extra note.
+func Greet(name string) string {
+	return "hello"
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "greet.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "greet.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_docs_func_interleave
+
+// Greet does the thing.
+//
+// Returns nil on success.
+func Greet(name string) string {
+	return "hello"
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	fd := findFuncDecl(resultFiles[0], "Greet")
+	if fd == nil {
+		t.Fatal("Greet function not found")
+	}
+
+	// Extract comment items in order.
+	var items []string
+	for _, s := range fd.Decs.Start {
+		ts := strings.TrimSpace(s)
+		if strings.HasPrefix(ts, "//") || strings.HasPrefix(ts, "/*") {
+			items = append(items, ts)
+		}
+	}
+
+	// Locate the indices of the three substrings of interest.
+	idxThing := indexOfContaining(items, "does the thing")
+	idxReturns := indexOfContaining(items, "Returns nil on success")
+	idxManual := indexOfContaining(items, "Manual: extra note")
+
+	if idxThing == -1 {
+		t.Fatalf("expected shared anchor line present, got %v", items)
+	}
+	if idxReturns == -1 {
+		t.Fatalf("expected generated line appended into doc, got %v", items)
+	}
+	if idxManual == -1 {
+		t.Fatalf("expected manual line preserved, got %v", items)
+	}
+	if !(idxThing < idxReturns && idxReturns < idxManual) {
+		t.Fatalf("expected order anchor < generated-insert < manual-trailing, got %v (idxs: %d, %d, %d)", items, idxThing, idxReturns, idxManual)
+	}
+}
+
+// indexOfContaining returns the index of the first item containing substr, or -1.
+func indexOfContaining(items []string, substr string) int {
+	for i, s := range items {
+		if strings.Contains(s, substr) {
+			return i
+		}
+	}
+	return -1
+}
+
+// TestMergeDocs_StructTypeAdoptsAndPreserves covers both adopt and preserve
+// scenarios for the type-level doc on a struct declaration. The "preserve"
+// subtest now asserts that the generated line is appended alongside the
+// manual one (line-level merge).
+func TestMergeDocs_StructTypeAdoptsAndPreserves(t *testing.T) {
+	t.Run("adopts when existing has no doc", func(t *testing.T) {
+		dir := mergeTestFixtureDir(t, "merge_docs_struct_adopt")
+
+		existingSrc := `package merge_docs_struct_adopt
+
+type Container struct {
+	Name string
+}
+`
+		if err := os.WriteFile(filepath.Join(dir, "c.go"), []byte(existingSrc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "c.go")}, dir)
+		if err != nil {
+			t.Fatalf("inspect.Inspect failed: %v", err)
+		}
+		pkg := pkgs[0]
+
+		generatedSrc := `package merge_docs_struct_adopt
+
+// Container holds the application state.
+type Container struct {
+	Name string
+}
+`
+		generatedFile, err := decorator.Parse(generatedSrc)
+		if err != nil {
+			t.Fatalf("failed to parse generated src: %v", err)
+		}
+
+		resultFiles, err := Merge(pkg, generatedFile, "")
+		if err != nil {
+			t.Fatalf("Merge() error = %v", err)
+		}
+		if len(resultFiles) == 0 {
+			t.Fatal("expected a merged file, got none")
+		}
+
+		gd := findGenDeclForType(t, resultFiles[0], "Container")
+		if !hasDocComment(gd.Decs.Start) {
+			t.Fatalf("expected doc on Container GenDecl, got %v", gd.Decs.Start)
+		}
+		if !containsCommentSubstring(gd.Decs.Start, "application state") {
+			t.Fatalf("expected generated doc adopted, got %v", gd.Decs.Start)
+		}
+	})
+
+	t.Run("appends generated to manual doc", func(t *testing.T) {
+		dir := mergeTestFixtureDir(t, "merge_docs_struct_append")
+
+		existingSrc := `package merge_docs_struct_append
+
+// Container — hand-written description that must survive merges.
+type Container struct {
+	Name string
+}
+`
+		if err := os.WriteFile(filepath.Join(dir, "c.go"), []byte(existingSrc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "c.go")}, dir)
+		if err != nil {
+			t.Fatalf("inspect.Inspect failed: %v", err)
+		}
+		pkg := pkgs[0]
+
+		generatedSrc := `package merge_docs_struct_append
+
+// Container is a generated description.
+type Container struct {
+	Name string
+}
+`
+		generatedFile, err := decorator.Parse(generatedSrc)
+		if err != nil {
+			t.Fatalf("failed to parse generated src: %v", err)
+		}
+
+		resultFiles, err := Merge(pkg, generatedFile, "")
+		if err != nil {
+			t.Fatalf("Merge() error = %v", err)
+		}
+		if len(resultFiles) == 0 {
+			t.Fatal("expected a merged file, got none")
+		}
+
+		gd := findGenDeclForType(t, resultFiles[0], "Container")
+		if !containsCommentSubstring(gd.Decs.Start, "hand-written") {
+			t.Fatalf("expected manual doc preserved, got %v", gd.Decs.Start)
+		}
+		if !containsCommentSubstring(gd.Decs.Start, "generated description") {
+			t.Fatalf("expected generated doc appended, got %v", gd.Decs.Start)
+		}
+	})
+}
+
+// TestMergeDocs_InterfaceTypeAdoptsAndPreserves covers the same logic for
+// interface declarations.
+func TestMergeDocs_InterfaceTypeAdoptsAndPreserves(t *testing.T) {
+	t.Run("adopts when existing has no doc", func(t *testing.T) {
+		dir := mergeTestFixtureDir(t, "merge_docs_iface_adopt")
+
+		existingSrc := `package merge_docs_iface_adopt
+
+type Service interface {
+	Start() error
+}
+`
+		if err := os.WriteFile(filepath.Join(dir, "s.go"), []byte(existingSrc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "s.go")}, dir)
+		if err != nil {
+			t.Fatalf("inspect.Inspect failed: %v", err)
+		}
+		pkg := pkgs[0]
+
+		generatedSrc := `package merge_docs_iface_adopt
+
+// Service is the lifecycle interface for application services.
+type Service interface {
+	Start() error
+}
+`
+		generatedFile, err := decorator.Parse(generatedSrc)
+		if err != nil {
+			t.Fatalf("failed to parse generated src: %v", err)
+		}
+
+		resultFiles, err := Merge(pkg, generatedFile, "")
+		if err != nil {
+			t.Fatalf("Merge() error = %v", err)
+		}
+		if len(resultFiles) == 0 {
+			t.Fatal("expected a merged file, got none")
+		}
+
+		gd := findGenDeclForType(t, resultFiles[0], "Service")
+		if !containsCommentSubstring(gd.Decs.Start, "lifecycle interface") {
+			t.Fatalf("expected generated doc adopted on Service, got %v", gd.Decs.Start)
+		}
+	})
+
+	t.Run("appends generated to manual doc", func(t *testing.T) {
+		dir := mergeTestFixtureDir(t, "merge_docs_iface_append")
+
+		existingSrc := `package merge_docs_iface_append
+
+// Service: my notes on this interface.
+type Service interface {
+	Start() error
+}
+`
+		if err := os.WriteFile(filepath.Join(dir, "s.go"), []byte(existingSrc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "s.go")}, dir)
+		if err != nil {
+			t.Fatalf("inspect.Inspect failed: %v", err)
+		}
+		pkg := pkgs[0]
+
+		generatedSrc := `package merge_docs_iface_append
+
+// Service is generated.
+type Service interface {
+	Start() error
+}
+`
+		generatedFile, err := decorator.Parse(generatedSrc)
+		if err != nil {
+			t.Fatalf("failed to parse generated src: %v", err)
+		}
+
+		resultFiles, err := Merge(pkg, generatedFile, "")
+		if err != nil {
+			t.Fatalf("Merge() error = %v", err)
+		}
+		if len(resultFiles) == 0 {
+			t.Fatal("expected a merged file, got none")
+		}
+
+		gd := findGenDeclForType(t, resultFiles[0], "Service")
+		if !containsCommentSubstring(gd.Decs.Start, "my notes") {
+			t.Fatalf("expected manual doc preserved on Service, got %v", gd.Decs.Start)
+		}
+		if !containsCommentSubstring(gd.Decs.Start, "is generated") {
+			t.Fatalf("expected generated doc appended on Service, got %v", gd.Decs.Start)
+		}
+	})
+}
+
+// TestMergeDocs_InterfaceMethod_AdoptsDocWhenExistingHasNone verifies that
+// for a method already present in the existing interface, the generated doc
+// is adopted when the existing method has no doc.
+func TestMergeDocs_InterfaceMethod_AdoptsDocWhenExistingHasNone(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_docs_iface_method_adopt")
+
+	existingSrc := `package merge_docs_iface_method_adopt
+
+type Service interface {
+	Start() error
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "s.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "s.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_docs_iface_method_adopt
+
+type Service interface {
+	// Start launches the service in the background.
+	Start() error
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	iface := findInterfaceType(t, resultFiles[0], "Service")
+	startField := findFieldByName(iface.Methods, "Start")
+	if startField == nil {
+		t.Fatal("Start method not found")
+	}
+	if !containsCommentSubstring(startField.Decs.Start, "launches the service") {
+		t.Fatalf("expected generated doc adopted on Start method, got %v", startField.Decs.Start)
+	}
+}
+
+// TestMergeDocs_InterfaceMethod_AppendsGeneratedToManualDoc verifies that a
+// hand-written doc on an existing interface method is preserved AND that the
+// generated method's doc line is appended alongside it (line-level merge).
+func TestMergeDocs_InterfaceMethod_AppendsGeneratedToManualDoc(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_docs_iface_method_append")
+
+	existingSrc := `package merge_docs_iface_method_append
+
+type Service interface {
+	// Start: manual note about Start semantics.
+	Start() error
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "s.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "s.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_docs_iface_method_append
+
+type Service interface {
+	// Start launches the service (generated).
+	Start() error
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	iface := findInterfaceType(t, resultFiles[0], "Service")
+	startField := findFieldByName(iface.Methods, "Start")
+	if startField == nil {
+		t.Fatal("Start method not found")
+	}
+	if !containsCommentSubstring(startField.Decs.Start, "manual note") {
+		t.Fatalf("expected manual doc preserved on Start, got %v", startField.Decs.Start)
+	}
+	if !containsCommentSubstring(startField.Decs.Start, "(generated)") {
+		t.Fatalf("expected generated doc appended on Start, got %v", startField.Decs.Start)
+	}
+}
+
+// TestMergeDocs_StructField_AdoptsAndPreserves verifies field-level doc merging
+// on struct fields and ensures inline trailing comments are not touched.
+func TestMergeDocs_StructField_AdoptsAndPreserves(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_docs_struct_field")
+
+	existingSrc := `package merge_docs_struct_field
+
+type Container struct {
+	Name string
+	// Count: manual description that must remain.
+	Count int
+	Note  string // inline note preserved
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "c.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "c.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	// Generated provides docs for Name (existing has none — should adopt) and
+	// for Count (existing has manual — must be preserved).
+	generatedSrc := `package merge_docs_struct_field
+
+type Container struct {
+	// Name is the human-readable identifier.
+	Name string
+	// Count is the generated description for Count.
+	Count int
+	// Note is the generated description (must NOT overwrite inline note).
+	Note string
+}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	// Locate Container's struct type in the result.
+	gd := findGenDeclForType(t, resultFiles[0], "Container")
+	ts := gd.Specs[0].(*dst.TypeSpec)
+	st := ts.Type.(*dst.StructType)
+
+	nameField := findFieldByName(st.Fields, "Name")
+	if nameField == nil {
+		t.Fatal("Name field not found")
+	}
+	if !containsCommentSubstring(nameField.Decs.Start, "human-readable identifier") {
+		t.Fatalf("expected generated doc adopted on Name, got %v", nameField.Decs.Start)
+	}
+
+	countField := findFieldByName(st.Fields, "Count")
+	if countField == nil {
+		t.Fatal("Count field not found")
+	}
+	if !containsCommentSubstring(countField.Decs.Start, "manual description") {
+		t.Fatalf("expected manual doc preserved on Count, got %v", countField.Decs.Start)
+	}
+	if !containsCommentSubstring(countField.Decs.Start, "generated description for Count") {
+		t.Fatalf("expected generated doc appended on Count, got %v", countField.Decs.Start)
+	}
+
+	// The inline note on Note must be preserved untouched (Decs.End).
+	noteField := findFieldByName(st.Fields, "Note")
+	if noteField == nil {
+		t.Fatal("Note field not found")
+	}
+	if !containsCommentSubstring(noteField.Decs.End, "inline note preserved") {
+		t.Fatalf("expected inline note preserved on Note.Decs.End, got %v", noteField.Decs.End)
+	}
+}
+
+// TestMergeDocs_NewEntitiesStillCarryGeneratedDocs is a sanity check verifying
+// that entirely-new declarations added by Merge still carry the generated doc
+// (this code path is untouched by the doc-merge changes but the test guards
+// against regressions in the surrounding refactor).
+func TestMergeDocs_NewEntitiesStillCarryGeneratedDocs(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_docs_new_entity")
+
+	existingSrc := `package merge_docs_new_entity
+
+type Existing struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "e.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "e.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_docs_new_entity
+
+// NewType is a freshly-added type with its generated doc.
+type NewType struct {
+	A int
+}
+
+// NewFunc is a freshly-added function with its generated doc.
+func NewFunc() {}
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "e.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	gd := findGenDeclForType(t, resultFiles[0], "NewType")
+	if !containsCommentSubstring(gd.Decs.Start, "freshly-added type") {
+		t.Fatalf("expected generated doc on new type, got %v", gd.Decs.Start)
+	}
+
+	fd := findFuncDecl(resultFiles[0], "NewFunc")
+	if fd == nil {
+		t.Fatal("NewFunc not found")
+	}
+	if !containsCommentSubstring(fd.Decs.Start, "freshly-added function") {
+		t.Fatalf("expected generated doc on new function, got %v", fd.Decs.Start)
+	}
+}
+
+// --- Doc test helpers ---
+
+// containsCommentSubstring reports whether any decoration string contains the
+// given substring (after trimming the leading // or /* prefix). Used by doc
+// merge tests to assert on rendered comment text without depending on exact
+// formatting decisions made by the decorator.
+func containsCommentSubstring(decs dst.Decorations, substr string) bool {
+	for _, s := range decs {
+		if strings.Contains(s, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// findGenDeclForType locates the *dst.GenDecl in a file whose Specs contain a
+// TypeSpec with the given name. It is used by doc-merge tests to assert on
+// type-level doc comments (which live on the containing GenDecl).
+func findGenDeclForType(t *testing.T, file *dst.File, name string) *dst.GenDecl {
+	t.Helper()
+	for _, decl := range file.Decls {
+		gd, ok := decl.(*dst.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			ts, ok := spec.(*dst.TypeSpec)
+			if !ok {
+				continue
+			}
+			if ts.Name != nil && ts.Name.Name == name {
+				return gd
+			}
+		}
+	}
+	t.Fatalf("GenDecl for type %q not found in file", name)
+	return nil
 }

@@ -160,7 +160,6 @@ func (p *Parser) GetParsedFile(filePath string) (f *dst.File, pkg *decorator.Pac
 	// Find the package that contains this file
 	for _, pkg := range p.pkgs {
 		for _, file := range pkg.Syntax {
-			fmt.Println("FILE:", pkg.Decorator.Filenames[file])
 			if pkg.Decorator.Filenames[file] == filePath {
 				return file, pkg, nil
 			}
