@@ -129,10 +129,11 @@ func newReporter(interactive bool) (reporter contract.Reporter, cleanup func()) 
 // any config files found via git source includes into the shape config.
 // It stamps Git provenance on macros and options loaded from git repos.
 func checkoutAndMergeIncludes(cfg *shape.Config) error {
-	results, err := template.Checkout(cfg.Sources, cfg.CacheDir)
+	results, skills, err := template.Checkout(cfg.Sources, cfg.CacheDir)
 	if err != nil {
 		return fmt.Errorf("failed to checkout templates: %w", err)
 	}
+	cfg.ExternalSkills = skills
 
 	for _, r := range results {
 		inc, err := command.ParseConfig[shape.FileConfig](r.Path)

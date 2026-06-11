@@ -14,25 +14,27 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// RunSkillsList lists every embedded plumber skill along with its frontmatter
-// description.
-func RunSkillsList(_ *cli.Context, _ *contract.ShapingContext, _ *shape.Config) error {
-	infos, err := skills.ListSkills()
-	if err != nil {
-		return fmt.Errorf("listing skills: %w", err)
+// externalSkillSources converts the skill directories resolved during git
+// checkout (stashed on shape.Config by checkoutAndMergeIncludes) into the
+// ExternalSource form expected by the skills package.
+func externalSkillSources(cfg *shape.Config) []skills.ExternalSource {
+	if len(cfg.ExternalSkills) == 0 {
+		return nil
 	}
-	for _, info := range infos {
-		if info.Description != "" {
-			fmt.Printf("%s\t%s\n", info.Name, info.Description)
-		} else {
-			fmt.Println(info.Name)
+	out := make([]skills.ExternalSource, 0, len(cfg.ExternalSkills))
+	for _, r := range cfg.ExternalSkills {
+		origin := ""
+		if r.Git != nil {
+			origin = r.Git.Repository
 		}
+		out = append(out, skills.ExternalSource{Dir: r.Path, Origin: origin})
 	}
-	return nil
+	return out
 }
 
-// RunSkillsInstall installs embedded skills into the requested coding-agent
-// platform's filesystem layout. The first positional argument is the platform
+// RunSkillsInstall installs embedded skills (plus any external skills declared
+// via git source `skills` entries) into the requested coding-agent platform's
+// filesystem layout. The first positional argument is the platform
 // (agents|claude|copilot|autodetect); subsequent arguments restrict the
 // install to specific skill names. Templates within skill markdown files are
 // expanded with describe output (macros, options, handlers, functions).
@@ -69,6 +71,7 @@ func RunSkillsInstall(c *cli.Context, ctx *contract.ShapingContext, shapeConfig 
 	results, err := skills.Install(skills.InstallOptions{
 		Platforms:       platforms,
 		Skills:          args[1:],
+		External:        externalSkillSources(shapeConfig),
 		DestRoot:        destRoot,
 		Force:           c.Bool("force"),
 		DryRun:          c.Bool("dry-run"),

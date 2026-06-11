@@ -37,7 +37,6 @@ func MatchRules(rules []config.MatchRuleConfig, t *model.TypeSpec, subject model
 			}
 		case strings.HasPrefix(rule, "annotation.has:"):
 			annName := strings.TrimPrefix(rule, "annotation.has:")
-			//fmt.Println("Checking annotation:", annName, "on type:", subject.GetAnnotations())
 			if subject != nil && subject.GetAnnotations().Find(annName) != nil {
 				return true
 			}

@@ -35,9 +35,13 @@ type Config struct {
 	Structures           []*config.StructureDefinitionConfig `yaml:"structures,omitempty"`
 	Handlers             []config.HandlerConfig              `yaml:"handlers,omitempty"`
 	// Options is a list of annotation schema configurations that can be referenced by macros or other configuration elements,
-	Options     []config.AnnotationSchemaConfig `yaml:"options,omitempty"`
-	Target      *config.TargetConfig            `yaml:"-"`
-	Interactive bool                            `yaml:"-"`
+	Options []config.AnnotationSchemaConfig `yaml:"options,omitempty"`
+	Target  *config.TargetConfig            `yaml:"-"`
+	// ExternalSkills lists skill directories resolved from git sources during
+	// checkout. Populated by checkoutAndMergeIncludes; consumed by the skills
+	// install/list commands.
+	ExternalSkills []template.GitSkillResult `yaml:"-"`
+	Interactive    bool                      `yaml:"-"`
 }
 
 func (c *FileConfig) Merge(includes ...*FileConfig) {

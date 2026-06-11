@@ -8,7 +8,9 @@
 // "skills" — bundles of agent-facing markdown documentation — onto coding
 // agent platforms such as Claude, GitHub Copilot, and the project-local
 // agents/ folder. Skill source content is embedded at build time so the
-// CLI can install skills without network access.
+// CLI can install skills without network access. External skill folders
+// declared via git source configuration are also discovered and merged
+// alongside the embedded catalog at runtime.
 package skills
 
 import (
@@ -35,14 +37,45 @@ var skillsFS embed.FS
 // embeddedSkillsRoot is the path within skillsFS where skills are located.
 const embeddedSkillsRoot = "skills"
 
-// SkillInfo describes a single embedded skill.
+// embeddedOrigin labels skills that come from the embedded catalog.
+const embeddedOrigin = "embedded"
+
+// SkillInfo describes a single discovered skill (embedded or external).
 type SkillInfo struct {
-	// Name is the directory name of the skill under the embedded FS.
-	Name string
+	// Name is the skill's identifier (directory basename or SKILL.md
+	// frontmatter `name`).
+	Name string `json:"name" yaml:"name"`
 	// Description is taken from the SKILL.md YAML frontmatter if present.
-	Description string
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	// Files lists the relative file paths within the skill (sorted, SKILL.md first).
-	Files []string
+	Files []string `json:"files,omitempty" yaml:"files,omitempty"`
+	// Origin is "embedded" for the built-in catalog, or the source identifier
+	// (typically a git repository URL) for external skills.
+	Origin string `json:"origin" yaml:"origin"`
+
+	// src is the unexported reader bundle used by Install to access the skill's
+	// files; it is populated by ListAvailableSkills.
+	src skillSource `json:"-" yaml:"-"`
+}
+
+// skillSource bundles a filesystem and a directory name that together locate
+// a single skill's files. fsys is rooted at the parent of the skill directory
+// so files live at "<name>/...".
+type skillSource struct {
+	fsys   fs.FS
+	name   string
+	origin string
+}
+
+// ExternalSource declares an additional, on-disk source containing a single
+// skill directory to be discovered alongside the embedded catalog. Each Dir
+// must be an existing directory whose contents include SKILL.md.
+type ExternalSource struct {
+	// Dir is the absolute filesystem path to the skill directory.
+	Dir string
+	// Origin is an optional identifier for diagnostics (typically a git
+	// repository URL). Defaults to Dir when empty.
+	Origin string
 }
 
 // InstallOptions controls a skills install run.
@@ -50,8 +83,12 @@ type InstallOptions struct {
 	// Platforms is the resolved list of concrete platforms to install into.
 	// Use ResolvePlatforms to expand PlatformAutodetect.
 	Platforms []Platform
-	// Skills is the set of skill names to install. Empty means "all embedded skills".
+	// Skills is the set of skill names to install. Empty means "all available skills".
 	Skills []string
+	// External lists additional on-disk skill directories to discover
+	// alongside the embedded catalog. External skills override embedded
+	// skills with the same name.
+	External []ExternalSource
 	// DestRoot is the destination root directory. Defaults to "." when empty.
 	DestRoot string
 	// Force overwrites existing destination files when true; otherwise existing
@@ -84,40 +121,136 @@ type InstallResult struct {
 }
 
 // ListSkills returns metadata for every embedded skill, sorted by name.
+// It is a backward-compatible shorthand for ListAvailableSkills(nil).
 func ListSkills() ([]SkillInfo, error) {
-	entries, err := skillsFS.ReadDir(embeddedSkillsRoot)
+	return ListAvailableSkills(nil)
+}
+
+// ListAvailableSkills returns metadata for every embedded skill plus any
+// external sources, sorted by name. When an external skill has the same name
+// as an embedded skill the external one wins and a notice is written to
+// stderr. Each ExternalSource's Dir must exist and contain a SKILL.md;
+// directories that do not satisfy these requirements produce an error.
+func ListAvailableSkills(external []ExternalSource) ([]SkillInfo, error) {
+	embeddedRoot, err := fs.Sub(skillsFS, embeddedSkillsRoot)
 	if err != nil {
-		return nil, fmt.Errorf("reading embedded skills: %w", err)
+		return nil, fmt.Errorf("rooting embedded skills: %w", err)
+	}
+
+	byName := map[string]SkillInfo{}
+
+	embedded, err := discoverSkills(embeddedRoot, embeddedOrigin)
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range embedded {
+		byName[s.Name] = s
+	}
+
+	for _, ext := range external {
+		s, err := loadExternalSkill(ext)
+		if err != nil {
+			return nil, err
+		}
+		if existing, ok := byName[s.Name]; ok && existing.Origin == embeddedOrigin {
+			fmt.Fprintf(os.Stderr, "skill %q overridden by external source %s\n", s.Name, sourceLabel(ext))
+		}
+		byName[s.Name] = s
+	}
+
+	out := make([]SkillInfo, 0, len(byName))
+	for _, s := range byName {
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// discoverSkills walks the immediate children of root and returns one
+// SkillInfo per subdirectory that contains a SKILL.md.
+func discoverSkills(root fs.FS, origin string) ([]SkillInfo, error) {
+	entries, err := fs.ReadDir(root, ".")
+	if err != nil {
+		return nil, fmt.Errorf("reading skills root: %w", err)
 	}
 	out := make([]SkillInfo, 0, len(entries))
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		info, err := loadSkillInfo(e.Name())
+		src := skillSource{fsys: root, name: e.Name(), origin: origin}
+		info, err := loadSkillInfo(src)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, info)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
-// loadSkillInfo reads the embedded files of a single skill and extracts its
-// description from SKILL.md frontmatter when available.
-func loadSkillInfo(name string) (SkillInfo, error) {
-	files, err := listSkillFiles(name)
+// loadExternalSkill builds a SkillInfo for a single on-disk skill directory.
+// The directory must exist and contain a SKILL.md.
+func loadExternalSkill(ext ExternalSource) (SkillInfo, error) {
+	if ext.Dir == "" {
+		return SkillInfo{}, errors.New("external skill source: Dir is empty")
+	}
+	info, err := os.Stat(ext.Dir)
+	if err != nil {
+		return SkillInfo{}, fmt.Errorf("external skill %q: %w", ext.Dir, err)
+	}
+	if !info.IsDir() {
+		return SkillInfo{}, fmt.Errorf("external skill %q is not a directory", ext.Dir)
+	}
+	if _, err := os.Stat(filepath.Join(ext.Dir, "SKILL.md")); err != nil {
+		return SkillInfo{}, fmt.Errorf("external skill %q has no SKILL.md: %w", ext.Dir, err)
+	}
+	parent := filepath.Dir(ext.Dir)
+	name := filepath.Base(ext.Dir)
+	src := skillSource{
+		fsys:   os.DirFS(parent),
+		name:   name,
+		origin: sourceLabel(ext),
+	}
+	skill, err := loadSkillInfo(src)
 	if err != nil {
 		return SkillInfo{}, err
 	}
-	info := SkillInfo{Name: name, Files: files}
+	return skill, nil
+}
 
-	skillMD := filepath.Join(embeddedSkillsRoot, name, "SKILL.md")
-	if data, err := skillsFS.ReadFile(skillMD); err == nil {
+// sourceLabel returns the user-facing label for an ExternalSource (Origin
+// when set, falling back to Dir).
+func sourceLabel(ext ExternalSource) string {
+	if ext.Origin != "" {
+		return ext.Origin
+	}
+	return ext.Dir
+}
+
+// loadSkillInfo reads the files of a single skill from src and extracts its
+// description from SKILL.md frontmatter when available. The skill's name
+// defaults to the directory basename and is overridden by SKILL.md
+// frontmatter `name` when present.
+func loadSkillInfo(src skillSource) (SkillInfo, error) {
+	files, err := listSkillFiles(src)
+	if err != nil {
+		return SkillInfo{}, err
+	}
+	info := SkillInfo{
+		Name:   src.name,
+		Files:  files,
+		Origin: src.origin,
+		src:    src,
+	}
+
+	skillMD := path(src.name, "SKILL.md")
+	if data, err := fs.ReadFile(src.fsys, skillMD); err == nil {
 		if fm := parseFrontmatter(data); fm != nil {
 			if desc, ok := fm["description"].(string); ok {
 				info.Description = desc
+			}
+			if n, ok := fm["name"].(string); ok && n != "" {
+				info.Name = n
 			}
 		}
 	}
@@ -126,10 +259,10 @@ func loadSkillInfo(name string) (SkillInfo, error) {
 
 // listSkillFiles returns every file path inside a skill, relative to the
 // skill directory. SKILL.md is sorted first; remaining files are alphabetical.
-func listSkillFiles(name string) ([]string, error) {
-	root := path(embeddedSkillsRoot, name)
+func listSkillFiles(src skillSource) ([]string, error) {
+	root := src.name
 	var files []string
-	err := fs.WalkDir(skillsFS, root, func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(src.fsys, root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -144,7 +277,7 @@ func listSkillFiles(name string) ([]string, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("walking skill %q: %w", name, err)
+		return nil, fmt.Errorf("walking skill %q: %w", src.name, err)
 	}
 	sort.Slice(files, func(i, j int) bool {
 		ai, aj := files[i] == "SKILL.md", files[j] == "SKILL.md"
@@ -170,7 +303,12 @@ func Install(opts InstallOptions) ([]InstallResult, error) {
 		destRoot = "."
 	}
 
-	skills, err := selectSkills(opts.Skills)
+	available, err := ListAvailableSkills(opts.External)
+	if err != nil {
+		return nil, err
+	}
+
+	skills, err := selectSkills(available, opts.Skills)
 	if err != nil {
 		return nil, err
 	}
@@ -188,14 +326,10 @@ func Install(opts InstallOptions) ([]InstallResult, error) {
 	return results, nil
 }
 
-// selectSkills returns the SkillInfo for each requested name, or all embedded
-// skills when names is empty. Unknown names produce an error listing the
-// available skills.
-func selectSkills(names []string) ([]SkillInfo, error) {
-	all, err := ListSkills()
-	if err != nil {
-		return nil, err
-	}
+// selectSkills returns the SkillInfo for each requested name, or all
+// available skills when names is empty. Unknown names produce an error
+// listing the available skills.
+func selectSkills(all []SkillInfo, names []string) ([]SkillInfo, error) {
 	if len(names) == 0 {
 		return all, nil
 	}
@@ -249,10 +383,10 @@ func installOne(platform Platform, skill SkillInfo, destRoot string, opts Instal
 // installFile renders one source file from the skill and writes it to the
 // destination path, honoring Force and DryRun.
 func installFile(skill SkillInfo, rel, destPath string, opts InstallOptions) (FileResult, error) {
-	src := path(embeddedSkillsRoot, skill.Name, rel)
-	data, err := skillsFS.ReadFile(src)
+	src := path(skill.src.name, rel)
+	data, err := fs.ReadFile(skill.src.fsys, src)
 	if err != nil {
-		return FileResult{}, fmt.Errorf("reading embedded %q: %w", src, err)
+		return FileResult{}, fmt.Errorf("reading skill file %q: %w", src, err)
 	}
 	rendered, err := renderIfMarkdown(rel, data, opts.TemplateContext)
 	if err != nil {
@@ -279,10 +413,10 @@ func mergeSkill(skill SkillInfo, ctx TemplateContext) ([]byte, error) {
 		bodyParts   []string
 	)
 	for _, rel := range skill.Files {
-		src := path(embeddedSkillsRoot, skill.Name, rel)
-		raw, err := skillsFS.ReadFile(src)
+		src := path(skill.src.name, rel)
+		raw, err := fs.ReadFile(skill.src.fsys, src)
 		if err != nil {
-			return nil, fmt.Errorf("reading embedded %q: %w", src, err)
+			return nil, fmt.Errorf("reading skill file %q: %w", src, err)
 		}
 		rendered, err := renderIfMarkdown(rel, raw, ctx)
 		if err != nil {

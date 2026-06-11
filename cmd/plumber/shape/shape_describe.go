@@ -12,6 +12,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/describe"
 	"github.com/getoutreach/plumber/internal/command/shape/expand"
 	shaperender "github.com/getoutreach/plumber/internal/command/shape/render"
+	"github.com/getoutreach/plumber/internal/command/shape/skills"
 	"github.com/getoutreach/plumber/internal/render"
 	"github.com/urfave/cli/v2"
 )
@@ -70,6 +71,30 @@ func RunDescribeStructures(c *cli.Context, ctx *contract.ShapingContext, shapeCo
 	out, err := formatter.FormatStructures(structures)
 	if err != nil {
 		return fmt.Errorf("failed to format structures description: %w", err)
+	}
+
+	_, err = os.Stdout.Write(out)
+	return err
+}
+
+// RunDescribeSkills lists every embedded plumber skill plus any external skills
+// declared via git source `skills` entries, along with their origin and
+// frontmatter description, in the requested format (md, json, yaml).
+func RunDescribeSkills(c *cli.Context, _ *contract.ShapingContext, shapeConfig *shape.Config) error {
+	format := c.String("format")
+	formatter, err := skills.Format(format)
+	if err != nil {
+		return err
+	}
+
+	infos, err := skills.ListAvailableSkills(externalSkillSources(shapeConfig))
+	if err != nil {
+		return fmt.Errorf("listing skills: %w", err)
+	}
+
+	out, err := formatter.Format(infos)
+	if err != nil {
+		return fmt.Errorf("failed to format skills listing: %w", err)
 	}
 
 	_, err = os.Stdout.Write(out)

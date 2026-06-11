@@ -40,7 +40,15 @@ type GitSourceConfig struct {
 	Ref        string             `yaml:"ref,omitempty"`
 	Includes   []GitIncludeConfig `yaml:"includes,omitempty"`
 	Templates  []FileRef          `yaml:"templates,omitempty"`
-	Replaced   string             `yaml:"replaced,omitempty"` // for testing, allows replacing the repo URL with a local path
+	// Skills lists skill directories - or globs expanding into them - inside
+	// the git repository that plumber should expose alongside its embedded
+	// skill catalog. Each resolved match must be an existing directory.
+	// Directories that contain a SKILL.md become installable skills; ones
+	// without are silently ignored. FileRef.Name is unused for skill
+	// entries; the skill name comes from SKILL.md frontmatter, falling back
+	// to the directory basename.
+	Skills   []FileRef `yaml:"skills,omitempty"`
+	Replaced string    `yaml:"replaced,omitempty"` // for testing, allows replacing the repo URL with a local path
 }
 
 // GitIncludeConfig represents an include path for loading additional configuration files
@@ -66,6 +74,15 @@ type ContentConfig struct {
 // GitIncludeResult pairs an include file path with the git source config it
 // came from, allowing callers to stamp provenance on loaded objects.
 type GitIncludeResult struct {
+	Path string
+	Git  *GitSourceConfig
+}
+
+// GitSkillResult is one resolved skill directory from a git source's Skills
+// declaration, with provenance back to the git config it came from. Path is
+// an absolute filesystem path to the skill directory inside the cached
+// checkout. Only directories that contain a SKILL.md are reported.
+type GitSkillResult struct {
 	Path string
 	Git  *GitSourceConfig
 }

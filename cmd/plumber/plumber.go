@@ -169,6 +169,19 @@ func main() {
 							},
 							Action: shape.RunCommand("describe-structure", shape.RunDescribeStructures),
 						},
+						{
+							Name:        "skills",
+							Description: "Describe embedded and external plumber skills",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "format",
+									Aliases: []string{"f"},
+									Usage:   "Output format: md, json, yaml",
+									Value:   "md",
+								},
+							},
+							Action: shape.RunCommand("describe-skills", shape.RunDescribeSkills),
+						},
 					},
 				},
 				{
@@ -198,11 +211,6 @@ func main() {
 								},
 							},
 							Action: shape.RunCommand("skills-install", shape.RunSkillsInstall),
-						},
-						{
-							Name:   "list",
-							Usage:  "List embedded plumber skills",
-							Action: shape.RunCommand("skills-list", shape.RunSkillsList),
 						},
 					},
 				},

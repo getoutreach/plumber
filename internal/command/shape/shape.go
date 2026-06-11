@@ -185,10 +185,11 @@ func resolveTargetType(typeFQN string, pkgs model.Packages) (*model.Type, error)
 // any config files found via git source includes into the shape config.
 // It stamps Git provenance on macros and options loaded from git repos.
 func checkoutAndMergeIncludes(cfg *Config) error {
-	results, err := template.Checkout(cfg.Sources, cfg.CacheDir)
+	results, skills, err := template.Checkout(cfg.Sources, cfg.CacheDir)
 	if err != nil {
 		return fmt.Errorf("failed to checkout templates: %w", err)
 	}
+	cfg.ExternalSkills = skills
 
 	for _, r := range results {
 		inc, err := command.ParseConfig[FileConfig](r.Path)
@@ -270,7 +271,8 @@ func collectCommentTransformations(
 
 			if matcherName != "" {
 				// Package + matcher mode: match all types in the target package.
-				if err := collectMatcherContextTransformations(cfg, ctx.StructurePathResolver, pkgs, comment, m.Value(), matcherName, appendTransformer); err != nil {
+				if err := collectMatcherContextTransformations(
+					cfg, ctx.StructurePathResolver, pkgs, comment, m.Value(), matcherName, appendTransformer); err != nil {
 					return err
 				}
 				continue

@@ -21,11 +21,12 @@ const DefaultCacheDir = "~/.outreach/.plumber"
 
 // Checkout performs Git checkouts for all Git-based template sources, using sparse clones
 // to efficiently retrieve only the necessary template files. It returns include results
-// pairing each path with its git source config for provenance tracking.
-func Checkout(sources []*SourceConfig, cacheDir string) ([]GitIncludeResult, error) {
+// pairing each path with its git source config for provenance tracking, plus skill
+// directory results for any Skills declarations on git sources.
+func Checkout(sources []*SourceConfig, cacheDir string) ([]GitIncludeResult, []GitSkillResult, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() {
 		err := os.Chdir(currentDir)
@@ -41,24 +42,27 @@ func Checkout(sources []*SourceConfig, cacheDir string) ([]GitIncludeResult, err
 	if strings.HasPrefix(cacheDir, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return nil, fmt.Errorf("cant' get users home: %w", err)
+			return nil, nil, fmt.Errorf("cant' get users home: %w", err)
 		}
 		cacheDir = path.Join(home, cacheDir[2:])
 	}
-	fmt.Fprintln(os.Stderr, "Using cacheDir:", cacheDir)
-	var results []GitIncludeResult
+	var (
+		includes []GitIncludeResult
+		skills   []GitSkillResult
+	)
 	for _, s := range sources {
 		if s.Git != nil {
-			paths, err := checkoutGit(s.Git, cacheDir)
+			paths, sks, err := checkoutGit(s.Git, cacheDir)
 			if err != nil {
-				return nil, fmt.Errorf("failed to checkout git source %s: %w", s.Git.Repository, err)
+				return nil, nil, fmt.Errorf("failed to checkout git source %s: %w", s.Git.Repository, err)
 			}
 			for _, p := range paths {
-				results = append(results, GitIncludeResult{Path: p, Git: s.Git})
+				includes = append(includes, GitIncludeResult{Path: p, Git: s.Git})
 			}
+			skills = append(skills, sks...)
 		}
 	}
-	return results, nil
+	return includes, skills, nil
 }
 
 // LoadAllContent converts all inline content templates into render option functions.

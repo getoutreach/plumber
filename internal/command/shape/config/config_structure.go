@@ -16,8 +16,8 @@ type PlumberStructureConfig struct {
 // StructureConfig represents the overall configuration for the shape command,
 // including included structures and additional structure definitions.
 type StructureConfig struct {
-	Include    []string                    `yaml:"include,omitempty"`
-	Additional []StructureDefinitionConfig `yaml:"additional,omitempty"`
+	Include []string                    `yaml:"include,omitempty"`
+	Extend  []StructureDefinitionConfig `yaml:"extend,omitempty"`
 }
 
 // StructureDefinitions holds a list of structure definitions for the shape command.
@@ -27,7 +27,7 @@ type StructureDefinitions struct {
 
 // ResolveStructureDefinitions builds a StructureDefinitions by selecting structures
 // whose names appear in cfg.Include from the available pool, then merging any
-// cfg.Additional definitions on top (additional has priority: matching names are
+// cfg.Extend definitions on top (extend has priority: matching names are
 // merged, new names are appended).
 func ResolveStructureDefinitions(cfg StructureConfig, available []*StructureDefinitionConfig) (*StructureDefinitions, error) {
 	// 1. Collect included structures by name.
@@ -52,8 +52,8 @@ func ResolveStructureDefinitions(cfg StructureConfig, available []*StructureDefi
 		}
 	}
 
-	// 2. Merge additional definitions.
-	for _, add := range cfg.Additional {
+	// 2. Merge extend definitions.
+	for _, add := range cfg.Extend {
 		merged := false
 		for i := range included {
 			if included[i].Name == add.Structure.Name {
