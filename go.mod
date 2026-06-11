@@ -5,7 +5,7 @@ go 1.25.0
 toolchain go1.25.7
 
 require (
-	github.com/samber/lo v1.52.0
+	github.com/samber/lo v1.53.0
 	gotest.tools/v3 v3.5.2
 )
 
