@@ -25,6 +25,13 @@ func NewPublisher(broker string) *Publisher {
 	}
 }
 
+func NewDelayedPublisher(broker string) *Publisher {
+	return &Publisher{
+		broker:     broker,
+		BaseLooper: contract.NewWorker("async.DelayedPublisher"),
+	}
+}
+
 func (p *Publisher) Publish(ctx context.Context, e *contract.Entity) error {
 	fmt.Printf("Publishing entity #%v name=%s\n", e.ID, e.Name)
 	return nil

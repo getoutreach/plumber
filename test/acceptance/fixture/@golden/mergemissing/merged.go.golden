@@ -1,0 +1,12 @@
+package fixture
+
+import "github.com/getoutreach/plumber/test/acceptance/fixture/complex"
+
+// ModelMissing is derived from "github.com/getoutreach/plumber/test/acceptance/testrun-acceptance/fixture/mergemissing".Model.
+type ModelMissing struct {
+	Name        string
+	Concurrency int
+	Closer      OpenCloser
+	Queues      []string
+	Complex     complex.Complex
+}

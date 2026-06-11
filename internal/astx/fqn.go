@@ -1,0 +1,736 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file implements the FQN type and helpers for converting between
+// go/types.Type and fully-qualified name string representations.
+
+package astx
+
+import (
+	"bytes"
+	"fmt"
+	"go/ast"
+	"go/printer"
+	"go/token"
+	"go/types"
+	"path"
+	"strconv"
+	"strings"
+)
+
+// Consts
+const (
+	// PlumberAnyPkg is the package path used in the "plumber".Any wildcard sentinel.
+	PlumberAnyPkg = "plumber"
+	// PlumberAnyType is the type name used in the "plumber".Any wildcard sentinel.
+	PlumberAnyType = "Any"
+)
+
+// typeToAST converts a types.Type into its ast.Expr representation.
+// Named types with a package are represented as a SelectorExpr where
+// the X ident carries the quoted package path, e.g.
+//
+//	"github.com/google/uuid".UUID
+func typeToAST(t types.Type) ast.Expr {
+	switch t := t.(type) {
+	case *types.Basic:
+		return &ast.Ident{Name: t.Name()}
+	case *types.Named:
+		obj := t.Obj()
+		var base ast.Expr
+		if pkg := obj.Pkg(); pkg != nil {
+			base = &ast.SelectorExpr{
+				X:   &ast.Ident{Name: strconv.Quote(pkg.Path())},
+				Sel: &ast.Ident{Name: obj.Name()},
+			}
+		} else {
+			base = &ast.Ident{Name: obj.Name()}
+		}
+		// Handle generic type arguments (e.g. Container[string] or Pair[K, V]).
+		if args := t.TypeArgs(); args != nil && args.Len() > 0 {
+			if args.Len() == 1 {
+				base = &ast.IndexExpr{X: base, Index: typeToAST(args.At(0))}
+			} else {
+				indices := make([]ast.Expr, args.Len())
+				for i := 0; i < args.Len(); i++ {
+					indices[i] = typeToAST(args.At(i))
+				}
+				base = &ast.IndexListExpr{X: base, Indices: indices}
+			}
+		}
+		return base
+
+	case *types.Pointer:
+		return &ast.StarExpr{X: typeToAST(t.Elem())}
+
+	case *types.Slice:
+		return &ast.ArrayType{Elt: typeToAST(t.Elem())}
+
+	case *types.Array:
+		return &ast.ArrayType{
+			Len: &ast.BasicLit{Kind: token.INT, Value: strconv.FormatInt(t.Len(), 10)},
+			Elt: typeToAST(t.Elem()),
+		}
+
+	case *types.Map:
+		return &ast.MapType{
+			Key:   typeToAST(t.Key()),
+			Value: typeToAST(t.Elem()),
+		}
+
+	case *types.Chan:
+		dir := ast.SEND | ast.RECV
+		// nolint: exhaustive //Why: again useless lint noise for a default value
+		switch t.Dir() {
+		case types.SendOnly:
+			dir = ast.SEND
+		case types.RecvOnly:
+			dir = ast.RECV
+		}
+		return &ast.ChanType{Dir: dir, Value: typeToAST(t.Elem())}
+
+	case *types.Interface:
+		return &ast.InterfaceType{Methods: &ast.FieldList{}}
+
+	case *types.Struct:
+		return &ast.StructType{Fields: &ast.FieldList{}}
+
+	case *types.Signature:
+		return &ast.FuncType{}
+
+	case *types.TypeParam:
+		return &ast.Ident{Name: t.Obj().Name()}
+
+	case *types.Alias:
+		obj := t.Obj()
+		if pkg := obj.Pkg(); pkg != nil {
+			base := &ast.SelectorExpr{
+				X:   &ast.Ident{Name: strconv.Quote(pkg.Path())},
+				Sel: &ast.Ident{Name: obj.Name()},
+			}
+			return base
+		}
+		return &ast.Ident{Name: t.String()}
+	default:
+		// Fallback: use the types package string representation
+		return &ast.Ident{Name: t.String()}
+	}
+}
+
+// FQN represents a fully qualified name of a Go type, including its package path if applicable.
+type FQN struct {
+	Expression ast.Expr
+}
+
+func (f *FQN) IsStandard() bool {
+	return IsStandardType(f.String())
+}
+
+func (f *FQN) IsPackageLess() bool {
+	return IsPackageLess(f.String())
+}
+
+func IsStandardType(name string) bool {
+	names := strings.SplitN(name, "/", 2)
+	return !strings.Contains(names[0], `.`)
+}
+
+func IsPackageLess(name string) bool {
+	return !strings.Contains(name, `.`)
+}
+
+func (f *FQN) Unquote() string {
+	return strings.ReplaceAll(f.String(), `"`, ``)
+}
+
+// FQNFromGoType returns the fully qualified name of a Go type.
+// Package paths are quoted and separated from the type name by a dot, e.g.:
+//
+//	*"github.com/google/uuid".UUID
+//	*[]"net/http".Dir
+func FQNFromGoType(t types.Type) *FQN {
+	expr := typeToAST(t)
+	return &FQN{Expression: expr}
+}
+
+func ParseFQN(s string) (*FQN, error) {
+	p := &fqnParser{s: s}
+	expr, err := p.parse()
+	if err != nil {
+		return nil, err
+	}
+	if p.pos != len(p.s) {
+		return nil, fmt.Errorf("unexpected trailing input: %q", p.s[p.pos:])
+	}
+	return &FQN{Expression: expr}, nil
+}
+
+func ParseRelativeFQN(packagePath, s string, replacers ...func(pkgPath, typeName string) (replacement string, ok bool)) (*FQN, error) {
+	// Parse the FQN without package injection first, so we can detect any syntax errors before modifying the expression tree.
+	fqn, err := ParseFQN(s)
+	if err != nil {
+		return nil, err
+	}
+	fqn.TranslateModules(func(pkgPath, typeName string) (string, bool) {
+		if strings.HasPrefix(pkgPath, "../") || strings.HasPrefix(pkgPath, "./") {
+			return path.Clean(path.Join(packagePath, pkgPath)), true
+		}
+		for _, replacer := range replacers {
+			if replacement, ok := replacer(pkgPath, typeName); ok {
+				return replacement, true
+			}
+		}
+		return pkgPath, false
+	})
+	return fqn, nil
+}
+
+func CraftFQN(pkgPath, typeName string) (*FQN, error) {
+	fqn, err := ParseFQN(typeName)
+	if err != nil {
+		return nil, err
+	}
+	if pkgPath != "" {
+		fqn.Expression = injectPackage(fqn.Expression, pkgPath)
+	}
+	return fqn, nil
+}
+
+// injectPackage recursively walks an expression produced by ParseFQN on a
+// short (package-local) type name and qualifies every bare identifier that is
+// not a builtin by wrapping it in a SelectorExpr carrying the quoted pkgPath.
+func injectPackage(expr ast.Expr, pkgPath string) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		if !isBuiltinType(e.Name) {
+			return &ast.SelectorExpr{
+				X:   &ast.Ident{Name: strconv.Quote(pkgPath)},
+				Sel: e,
+			}
+		}
+	case *ast.StarExpr:
+		e.X = injectPackage(e.X, pkgPath)
+	case *ast.ArrayType:
+		e.Elt = injectPackage(e.Elt, pkgPath)
+	case *ast.MapType:
+		e.Key = injectPackage(e.Key, pkgPath)
+		e.Value = injectPackage(e.Value, pkgPath)
+	case *ast.ChanType:
+		e.Value = injectPackage(e.Value, pkgPath)
+	case *ast.IndexExpr:
+		e.X = injectPackage(e.X, pkgPath)
+		e.Index = injectPackage(e.Index, pkgPath)
+	case *ast.IndexListExpr:
+		e.X = injectPackage(e.X, pkgPath)
+		for i, idx := range e.Indices {
+			e.Indices[i] = injectPackage(idx, pkgPath)
+		}
+	}
+	return expr
+}
+
+func isBuiltinType(name string) bool {
+	switch name {
+	case "bool", "byte", "rune", "error", "nil", "any",
+		"int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"float32", "float64", "complex64", "complex128",
+		"string":
+		return true
+	}
+	return false
+}
+
+// fqnParser is a small recursive-descent parser for the FQN string format
+// produced by FQN.String / FQNFromGoType.
+type fqnParser struct {
+	s   string
+	pos int
+}
+
+func (p *fqnParser) peek() byte {
+	if p.pos >= len(p.s) {
+		return 0
+	}
+	return p.s[p.pos]
+}
+
+func (p *fqnParser) has(prefix string) bool {
+	return strings.HasPrefix(p.s[p.pos:], prefix)
+}
+
+// nolint: gocyclo,funlen //Why: The parse method is a straightforward switch
+func (p *fqnParser) parse() (ast.Expr, error) {
+	switch {
+	case p.peek() == '*':
+		p.pos++
+		inner, err := p.parse()
+		if err != nil {
+			return nil, err
+		}
+		return &ast.StarExpr{X: inner}, nil
+
+	case p.has("[]"):
+		p.pos += 2
+		inner, err := p.parse()
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ArrayType{Elt: inner}, nil
+
+	case p.has("map["):
+		p.pos += 4
+		key, err := p.parse()
+		if err != nil {
+			return nil, fmt.Errorf("map key: %w", err)
+		}
+		if p.peek() != ']' {
+			return nil, fmt.Errorf("expected ']' after map key, got %q", p.s[p.pos:])
+		}
+		p.pos++ // consume ']'
+		val, err := p.parse()
+		if err != nil {
+			return nil, fmt.Errorf("map value: %w", err)
+		}
+		return &ast.MapType{Key: key, Value: val}, nil
+
+	case p.peek() == '[':
+		// Fixed-size array: [N]T
+		p.pos++ // consume '['
+		start := p.pos
+		for p.pos < len(p.s) && p.s[p.pos] >= '0' && p.s[p.pos] <= '9' {
+			p.pos++
+		}
+		if p.peek() != ']' {
+			return nil, fmt.Errorf("expected ']' after array length")
+		}
+		length := p.s[start:p.pos]
+		p.pos++ // consume ']'
+		elem, err := p.parse()
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ArrayType{
+			Len: &ast.BasicLit{Kind: token.INT, Value: length},
+			Elt: elem,
+		}, nil
+
+	case p.has("<-chan "):
+		p.pos += len("<-chan ")
+		inner, err := p.parse()
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ChanType{Dir: ast.RECV, Value: inner}, nil
+
+	case p.has("chan<- "):
+		p.pos += len("chan<- ")
+		inner, err := p.parse()
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ChanType{Dir: ast.SEND, Value: inner}, nil
+
+	case p.has("chan "):
+		p.pos += len("chan ")
+		inner, err := p.parse()
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ChanType{Dir: ast.SEND | ast.RECV, Value: inner}, nil
+
+	case p.peek() == '"':
+		// Named type with package: "pkg/path".TypeName
+		// Package paths never contain backslash-escapes so a simple scan works.
+		end := strings.Index(p.s[p.pos+1:], `"`)
+		if end < 0 {
+			return nil, fmt.Errorf("unterminated package path at %q", p.s[p.pos:])
+		}
+		pkg := p.s[p.pos : p.pos+end+2] // includes both surrounding quote chars
+		p.pos += end + 2
+		if p.peek() != '.' {
+			return nil, fmt.Errorf("expected '.' after package path, got %q", p.s[p.pos:])
+		}
+		p.pos++ // consume '.'
+		name := p.ident()
+		if name == "" {
+			return nil, fmt.Errorf("expected type name after '.'")
+		}
+		result := &ast.SelectorExpr{
+			X:   &ast.Ident{Name: pkg},
+			Sel: &ast.Ident{Name: name},
+		}
+		// Generic instantiation: TypeName[TypeArg] or TypeName[T1, T2, ...]
+		if p.peek() == '[' {
+			return p.parseTypeArgs(result)
+		}
+		return result, nil
+
+	case p.has("interface{}"):
+		p.pos += len("interface{}")
+		return &ast.InterfaceType{Methods: &ast.FieldList{}}, nil
+
+	case p.has("struct{}"):
+		p.pos += len("struct{}")
+		return &ast.StructType{Fields: &ast.FieldList{}}, nil
+
+	case p.has("func()"):
+		p.pos += len("func()")
+		return &ast.FuncType{}, nil
+
+	default:
+		name := p.ident()
+		if name == "" {
+			if p.pos < len(p.s) {
+				return nil, fmt.Errorf("unexpected character %q at position %d", p.s[p.pos], p.pos)
+			}
+			return nil, fmt.Errorf("unexpected end of input")
+		}
+		base := &ast.Ident{Name: name}
+		// Generic instantiation for bare (unpackaged) types: Ident[TypeArg, ...]
+		if p.peek() == '[' {
+			return p.parseTypeArgs(base)
+		}
+		return base, nil
+	}
+}
+
+// parseTypeArgs parses generic type arguments [ T ] or [ T1, T2, ... ] that
+// follow a named type, wrapping base in an *ast.IndexExpr (single arg) or
+// *ast.IndexListExpr (multiple args).
+func (p *fqnParser) parseTypeArgs(base ast.Expr) (ast.Expr, error) {
+	p.pos++ // consume '['
+	first, err := p.parse()
+	if err != nil {
+		return nil, fmt.Errorf("type argument: %w", err)
+	}
+	if p.peek() == ']' {
+		p.pos++ // consume ']'
+		return &ast.IndexExpr{X: base, Index: first}, nil
+	}
+	// Multiple type arguments.
+	indices := []ast.Expr{first}
+	for p.peek() == ',' {
+		p.pos++ // consume ','
+		if p.peek() == ' ' {
+			p.pos++ // consume optional space
+		}
+		arg, err := p.parse()
+		if err != nil {
+			return nil, fmt.Errorf("type argument: %w", err)
+		}
+		indices = append(indices, arg)
+	}
+	if p.peek() != ']' {
+		return nil, fmt.Errorf("expected ']' after type arguments, got %q", p.s[p.pos:])
+	}
+	p.pos++ // consume ']'
+	return &ast.IndexListExpr{X: base, Indices: indices}, nil
+}
+
+// ident reads a Go identifier (letters, digits, underscore) from the current position.
+func (p *fqnParser) ident() string {
+	start := p.pos
+	for p.pos < len(p.s) {
+		c := p.s[p.pos]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			break
+		}
+		p.pos++
+	}
+	return p.s[start:p.pos]
+}
+
+func (f *FQN) String() string {
+	var buf bytes.Buffer
+	if err := printer.Fprint(&buf, token.NewFileSet(), f.Expression); err != nil {
+		return ""
+	}
+	return buf.String()
+}
+
+// WalkPackages walks the FQN expression tree and calls fn for every remote-package
+func (f *FQN) WalkPackages(fn func(pkgPath, typeName string) (replacement string, ok bool)) {
+	f.Localize(fn)
+}
+
+// Localize walks the FQN expression tree and calls fn for every remote-package
+// type reference — an *ast.SelectorExpr whose X is an *ast.Ident carrying a
+// quoted import path (e.g. "github.com/google/uuid").
+//
+// fn receives the unquoted package path and the type name. The value it returns
+// replaces the original node; return nil to leave the node unchanged.
+func (f *FQN) Localize(fn func(pkgPath, typeName string) (replacement string, ok bool)) {
+	f.Expression = walkExpr(f.Expression, false, fn)
+}
+
+// TranslateModules walks the FQN expression tree and calls fn for every remote-package
+func (f *FQN) TranslateModules(fn func(pkgPath, typeName string) (replacement string, ok bool)) {
+	f.Expression = walkExpr(f.Expression, true, fn)
+}
+
+func (f *FQN) Wrap(o *FQN) *FQN {
+	return &FQN{
+		Expression: &ast.IndexExpr{
+			X:     f.Expression,
+			Index: o.Expression,
+		},
+	}
+}
+
+// Mask returns a new FQN whose underlying type identifier has been transformed
+// by applying fmt.Sprintf(maskFmt, name) to it. The package qualifier (if any)
+// and any pointer/slice/map/chan/generic wrappers are preserved.
+//
+// Examples (using "%s_Filter" as the mask):
+//
+//	"github.com/org/repo".Type      -> "github.com/org/repo".Type_Filter
+//	*"github.com/org/repo".Type     -> *"github.com/org/repo".Type_Filter
+//	[]"github.com/org/repo".Type    -> []"github.com/org/repo".Type_Filter
+//	"pkg".Type[int]                 -> "pkg".Type_Filter[int]   (only base masked, type args untouched)
+//	LocalType                       -> LocalType_Filter        (package-less)
+//
+// The receiver is not mutated; a new *FQN with a deep copy of the relevant
+// portion of the expression tree is returned. If the FQN's expression cannot be
+// reached as an identifier (e.g. it is malformed), the original FQN is returned
+// unchanged.
+func (f *FQN) Mask(maskFmt string) *FQN {
+	if f == nil || f.Expression == nil {
+		return f
+	}
+	clone := cloneExpr(f.Expression)
+	if !maskIdent(clone, maskFmt) {
+		return f
+	}
+	return &FQN{Expression: clone}
+}
+
+// InstanceOf reports whether f matches the pattern other, treating
+// "plumber".Any in other as a wildcard that matches any type at that
+// position. This allows generic type patterns like String["plumber".Any]
+// to match any instantiation such as String[string] or String[int].
+func (f *FQN) InstanceOf(other *FQN) bool {
+	return exprInstanceOf(f.Expression, other.Expression)
+}
+
+// isPlumberAny reports whether expr is the "plumber".Any wildcard sentinel.
+func isPlumberAny(expr ast.Expr) bool {
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	pkg, err := strconv.Unquote(ident.Name)
+	if err != nil {
+		return false
+	}
+	return pkg == PlumberAnyPkg && sel.Sel.Name == PlumberAnyType
+}
+
+// exprInstanceOf recursively compares two ast.Expr trees. It returns true when
+// a and b are structurally identical, with the exception that any position in b
+// occupied by the "plumber".Any sentinel matches any expression in a.
+// nolint: gocyclo,funlen //Why: for visibility
+func exprInstanceOf(a, b ast.Expr) bool {
+	// Wildcard in the pattern matches anything.
+	if isPlumberAny(b) {
+		return true
+	}
+
+	switch av := a.(type) {
+	case *ast.Ident:
+		bv, ok := b.(*ast.Ident)
+		return ok && av.Name == bv.Name
+
+	case *ast.SelectorExpr:
+		bv, ok := b.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		ai, aOK := av.X.(*ast.Ident)
+		bi, bOK := bv.X.(*ast.Ident)
+		return aOK && bOK && ai.Name == bi.Name && av.Sel.Name == bv.Sel.Name
+
+	case *ast.StarExpr:
+		bv, ok := b.(*ast.StarExpr)
+		return ok && exprInstanceOf(av.X, bv.X)
+
+	case *ast.ArrayType:
+		bv, ok := b.(*ast.ArrayType)
+		if !ok {
+			return false
+		}
+		// Both must be slices (Len == nil) or arrays with same length.
+		if (av.Len == nil) != (bv.Len == nil) {
+			return false
+		}
+		if av.Len != nil {
+			al, aOK := av.Len.(*ast.BasicLit)
+			bl, bOK := bv.Len.(*ast.BasicLit)
+			if !aOK || !bOK || al.Value != bl.Value {
+				return false
+			}
+		}
+		return exprInstanceOf(av.Elt, bv.Elt)
+
+	case *ast.MapType:
+		bv, ok := b.(*ast.MapType)
+		return ok && exprInstanceOf(av.Key, bv.Key) && exprInstanceOf(av.Value, bv.Value)
+
+	case *ast.ChanType:
+		bv, ok := b.(*ast.ChanType)
+		return ok && av.Dir == bv.Dir && exprInstanceOf(av.Value, bv.Value)
+
+	case *ast.IndexExpr:
+		bv, ok := b.(*ast.IndexExpr)
+		return ok && exprInstanceOf(av.X, bv.X) && exprInstanceOf(av.Index, bv.Index)
+
+	case *ast.IndexListExpr:
+		bv, ok := b.(*ast.IndexListExpr)
+		if !ok || len(av.Indices) != len(bv.Indices) {
+			return false
+		}
+		if !exprInstanceOf(av.X, bv.X) {
+			return false
+		}
+		for i := range av.Indices {
+			if !exprInstanceOf(av.Indices[i], bv.Indices[i]) {
+				return false
+			}
+		}
+		return true
+
+	case *ast.InterfaceType:
+		_, ok := b.(*ast.InterfaceType)
+		return ok
+
+	case *ast.StructType:
+		_, ok := b.(*ast.StructType)
+		return ok
+
+	case *ast.FuncType:
+		_, ok := b.(*ast.FuncType)
+		return ok
+
+	default:
+		return false
+	}
+}
+
+// maskIdent walks the expression tree to locate the leaf type identifier and
+// rewrites its Name using fmt.Sprintf(maskFmt, oldName). Returns true when an
+// identifier was successfully rewritten. Type arguments inside generic
+// expressions (IndexExpr/IndexListExpr) are left untouched — only the base type
+// identifier is masked.
+func maskIdent(expr ast.Expr, maskFmt string) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		e.Name = fmt.Sprintf(maskFmt, e.Name)
+		return true
+	case *ast.SelectorExpr:
+		if e.Sel != nil {
+			e.Sel.Name = fmt.Sprintf(maskFmt, e.Sel.Name)
+			return true
+		}
+	case *ast.StarExpr:
+		return maskIdent(e.X, maskFmt)
+	case *ast.ArrayType:
+		return maskIdent(e.Elt, maskFmt)
+	case *ast.MapType:
+		// Mask the value type — the conventional "primary" type of a map.
+		return maskIdent(e.Value, maskFmt)
+	case *ast.ChanType:
+		return maskIdent(e.Value, maskFmt)
+	case *ast.IndexExpr:
+		// Generic type instantiation — mask only the base, not the type arg.
+		return maskIdent(e.X, maskFmt)
+	case *ast.IndexListExpr:
+		return maskIdent(e.X, maskFmt)
+	}
+	return false
+}
+
+// cloneExpr produces a structural copy of the supported subset of ast.Expr nodes
+// so Mask can return a new FQN without mutating the receiver. Identifiers are
+// cloned by value; only fields traversed by maskIdent need to be deep-copied.
+func cloneExpr(expr ast.Expr) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return &ast.Ident{Name: e.Name}
+	case *ast.SelectorExpr:
+		out := &ast.SelectorExpr{}
+		if x, ok := e.X.(*ast.Ident); ok {
+			out.X = &ast.Ident{Name: x.Name}
+		} else {
+			out.X = cloneExpr(e.X)
+		}
+		if e.Sel != nil {
+			out.Sel = &ast.Ident{Name: e.Sel.Name}
+		}
+		return out
+	case *ast.StarExpr:
+		return &ast.StarExpr{X: cloneExpr(e.X)}
+	case *ast.ArrayType:
+		return &ast.ArrayType{Elt: cloneExpr(e.Elt), Len: e.Len}
+	case *ast.MapType:
+		return &ast.MapType{Key: cloneExpr(e.Key), Value: cloneExpr(e.Value)}
+	case *ast.ChanType:
+		return &ast.ChanType{Dir: e.Dir, Value: cloneExpr(e.Value)}
+	case *ast.IndexExpr:
+		return &ast.IndexExpr{X: cloneExpr(e.X), Index: cloneExpr(e.Index)}
+	case *ast.IndexListExpr:
+		out := &ast.IndexListExpr{X: cloneExpr(e.X)}
+		out.Indices = make([]ast.Expr, len(e.Indices))
+		for i, idx := range e.Indices {
+			out.Indices[i] = cloneExpr(idx)
+		}
+		return out
+	}
+	return expr
+}
+
+// walkExpr recursively walks an ast.Expr, replacing remote-package SelectorExprs
+// via fn and returning the (possibly replaced) expression.
+func walkExpr(expr ast.Expr, quote bool, fn func(pkgPath, typeName string) (string, bool)) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.StarExpr:
+		e.X = walkExpr(e.X, quote, fn)
+	case *ast.ArrayType:
+		e.Elt = walkExpr(e.Elt, quote, fn)
+	case *ast.MapType:
+		e.Key = walkExpr(e.Key, quote, fn)
+		e.Value = walkExpr(e.Value, quote, fn)
+	case *ast.ChanType:
+		e.Value = walkExpr(e.Value, quote, fn)
+	case *ast.IndexExpr:
+		e.X = walkExpr(e.X, quote, fn)
+		e.Index = walkExpr(e.Index, quote, fn)
+	case *ast.IndexListExpr:
+		e.X = walkExpr(e.X, quote, fn)
+		for i, idx := range e.Indices {
+			e.Indices[i] = walkExpr(idx, quote, fn)
+		}
+	case *ast.SelectorExpr:
+		if ident, ok := e.X.(*ast.Ident); ok {
+			empty := false
+			if pkgPath, err := strconv.Unquote(ident.Name); err == nil { // && strings.Contains(pkgPath, "/")
+				if replacement, ok := fn(pkgPath, e.Sel.Name); ok {
+					if quote {
+						ident.Name = strconv.Quote(replacement)
+					} else {
+						ident.Name = replacement
+					}
+					if replacement == "" {
+						empty = true
+					}
+				}
+			}
+			if empty {
+				return &ast.Ident{Name: e.Sel.Name} // package-less reference
+			}
+		}
+	}
+	return expr
+}

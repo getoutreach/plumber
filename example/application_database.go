@@ -14,6 +14,7 @@ import (
 type Database struct {
 	Repository         plumber.D[contract.Repository]
 	BatchingRepository plumber.R[*database.BatchingRepository]
+	UserRepository     plumber.D[*database.UserRepository]
 }
 
 // Define resolves dependencies
@@ -23,8 +24,15 @@ func (c *Database) Define(ctx context.Context, cf *Config, a *Container) {
 	})
 
 	c.BatchingRepository.Resolver(func(r *plumber.ResolutionR[*database.BatchingRepository]) {
-		r.Require(&c.Repository).Then(func() {
+		r.Require(
+			&c.Repository,
+		).Then(func() {
 			r.ResolveError(database.NewBatchingRepository(c.Repository.Instance(), 100))
 		})
 	})
+	c.UserRepository.Resolver(func(r *plumber.Resolution[*database.UserRepository]) {
+		r.Require().Then(func() {
+			r.ResolveError(database.NewUserRepository())
+		})
+	}) // 1111
 }

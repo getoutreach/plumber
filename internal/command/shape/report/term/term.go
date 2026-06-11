@@ -1,0 +1,115 @@
+// Copyright 2026 Outreach Corporation. All Rights Reserved.
+
+// Description: This file defines the terminal reporter for the shape command
+
+// Package term implements a simple terminal reporter for the shape command, which outputs transformation events and errors to the console.
+// It provides a straightforward way to track the progress of transformations without requiring an interactive UI.
+package term
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/getoutreach/plumber/internal/command/shape/contract"
+)
+
+// TerminalReporter is a simple implementation of contract.Reporter that outputs events to the terminal.
+type TerminalReporter struct {
+	transformers map[contract.Transformer]struct{}
+}
+
+func NewTerminalReporter() *TerminalReporter {
+	return &TerminalReporter{
+		transformers: make(map[contract.Transformer]struct{}),
+	}
+}
+
+func PrintTransformer(t contract.Transformer, node contract.Node) {
+	if node != nil {
+		fmt.Printf("  position: %s:%d\n", node.GetPosition().Filename, node.GetPosition().Line)
+	}
+	fmt.Printf("  with annotations:\n")
+	for _, annotation := range t.GetAnnotations() {
+		println("   ", annotation.Name)
+		println("     args:", strings.Join(annotation.Args, ", "))
+		for k, v := range annotation.NamedArgs {
+			println("       ", k, "=", v)
+		}
+	}
+}
+
+func (r *TerminalReporter) Notify(event contract.ReporterEvent) {
+	switch event.Kind {
+	case contract.EventTransformerAdded:
+		if _, exists := r.transformers[event.Transformer]; exists {
+			return
+		}
+		r.transformers[event.Transformer] = struct{}{}
+		println("Transformer added:", event.Transformer.GetName())
+		PrintTransformer(event.Transformer, event.Node)
+	case contract.EventTransformerSkipped:
+		println("Transformer skipped:", event.Transformer.GetName(), "-", event.Message)
+	case contract.EventTransformerError:
+		if _, exists := r.transformers[event.Transformer]; !exists {
+			r.Notify(contract.ReporterEvent{
+				Kind:        contract.EventTransformerAdded,
+				Transformer: event.Transformer,
+				Node:        event.Node,
+			})
+		}
+		var syntaxErr *contract.SyntaxError
+		if errors.As(event.Error, &syntaxErr) {
+			println("Transformer error in", event.Transformer.GetName(), ":")
+			fmt.Println(syntaxErr.String())
+		} else {
+			println("Transformer error in", event.Transformer.GetName(), ":", event.Error.Error())
+		}
+	case contract.EventTransformerOutput:
+		println("Transformer output from", event.Transformer.GetName(), ":", event.Path)
+	case contract.EventTransformerInfo:
+		println("Info from", event.Transformer.GetName(), ":", event.Message)
+	case contract.EventTransformerRestored:
+		if event.Error != nil {
+			println("Restored output with error:", event.Path, "-", event.Error.Error())
+		} else {
+			println("Restored output:", event.Path)
+		}
+	case contract.EventQueryExecuted:
+		println("Query executed:", event.Message)
+	case contract.EventQueryError:
+		println("Query error:", event.Error.Error())
+	case contract.EventHandlerTriggered:
+		println("Handler triggered:", event.Message)
+		if event.Transformer != nil {
+			fmt.Printf("  from transformer: %s\n", event.Transformer.GetName())
+		}
+	case contract.EventHandlerExecuting:
+		println("Executing handler:", event.ID, "-", event.Path, "with args:", fmt.Sprintf("%v", event.Args))
+	case contract.EventHandlerCompleted:
+		println("Handler completed:", event.ID, "-", event.Path)
+		if event.Message != "" {
+			println(ident(event.Message, 4))
+		}
+	case contract.EventHandlerError:
+		if event.Error != nil {
+			println("Handler error:", event.ID, "-", event.Path, "-", event.Error.Error())
+		} else {
+			println("Handler error:", event.ID, "-", event.Path)
+		}
+		if event.Message != "" {
+			println(ident(event.Message, 4))
+		}
+	default:
+		println("Unknown event type:", string(event.Kind))
+	}
+}
+
+func ident(s string, size int) string {
+	s = strings.TrimSpace(s)
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = strings.Repeat(" ", size) + line
+	}
+	return strings.Join(lines, "\n")
+}

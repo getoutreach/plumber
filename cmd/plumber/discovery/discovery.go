@@ -1,0 +1,579 @@
+// Copyright 2024 Outreach Corporation. All Rights Reserved.
+
+// Description: Main discovery command runner
+// Managed: true
+
+// Package discovery implements the discovery command which analyzes container files to discover providers and augments the
+// container structs with missing provider fields.
+package discovery
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"strings"
+
+	"github.com/getoutreach/plumber/internal/command/config"
+	"github.com/getoutreach/plumber/internal/command/discovery"
+	"github.com/getoutreach/plumber/internal/command/discovery/contract"
+	"github.com/getoutreach/plumber/internal/command/discovery/render"
+	"github.com/getoutreach/plumber/internal/command/template"
+	"github.com/getoutreach/plumber/internal/genius/gen"
+	"github.com/urfave/cli/v2"
+)
+
+// Run executes the discovery command
+func Run(c *cli.Context) error {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", r)
+			os.Exit(1)
+		}
+	}()
+	ctx := c.Context
+	configPath := c.String("config")
+
+	// Resolve absolute path for config file
+	absConfigPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve config path: %w", err)
+	}
+
+	// Use config file's directory as base directory
+	baseDir := filepath.Dir(absConfigPath)
+
+	// Parse the configuration
+	fileCfg, err := config.Load(absConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to parse config: %w", err)
+	}
+	cfg := &fileCfg.Discovery
+
+	// Process loops to expand containers
+	if err := discovery.ProcessLoops(cfg, baseDir); err != nil {
+		return fmt.Errorf("failed to process loops: %w", err)
+	}
+
+	// Print expanded configuration
+	fmt.Println("Expanded Configuration:")
+	fmt.Println("=======================")
+	discovery.PrintConfig(os.Stdout, cfg)
+
+	// Resolve per-file template references from the unified templates config.
+	// Global templates apply to all renders; container/application templates are additive.
+	templateCache := template.NewTemplateCache(
+		fileCfg.Templates.Sources,
+		fileCfg.Templates.Content,
+		template.DefaultCacheDir,
+		render.EmbededTemplates,
+	)
+
+	globalOpts, err := template.ResolveRefs(
+		templateCache,
+		cfg.Templates.Global,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve global templates: %w", err)
+	}
+
+	containerRefOpts, err := template.ResolveRefs(
+		templateCache,
+		cfg.Templates.Container,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve container templates: %w", err)
+	}
+
+	applicationRefOpts, err := template.ResolveRefs(
+		templateCache,
+		cfg.Templates.Application,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve application templates: %w", err)
+	}
+
+	// Build final per-file opts: global + per-file
+	containerOpts := make([]gen.RenderOptionsFunc, 0, len(globalOpts)+len(containerRefOpts))
+	containerOpts = append(containerOpts, globalOpts...)
+	containerOpts = append(containerOpts, containerRefOpts...)
+
+	applicationOpts := make([]gen.RenderOptionsFunc, 0, len(globalOpts)+len(applicationRefOpts))
+	applicationOpts = append(applicationOpts, globalOpts...)
+	applicationOpts = append(applicationOpts, applicationRefOpts...)
+
+	// Process each application
+	for _, app := range cfg.Applications {
+		fmt.Printf("\nProcessing application: %s\n", app.Name)
+		fmt.Println(strings.Repeat("-", 50))
+
+		if err := processApplication(ctx, baseDir, &app, containerOpts, applicationOpts); err != nil {
+			return fmt.Errorf("failed to process application %q: %w", app.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// containerInfo holds information about a container, including its configuration, file path, and associated source
+// file paths for discovery.
+type containerInfo struct {
+	config        *discovery.PlumberContainerConfig
+	containerPath string
+	sourcePaths   []string
+}
+
+// discoveredProviders holds the discovered providers for a container, along with a reference to the container
+// information and a map of provider mappings for augmentation.
+type discoveredProviders struct {
+	container   *containerInfo
+	providers   []*contract.Provider
+	providerMap map[string]*contract.ProviderMapping
+}
+
+func processApplication(
+	ctx context.Context, baseDir string, app *discovery.Application,
+	containerOpts, applicationOpts []gen.RenderOptionsFunc,
+) error {
+	// Collect container information and file paths
+	containers, allPaths := collectContainerInfo(baseDir, app, containerOpts)
+	if len(containers) == 0 {
+		fmt.Printf("  No valid containers to process\n")
+		return nil
+	}
+
+	// Render application file if configured and not already present
+	if app.Application != nil && app.Application.Path != "" {
+		appPath := app.Application.Path
+		if !filepath.IsAbs(appPath) {
+			appPath = filepath.Join(baseDir, appPath)
+		}
+		if _, err := os.Stat(appPath); os.IsNotExist(err) {
+			fmt.Printf("  Rendering application file: %s\n", appPath)
+			renderer := discovery.NewTemplateRenderer(containerOpts, applicationOpts)
+			sourceModule := ""
+			if len(containers) > 0 && containers[0].config.Source != nil {
+				sourceModule = getSourceModulePath(baseDir, containers[0].config.Source.Path, app.Module)
+			}
+			if err := renderer.RenderApplication(appPath, app.Name, app, sourceModule); err != nil {
+				fmt.Printf("    ⚠ Warning: Failed to render application file: %v\n", err)
+			} else {
+				fmt.Printf("    ✓ Application file created from template at %s\n", appPath)
+			}
+		}
+	}
+
+	// Create a map to hold the provider mappings
+	var providerMap = make(map[string]*contract.ProviderMapping)
+
+	// Create AST parser once for all paths (loads all packages together)
+	fmt.Printf("\n  Loading %d file(s) across %d container(s) for analysis...\n", len(allPaths), len(containers))
+
+	if len(allPaths) == 0 {
+		fmt.Printf("  No source files to analyze\n")
+		return nil
+	}
+
+	astParser, err := discovery.NewASTParser(allPaths...)
+	if err != nil {
+		return fmt.Errorf("failed to create AST parser: %w", err)
+	}
+
+	// Phase 1: Discover providers from all containers
+	fmt.Printf("\n  Phase 1: Discovering providers...\n")
+	allDiscovered := make([]*discoveredProviders, 0, len(containers))
+	for _, info := range containers {
+		discovered, err := discoverContainerProviders(astParser, info)
+		if err != nil {
+			return err
+		}
+		// Populate the provider map
+		for _, provider := range discovered.providers {
+			providerType := provider.Type.TypeInfo.Type.String()
+			if _, exists := providerMap[providerType]; !exists {
+				providerMap[providerType] = &contract.ProviderMapping{Type: provider.Type.TypeInfo.Type, Providers: []*contract.ContainerProvider{}}
+			}
+			providerMap[providerType].Providers = append(providerMap[providerType].Providers, &contract.ContainerProvider{
+				ContainerName: info.config.Name,
+				Provider:      provider,
+			})
+		}
+		discovered.providerMap = providerMap
+		allDiscovered = append(allDiscovered, discovered)
+	}
+
+	// Phase 2: Augment containers with discovered providers
+	fmt.Printf("\n  Phase 2: Augmenting containers...\n")
+	for _, discovered := range allDiscovered {
+		if err := augmentContainer(discovered); err != nil {
+			return err
+		}
+	}
+
+	// Phase 3: Augment application file with sub-container declarations
+	if app.Application != nil && app.Application.Path != "" {
+		appPath := app.Application.Path
+		if !filepath.IsAbs(appPath) {
+			appPath = filepath.Join(baseDir, appPath)
+		}
+		if err := augmentApplicationFile(appPath, containers); err != nil {
+			return fmt.Errorf("failed to augment application file: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func collectContainerInfo(
+	baseDir string, app *discovery.Application, containerOpts []gen.RenderOptionsFunc,
+) (containers []*containerInfo, allPaths []string) {
+	containers = make([]*containerInfo, 0)
+
+	for _, container := range app.Containers {
+		if container.PlumberContainer == nil {
+			continue
+		}
+
+		containerCfg := container.PlumberContainer
+		info := &containerInfo{
+			config:      containerCfg,
+			sourcePaths: []string{},
+		}
+
+		// Resolve container path
+		containerPath := containerCfg.Container.Path
+
+		containerModule := getSourceModulePath(baseDir, path.Dir(containerPath), app.Module)
+
+		if !filepath.IsAbs(containerPath) {
+			containerPath = filepath.Join(baseDir, containerPath)
+		}
+
+		// Check if container file exists
+		if _, err := os.Stat(containerPath); os.IsNotExist(err) {
+			fmt.Printf("\n  Container: %s\n", containerCfg.Name)
+
+			// Try to render from template if available
+			if containerCfg.Source != nil {
+				sourceModule := getSourceModulePath(baseDir, containerCfg.Source.Path, app.Module)
+
+				if err := renderContainerFromTemplate(
+					containerPath, containerCfg.Name, app, containerModule, sourceModule, containerOpts); err != nil {
+					fmt.Printf("    ⚠ Warning: Failed to render template: %v\n", err)
+					fmt.Printf("    ⚠ Warning: Container file does not exist at %s (skipping)\n", containerPath)
+					continue
+				}
+
+				fmt.Printf("    ✓ Container file created from template at %s\n", containerPath)
+			} else {
+				fmt.Printf("    ⚠ Warning: Container file does not exist at %s (skipping)\n", containerPath)
+				continue
+			}
+		}
+
+		info.containerPath = containerPath
+		allPaths = append(allPaths, containerPath)
+
+		// Resolve source paths if specified
+		if containerCfg.Source != nil {
+			sourcePaths := resolveSourcePaths(baseDir, containerCfg)
+			info.sourcePaths = sourcePaths
+			allPaths = append(allPaths, sourcePaths...)
+		}
+
+		containers = append(containers, info)
+	}
+
+	return containers, allPaths
+}
+
+func resolveSourcePaths(baseDir string, cfg *discovery.PlumberContainerConfig) []string {
+	var sourcePaths []string
+
+	sourcePath := cfg.Source.Path
+	if !filepath.IsAbs(sourcePath) {
+		sourcePath = filepath.Join(baseDir, sourcePath)
+	}
+
+	// Check if source is a directory
+	fileInfo, err := os.Stat(sourcePath)
+	if err != nil {
+		fmt.Printf("\n  Container: %s\n", cfg.Name)
+		fmt.Printf("    ⚠ Warning: Source path does not exist at %s (skipping sources)\n", sourcePath)
+		return sourcePaths
+	}
+
+	if fileInfo.IsDir() {
+		// Read all .go files in the directory
+		entries, err := os.ReadDir(sourcePath)
+		if err != nil {
+			fmt.Printf("    ⚠ Warning: Failed to read source directory %q: %v\n", sourcePath, err)
+			return sourcePaths
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() && filepath.Ext(entry.Name()) == ".go" {
+				goFile := filepath.Join(sourcePath, entry.Name())
+				sourcePaths = append(sourcePaths, goFile)
+			}
+		}
+	} else {
+		// Single file
+		sourcePaths = append(sourcePaths, sourcePath)
+	}
+
+	return sourcePaths
+}
+
+// discoverContainerProviders discovers providers from a container's source files
+// Function definition corrected
+func discoverContainerProviders(astParser *discovery.ASTParser, info *containerInfo) (*discoveredProviders, error) {
+	cfg := info.config
+	fmt.Printf("\n  Container: %s\n", cfg.Name)
+	fmt.Printf("    Container path: %s\n", info.containerPath)
+
+	discovered := &discoveredProviders{
+		container: info,
+		providers: []*contract.Provider{},
+	}
+
+	// Process source files for discovery with matchers
+	if len(info.sourcePaths) > 0 {
+		result, err := discoverSourceTypes(astParser, info.sourcePaths, cfg)
+		if err != nil {
+			return nil, err
+		}
+
+		discovered.providers = result.Providers
+
+		// Display discovered providers
+		if len(result.Providers) > 0 {
+			fmt.Printf("\n    Providers:\n")
+			for _, provider := range result.Providers {
+				typeName := "unknown"
+				if provider.Type != nil {
+					typeName = provider.Type.TypeInfo.Type.String()
+				}
+				fmt.Printf("      %s\n", provider.Name)
+				fmt.Printf("        Type: %s\n", typeName)
+				if provider.Constructor != nil {
+					fmt.Printf("        Func: %s\n", provider.Constructor.FunctionName)
+				}
+			}
+		}
+	} else {
+		fmt.Printf("    No source paths configured\n")
+	}
+
+	return discovered, nil
+}
+
+// augmentContainer augments a container with its discovered providers
+func augmentContainer(discovered *discoveredProviders) error {
+	info := discovered.container
+	cfg := info.config
+
+	fmt.Printf("\n  Container: %s\n", cfg.Name)
+
+	if len(discovered.providers) == 0 {
+		fmt.Printf("    No providers to augment\n")
+		return nil
+	}
+
+	// Augment the container struct with missing provider fields
+	if err := augmentContainerWithProviders(info.containerPath, cfg.Name, discovered.providers, discovered.providerMap); err != nil {
+		fmt.Printf("    ⚠ Warning: Failed to augment container: %v\n", err)
+		return nil // Don't fail the entire process
+	}
+
+	fmt.Printf("    ✓ Container augmented with discovered providers\n")
+
+	// Run goimports to fix imports
+	if err := runGoimports(info.containerPath); err != nil {
+		fmt.Printf("    ⚠ Warning: Failed to run goimports: %v\n", err)
+	}
+
+	return nil
+}
+
+// augmentApplicationFile augments the root application file to ensure all
+// sub-containers are declared as struct fields, initialized with new(), and
+// passed to DefineContainers.
+func augmentApplicationFile(appPath string, containers []*containerInfo) error {
+	fmt.Printf("\n  Phase 3: Augmenting application file...\n")
+
+	// Collect unique container names
+	var containerNames []string
+	for _, info := range containers {
+		containerNames = append(containerNames, info.config.Name)
+	}
+
+	if len(containerNames) == 0 {
+		fmt.Printf("    No containers to register in application\n")
+		return nil
+	}
+
+	// Parse the application file
+	astParser, err := discovery.NewASTParser(appPath)
+	if err != nil {
+		return fmt.Errorf("failed to create AST parser for application: %w", err)
+	}
+
+	file, pkg, dec := astParser.GetFileAndDecorator(appPath)
+	if file == nil {
+		return fmt.Errorf("failed to get AST for application file")
+	}
+
+	augmenter := discovery.NewAugmenter()
+	result, err := augmenter.AugmentApplicationStruct(
+		pkg, appPath, containerNames, file, dec,
+	)
+	if err != nil {
+		fmt.Printf("    ⚠ Warning: Failed to augment application: %v\n", err)
+		return nil
+	}
+
+	if len(result.Added) > 0 {
+		fmt.Printf("    Added containers: %s\n",
+			strings.Join(result.Added, ", "))
+	}
+	if len(result.Skipped) > 0 {
+		fmt.Printf("    Skipped existing: %s\n",
+			strings.Join(result.Skipped, ", "))
+	}
+
+	// Run goimports to fix imports
+	if err := runGoimports(appPath); err != nil {
+		fmt.Printf("    ⚠ Warning: Failed to run goimports: %v\n", err)
+	}
+
+	return nil
+}
+
+func discoverSourceTypes(
+	astParser *discovery.ASTParser,
+	sourcePaths []string,
+	cfg *discovery.PlumberContainerConfig,
+) (*contract.DiscoveryResult, error) {
+	fmt.Printf("    Source path(s): %d file(s)\n", len(sourcePaths))
+
+	// Create file filter for source files
+	sourceFilter := make(map[string]bool)
+	for _, path := range sourcePaths {
+		sourceFilter[path] = true
+	}
+
+	// Discover types and constructors in source files
+	result, err := astParser.DiscoverInFiles(cfg.Matchers, sourceFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover types in sources for %q: %w", cfg.Name, err)
+	}
+
+	// Print discovered information
+	fmt.Printf("    Discovered in sources:\n")
+	fmt.Printf("      Providers: %d\n", len(result.Providers))
+	for _, provider := range result.Providers {
+		typeName := "unknown"
+		if provider.Type != nil {
+			typeName = provider.Type.TypeName
+		}
+		fmt.Printf("        - %s (Type: %s, %d constructor(s))\n",
+			provider.Name, typeName, 1)
+	}
+
+	return result, nil
+}
+
+// augmentContainerWithProviders adds missing provider fields to the container struct
+func augmentContainerWithProviders(
+	containerPath, containerName string,
+	providers []*contract.Provider,
+	providerMap map[string]*contract.ProviderMapping,
+) error {
+	// Create a new parser specifically for the container file
+	parser, err := discovery.NewASTParser(containerPath)
+	if err != nil {
+		return fmt.Errorf("failed to create parser for container: %w", err)
+	}
+
+	// Get the file and decorator from the parser
+	file, pkg, dec := parser.GetFileAndDecorator(containerPath)
+	if file == nil {
+		return fmt.Errorf("failed to get AST for container file")
+	}
+
+	// Create augmenter
+	augmenter := discovery.NewAugmenter()
+
+	// Augment the container struct
+	result, err := augmenter.AugmentContainerStruct(pkg, containerPath, containerName, providers, file, dec, providerMap)
+	if err != nil {
+		return err
+	}
+
+	// Report what was added
+	if len(result.Added) > 0 {
+		fmt.Printf("      Added fields: %s\n", strings.Join(result.Added, ", "))
+	}
+	if len(result.Skipped) > 0 {
+		fmt.Printf("      Skipped existing fields: %s\n", strings.Join(result.Skipped, ", "))
+	}
+
+	return nil
+}
+
+// runGoimports runs goimports on a file to clean up imports
+func runGoimports(filePath string) error {
+	// First run gofmt to ensure proper formatting
+	cmd := exec.Command("gofmt", "-w", filePath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("gofmt failed: %w\nOutput: %s", err, string(output))
+	}
+	return nil
+}
+
+// renderContainerFromTemplate renders a container file from template
+func renderContainerFromTemplate(
+	containerPath string,
+	containerName string,
+	app *discovery.Application,
+	containerModule, sourceModule string,
+	templateOpts []gen.RenderOptionsFunc,
+) error {
+	// Create template renderer with container opts (application opts not needed here)
+	renderer := discovery.NewTemplateRenderer(templateOpts, nil)
+
+	// Render the container file
+	return renderer.RenderContainer(containerPath, containerName, app, containerModule, sourceModule)
+}
+
+// getSourceModulePath determines the module path for the source package
+func getSourceModulePath(baseDir, sourcePath, appModule string) string {
+	if appModule == "" {
+		return ""
+	}
+
+	// Resolve source path to absolute
+	absSourcePath := sourcePath
+	if !filepath.IsAbs(sourcePath) {
+		absSourcePath = filepath.Join(baseDir, sourcePath)
+	}
+
+	// Get the relative path from baseDir
+	relPath, err := filepath.Rel(baseDir, absSourcePath)
+	if err != nil {
+		return appModule
+	}
+
+	// Clean up the relative path
+	relPath = filepath.ToSlash(relPath)
+
+	// Build module path by appending relative path to app module
+	if relPath != "" && relPath != "." {
+		return appModule + "/" + relPath
+	}
+
+	return appModule
+}

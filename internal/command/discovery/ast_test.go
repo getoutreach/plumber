@@ -1,0 +1,283 @@
+// Copyright 2024 Outreach Corporation. All Rights Reserved.
+
+// Description: Tests for AST parser
+// Managed: true
+
+package discovery_test
+
+import (
+	"go/types"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/getoutreach/plumber/internal/command/discovery"
+	"github.com/getoutreach/plumber/internal/command/discovery/contract"
+	"gotest.tools/v3/assert"
+)
+
+func TestParseFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.go")
+
+	content := `package test
+
+// User represents a user entity
+type User struct {
+	Name string
+	Age  int
+}
+
+// NewUser creates a new user
+func NewUser(name string, age int) *User {
+	return &User{Name: name, Age: age}
+}
+`
+
+	err := os.WriteFile(testFile, []byte(content), 0o644)
+	assert.NilError(t, err)
+
+	file, dec, err := discovery.ParseFile(testFile)
+	assert.NilError(t, err)
+	assert.Assert(t, file != nil)
+	assert.Assert(t, dec != nil)
+	assert.Equal(t, file.Name.Name, "test")
+}
+
+func TestASTParserDiscover(t *testing.T) {
+	// Use the example directory which already has real code
+	examplePath := "../../../example/adapter/async/async.go"
+
+	// Check if the path exists
+	if _, err := os.Stat(examplePath); os.IsNotExist(err) {
+		t.Skip("Example directory not found, skipping test")
+	}
+
+	parser, err := discovery.NewASTParser(examplePath)
+	if err != nil {
+		t.Skipf("Could not create AST parser: %v", err)
+	}
+
+	matchers := []discovery.Matcher{
+		{
+			Constructors: []discovery.ConstructorPattern{{Re: "New(?P<name>.*)"}},
+		},
+	}
+
+	result, err := parser.Discover(matchers)
+	assert.NilError(t, err)
+	assert.Assert(t, result != nil)
+
+	// The example should have at least some providers
+	t.Logf("Found %d providers", len(result.Providers))
+}
+
+func TestASTParserWithMockCode(t *testing.T) {
+	dir := testFixtureDir(t, "mock_code")
+
+	// Create multiple Go files to test cross-file type resolution
+	typesGoContent := `package mock_code
+
+// Container is a shared container type
+type Container struct {
+	Name string
+}
+`
+	err := os.WriteFile(filepath.Join(dir, "types.go"), []byte(typesGoContent), 0o644)
+	assert.NilError(t, err)
+
+	serviceGoContent := `package mock_code
+
+// Service is a test service
+type Service struct {
+	Name      string
+	Container *Container // Reference to type in another file
+}
+
+// NewService creates a new service
+func NewService(name string, c *Container) *Service {
+	return &Service{Name: name, Container: c}
+}
+
+// Repository is a data repository
+type Repository struct {
+	DB string
+}
+
+// CreateRepository creates a new repository
+func CreateRepository(db string) (*Repository, error) {
+	return &Repository{DB: db}, nil
+}
+`
+	err = os.WriteFile(filepath.Join(dir, "service.go"), []byte(serviceGoContent), 0o644)
+	assert.NilError(t, err)
+
+	// Test with both files - this should resolve cross-file types
+	parser, err := discovery.NewASTParser(
+		filepath.Join(dir, "service.go"),
+		filepath.Join(dir, "types.go"),
+	)
+	assert.NilError(t, err)
+
+	matchers := []discovery.Matcher{
+		{
+			Constructors: []discovery.ConstructorPattern{{Re: "New(?P<name>.*)"}, {Re: "Create(?P<name>.*)"}},
+		},
+	}
+
+	result, err := parser.Discover(matchers)
+	assert.NilError(t, err)
+
+	// Should find both providers
+	assert.Assert(t, len(result.Providers) >= 2, "should find at least 2 providers")
+
+	// Build a map for order-independent assertions
+	byName := make(map[string]*contract.Provider)
+	for _, p := range result.Providers {
+		byName[p.Name] = p
+	}
+
+	// Verify Service provider
+	svc, ok := byName["Service"]
+	assert.Assert(t, ok, "should find Service provider")
+	assert.Assert(t, svc.Type != nil)
+	assert.Assert(t, svc.Constructor != nil, "Service should have a constructor")
+	assert.Equal(t, svc.Constructor.FunctionName, "NewService")
+	assert.Assert(t, !svc.Constructor.ReturnsError(),
+		"Service constructor should not return error")
+
+	// Verify Repository provider
+	repo, ok := byName["Repository"]
+	assert.Assert(t, ok, "should find Repository provider")
+	assert.Assert(t, repo.Type != nil)
+	assert.Assert(t, repo.Constructor != nil,
+		"Repository should have a constructor")
+	assert.Equal(t, repo.Constructor.FunctionName, "CreateRepository")
+	assert.Assert(t, repo.Constructor.ReturnsError(),
+		"Repository constructor should return error")
+
+	for _, p := range repo.Constructor.ReturnParameters {
+		t.Log(types.TypeString(
+			p.TypeInfo.Type,
+			RelativeTo(p.TypeInfo.Package.Types),
+		))
+	}
+}
+
+// RelativeTo returns a [Qualifier] that fully qualifies members of
+// all packages other than pkg.
+func RelativeTo(pkg *types.Package) types.Qualifier {
+	if pkg == nil {
+		return nil
+	}
+	return func(other *types.Package) string {
+		if pkg == other {
+			return other.Name() // same package; unqualified
+		}
+		return other.Name()
+	}
+}
+
+func TestASTParserAnnotationRule(t *testing.T) {
+	dir := testFixtureDir(t, "annotation_rule")
+
+	content := `package annotation_rule
+
+// Logger is a logging service
+type Logger struct{}
+
+// plumber:provider
+//
+// NewLogger creates a new Logger
+func NewLogger() *Logger {
+	return &Logger{}
+}
+
+// Cache is a caching service
+type Cache struct{}
+
+// NewCache creates a new Cache (no annotation)
+func NewCache() *Cache {
+	return &Cache{}
+}
+`
+
+	err := os.WriteFile(filepath.Join(dir, "services.go"), []byte(content), 0o644)
+	assert.NilError(t, err)
+
+	parser, err := discovery.NewASTParser(filepath.Join(dir, "services.go"))
+	assert.NilError(t, err)
+
+	// With annotation.has rule, only NewLogger should match
+	matchers := []discovery.Matcher{
+		{
+			Constructors: []discovery.ConstructorPattern{
+				{Re: "New(?P<name>.*)", Rule: "annotation.has:plumber:provider"},
+			},
+		},
+	}
+
+	result, err := parser.Discover(matchers)
+	assert.NilError(t, err)
+	assert.Equal(t, len(result.Providers), 1, "only annotated constructor should match")
+	assert.Equal(t, result.Providers[0].Name, "Logger")
+	assert.Equal(t, result.Providers[0].Constructor.FunctionName, "NewLogger")
+}
+
+func TestASTParserAnnotationRuleMixedPatterns(t *testing.T) {
+	dir := testFixtureDir(t, "annotation_mixed")
+
+	content := `package annotation_mixed
+
+type Alpha struct{}
+
+// plumber:provider
+//
+// NewAlpha creates Alpha
+func NewAlpha() *Alpha {
+	return &Alpha{}
+}
+
+type Beta struct{}
+
+// NewBeta creates Beta (no annotation)
+func NewBeta() *Beta {
+	return &Beta{}
+}
+
+type Gamma struct{}
+
+// CreateGamma creates Gamma (different pattern, no rule)
+func CreateGamma() *Gamma {
+	return &Gamma{}
+}
+`
+
+	err := os.WriteFile(filepath.Join(dir, "mixed.go"), []byte(content), 0o644)
+	assert.NilError(t, err)
+
+	parser, err := discovery.NewASTParser(filepath.Join(dir, "mixed.go"))
+	assert.NilError(t, err)
+
+	// First pattern requires annotation, second doesn't
+	matchers := []discovery.Matcher{
+		{
+			Constructors: []discovery.ConstructorPattern{
+				{Re: "New(?P<name>.*)", Rule: "annotation.has:plumber:provider"},
+				{Re: "Create(?P<name>.*)"},
+			},
+		},
+	}
+
+	result, err := parser.Discover(matchers)
+	assert.NilError(t, err)
+	assert.Equal(t, len(result.Providers), 2, "should find Alpha (annotated) and Gamma (no rule)")
+
+	byName := make(map[string]bool)
+	for _, p := range result.Providers {
+		byName[p.Name] = true
+	}
+	assert.Assert(t, byName["Alpha"], "Alpha should be found (has annotation)")
+	assert.Assert(t, byName["Gamma"], "Gamma should be found (Create pattern has no rule)")
+	assert.Assert(t, !byName["Beta"], "Beta should NOT be found (New pattern requires annotation)")
+}

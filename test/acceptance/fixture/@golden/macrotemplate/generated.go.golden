@@ -1,0 +1,18 @@
+// Generated file by plumber shape function. DON'T edit manually outside of designated areas.
+
+package macrotemplate
+
+// <<plumber::Block(header)>>
+// <</plumber::Block>>
+
+// Widget is derived from "github.com/getoutreach/plumber/test/acceptance/testrun-acceptance/fixture/macrotemplate".Order.
+type Widget struct {
+	ID    string
+	Total int
+	// <<plumber::Block(extra-Widget)>>
+	// <</plumber::Block>>
+
+}
+
+// <<plumber::Block(footer)>>
+// <</plumber::Block>>

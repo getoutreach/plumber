@@ -27,8 +27,8 @@ func main() {
 			&a.Async.Publisher,
 			// All good so we can start other services in parallel
 			plumber.Parallel(
-				&a.GRPC.Server,
-				&a.GraphQL.Server,
+				&a.Grpc.Server,
+				&a.Graphql.Server,
 			),
 		),
 		// The pipeline will run for 10 seconds then will be closed gracefully.

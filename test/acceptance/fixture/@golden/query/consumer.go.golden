@@ -1,0 +1,4 @@
+package query
+
+// plumber:query "^Init.*" scope="."
+var InitFunctions = []func(){InitCache, InitDB, InitLogger}

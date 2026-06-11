@@ -6,10 +6,10 @@ import "context"
 
 // WithTestEnvironment redefines application dependency graph for test environment
 func WithTestEnvironment(ctx context.Context, cf *Config, a *Container) {
-	a.GRPC.Port.Const(1001)
+	a.Grpc.Port.Const(1001)
 }
 
 // WithIntegrationEnvironment redefines application graph for integration environment
 func WithIntegrationEnvironment(ctx context.Context, cf *Config, a *Container) {
-	a.GRPC.Port.Const(1000)
+	a.Grpc.Port.Const(1000)
 }

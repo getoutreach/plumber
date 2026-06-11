@@ -25,6 +25,11 @@ func NewRepository() (*Repository, error) {
 	return &Repository{}, nil
 }
 
+// FactoryRepository creates a new Repository with custom configuration
+func FactoryRepository(initialID int64) (*Repository, error) {
+	return &Repository{id: initialID}, nil
+}
+
 func (s *Repository) Get(ctx context.Context, id int64) (*contract.Entity, error) {
 	return &contract.Entity{
 		ID:   id,
@@ -61,4 +66,29 @@ func (s *BatchingRepository) Get(ctx context.Context, id int64) (*contract.Entit
 
 func (s *BatchingRepository) Create(ctx context.Context, name string) (*contract.Entity, error) {
 	return s.inner.Create(ctx, name)
+}
+
+// UserRepository represents a database repository for users
+type UserRepository struct {
+	counter int64
+}
+
+func NewUserRepository() (*UserRepository, error) {
+	return &UserRepository{}, nil
+}
+
+func (s *UserRepository) Get(ctx context.Context, id int64) (*contract.Entity, error) {
+	// Here suppose to be a logic that batches requests into a single batch query
+	return &contract.Entity{
+		ID:   id,
+		Name: "user",
+	}, nil
+}
+
+func (s *UserRepository) Create(ctx context.Context, name string) (*contract.Entity, error) {
+	s.counter++
+	return &contract.Entity{
+		ID:   s.counter,
+		Name: name,
+	}, nil
 }

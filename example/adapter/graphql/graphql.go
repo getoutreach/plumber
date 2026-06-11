@@ -31,3 +31,7 @@ func NewServer(
 		BaseLooper: contract.NewWorker("graphql.Server"),
 	}, nil
 }
+
+func (s *Server) Serve() error {
+	return nil
+}

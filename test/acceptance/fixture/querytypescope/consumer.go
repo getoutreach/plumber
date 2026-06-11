@@ -1,0 +1,6 @@
+package querytypescope
+
+var r Registry
+
+// plumber:query "^Get.*" scope=".Registry" receiver="r"
+var Getters = []func() string{}

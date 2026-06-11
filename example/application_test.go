@@ -15,7 +15,7 @@ import (
 func WithIntegrationEnvironment(
 	ctx context.Context, cf *example.Config, a *example.Container,
 ) {
-	a.GRPC.Port.Const(1000)
+	a.Grpc.Port.Const(1000)
 }
 
 func TestApplicationManually(t *testing.T) {
@@ -25,12 +25,12 @@ func TestApplicationManually(t *testing.T) {
 	)
 
 	// You can manually assert specific instances
-	assert.Equal(t, int32(1000), a.GRPC.Port.Instance())
+	assert.Equal(t, int32(1000), a.Grpc.Port.Instance())
 	assert.Assert(t, plumber.Resolved(
 		&a.Database.BatchingRepository,
 		&a.Async.Publisher,
-		&a.GRPC.Server,
-		&a.GraphQL.Server,
+		&a.Grpc.Server,
+		&a.Graphql.Server,
 	))
 }
 

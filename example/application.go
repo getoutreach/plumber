@@ -19,25 +19,31 @@ type Definer = func(ctx context.Context, cf *Config, a *Container)
 // Container represents root application dependency container
 type Container struct {
 	plumber.Container
-	Async    *Async
-	Database *Database
-	GraphQL  *GraphQL
-	GRPC     *GRPC
-	Service  *Service
-	Bugs     *Bugs
+	Async         *Async
+	Database      *Database
+	Graphql       *Graphql
+	Grpc          *Grpc
+	Service       *Service
+	Bugs          *Bugs
+	Scenario      *Scenario
+	OutboundRedis *OutboundRedis
 }
 
 // NewApplication returns instance of the root dependency container
 func NewApplication(ctx context.Context, cf *Config, definers ...Definer) *Container {
 	a := &Container{
-		GRPC:     new(GRPC),
-		Database: new(Database),
-		GraphQL:  new(GraphQL),
-		Service:  new(Service),
-		Async:    new(Async),
-		Bugs:     new(Bugs),
+		Grpc:          new(Grpc),
+		Database:      new(Database),
+		Graphql:       new(Graphql),
+		Service:       new(Service),
+		Async:         new(Async),
+		Bugs:          new(Bugs),
+		Scenario:      new(Scenario),
+		OutboundRedis: new(OutboundRedis),
 	}
 	return plumber.DefineContainers(ctx, cf, definers, a,
-		a.Async, a.Database, a.GRPC, a.GraphQL, a.Service, a.Bugs,
+		a.Async, a.Database, a.Grpc, a.Graphql, a.Service, a.Bugs,
+		a.Scenario,
+		a.OutboundRedis,
 	)
 }

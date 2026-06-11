@@ -1,0 +1,52 @@
+plumber.templates:
+  content:
+    - name: file.copyright
+      content: |
+        {{define "plumber/command/discovery/file/copyright"}}
+        // Copyright (c) 2026 Outreach Corporation. All Rights Reserved.
+        {{end}}
+
+plumber.discovery:
+  templates:
+    global:
+      - name: file.copyright
+    container: []
+    application: []
+  applications:
+    - name: application
+      # fqn of the config struct to use for this application
+      module: github.com/getoutreach/plumber/example
+      config: '*"github.com/getoutreach/plumber/example".Config'
+      # application file rendered once if it doesn't exist
+      application:
+        path: ./application.go
+      # for each application we defined a plumber sub containers
+      containers:
+        - plumber.container:
+            comment: "Adapter modules"
+            name: "{{ .module }}"
+            container:
+              path: ./application_{{ .module_slug }}.go
+            source:
+              path: ./adapter/{{ .module_path }}/
+            # matchers define constructor patterns to discover
+            matchers:
+              - constructors:
+                  # Named capture group "name" extracts the provider name
+                  - re: New(?P<name>.*)
+                    rule: annotation.has:is:provider
+                  - re: Factory(?P<name>.*)
+                    rule: annotation.has:is:provider
+          # loop allows to define multiple containers using
+          loop:
+            # path scans a folder structure; [\w/]+ captures nested subdirectories
+            path: adapter/(?P<module>[\w/]+)
+        - plumber.container:
+            name: "Scenario"
+            container:
+              path: ./application_scenario.go
+            source:
+              path: ./scenario/
+            matchers:
+              - constructors:
+                  - re: New(?P<name>.*)

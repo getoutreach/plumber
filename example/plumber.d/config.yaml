@@ -1,0 +1,40 @@
+plumber.shape:
+  type:
+    wrappers:
+      - plumber.wrapper:
+          name: model.filter
+          expressions:
+            - plumber.wrapper_expression:
+                type: |
+                  "github.com/getoutreach/plumber/example/contract".Filtrable
+                matcher: filtrable
+  matchers:
+    - plumber.matcher:
+        name: filtrable
+        matches:
+          - rule: |
+              fqn:"time".Time
+          - rule: |
+              fqn:"github.com/getoutreach/plumber/example/contract".OpenCloser
+          - rule: |
+              fqn:"github.com/getoutreach/plumber/example/contract".Name
+  macros:
+    - plumber.macro:
+        name: "@macro"
+        annotations:
+          - {name: plumber:derive, args: ["MacroDerived"]}
+          - {
+              name: plumber:output,
+              args: ['{{ filename_suffixed "generated" }}'],
+            }
+  mixins:
+    - plumber.mixin:
+        name: mixing.model.filtrable
+        annotations:
+          - {name: plumber:filter, args: [annotation.has, is:filtrable]}
+          - {name: plumber:field_wrapper, args: [model.filter]}
+    - plumber.mixin:
+        name: mixing.model.accessor
+        annotations:
+          - {name: plumber:template, args: [plumber:object/accessor]}
+          - {name: plumber:output, args: [generated.go]}
