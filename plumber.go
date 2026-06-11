@@ -35,6 +35,24 @@ type dependencyErrorer interface {
 	dependencyErrors() []error
 }
 
+// resettable is an internal interface for dependencies that can be reset.
+// Used by Reset and Redefine to clear cached state.
+type resettable interface {
+	// resetResolved clears the resolved cache (value, err, resolved flag)
+	// but keeps the definition intact so re-resolution uses the same definition.
+	resetResolved()
+	// resetFull clears everything including sync.Once and defined flag,
+	// allowing the dependency to accept a new Define/Const/Resolver call.
+	resetDefined()
+	// directDeps returns the direct dependencies declared via Require.
+	directDeps() []Dependency
+}
+
+// savepointable is an internal interface for dependencies that can create savepoints of their state.
+type savepointable interface {
+	savePoint() func()
+}
+
 // Future represents a struct that will help with dependency evaluation
 type Future[T any] struct {
 	d *D[T]
@@ -42,6 +60,13 @@ type Future[T any] struct {
 
 // Then evaluates a dependencies and trigger callback when all good
 func (f *Future[T]) Then(callback func()) {
+	// While probing for dependency discovery, Require has already populated
+	// f.d.deps; we must not invoke the user callback (and thus must not touch
+	// any of the required dependencies, which may themselves still be
+	// unresolved).
+	if f.d.probing {
+		return
+	}
 	var errs []error
 	for _, d := range f.d.deps {
 		var (
@@ -65,7 +90,7 @@ func (f *Future[T]) Then(callback func()) {
 		}
 	}
 	if len(errs) != 0 {
-		f.d.err = errors.Join(errs...)
+		f.d.state.err = errors.Join(errs...)
 		return
 	}
 	if f.d.futureCallback != nil {
@@ -75,24 +100,56 @@ func (f *Future[T]) Then(callback func()) {
 	}
 }
 
+// state represents the internal state of a dependency, including whether it's defined,
+// resolved, its value, and any error encountered during resolution.
+type state[T any] struct {
+	// resolved indicates whether the dependency has been resolved and its value is ready to be used.
+	resolved bool
+	// resolve is the function that performs the resolution of the dependency.
+	resolve func()
+	// defined indicates whether the dependency has been defined (via Define/Const/Resolver).
+	defined bool
+	// value holds the resolved value of the dependency.
+	value T
+	// err holds any error encountered during the resolution of the dependency.
+	err error
+	// resolution holds the Resolution struct if the dependency was defined via Resolver,
+	// which allows for re-probing dependencies on ResetDefinition.
+	resolution *Resolution[T]
+
+	// wrappers holds the list of wrappers that should be applied to the resolved value before it's returned by Instance.
+	wrappers []Wrapper[T]
+}
+
 // D represent a dependency wrapper
 type D[T any] struct {
-	resolving         bool
-	defined           bool
-	instanceErrorFunc func() (T, error)
-	resolved          bool
-	value             T
-	err               error
-	once              sync.Once
-	mx                sync.Mutex
-	depMx             sync.RWMutex
-	resolve           func()
+	// state holds the internal state of the dependency, including whether it's defined,
+	// resolved, its value, and any error encountered during resolution.
+	state state[T]
+	// resolving is set to true while the resolver is being invoked in resolution mode (see Resolver). While resolving,
+	resolving bool
+	//defined   bool
+	// probing is set to true while the resolver is being invoked in
+	// dependency-discovery mode (see probeDependencies). While probing,
+	// Future.Then is a no-op so the resolver body executes only far enough
+	// to register Require() calls.
+	probing bool
+
+	// makeInstanceErrorFunc is the original resolution function provided by Define/Const/Resolver.
+	// it is used to re-evaluate the instance when ResetDefinition is called,
+	// and is also used by wrappers to get the original value.
+	makeInstanceErrorFunc func() (T, error)
+	//resolved          bool
+	//value             T
+	//err               error
+	once  sync.Once
+	mx    sync.Mutex
+	depMx sync.RWMutex
+	//resolve           func()
 	deps              []Dependency
 	listeners         []func()
-	wrappers          []func(T) T
 	name              string
 	instanceRetrieved func()
-	resolution        *Resolution[T]
 	futureCallback    func(next func())
 }
 
@@ -122,14 +179,12 @@ func (d *D[T]) String() string {
 // define sets resolution function but only once
 func (d *D[T]) define(resolve func(), callbacks ...func()) {
 	d.once.Do(func() {
-		d.defined = true
-		d.resolve = func() {
+		d.state.defined = true
+		d.state.resolve = func() {
 			resolve()
-			d.resolved = true
+			d.state.resolved = true
 			d.resolving = false
-			for _, w := range d.wrappers {
-				d.value = w(d.value)
-			}
+
 			for _, l := range d.listeners {
 				l()
 			}
@@ -141,43 +196,40 @@ func (d *D[T]) define(resolve func(), callbacks ...func()) {
 }
 
 // Define allows to define value using callback that returns a value and error
-func (d *D[T]) DefineError(resolve func() (T, error)) *D[T] {
-	d.instanceErrorFunc = resolve
+func (d *D[T]) DefineError(resolve func() (T, error)) {
+	d.makeInstanceErrorFunc = resolve
 	d.define(func() {
-		d.value, d.err = resolve()
+		d.state.value, d.state.err = resolve()
 	})
-	return d
 }
 
 // Define allows to define value using callback that returns a value
-func (d *D[T]) Define(resolve func() T) *D[T] {
-	d.instanceErrorFunc = func() (T, error) {
+func (d *D[T]) Define(resolve func() T) {
+	d.makeInstanceErrorFunc = func() (T, error) {
 		return resolve(), nil
 	}
 	d.define(func() {
-		d.value = resolve()
+		d.state.value = resolve()
 	})
-	return d
 }
 
 // Const assigns a static value
-func (d *D[T]) Const(v T) *D[T] {
-	d.instanceErrorFunc = func() (T, error) {
+func (d *D[T]) Const(v T) {
+	d.makeInstanceErrorFunc = func() (T, error) {
 		return v, nil
 	}
 	d.define(func() {
-		d.value = v
+		d.state.value = v
 	})
-	return d
 }
 
 // Use overwrites defined value with specific instance. Should be used only for testings
 func (d *D[T]) Use(v T) *D[T] {
-	d.instanceErrorFunc = func() (T, error) {
+	d.makeInstanceErrorFunc = func() (T, error) {
 		return v, nil
 	}
-	d.resolved = true
-	d.value = v
+	d.state.resolved = true
+	d.state.value = v
 	return d
 }
 
@@ -190,32 +242,47 @@ func (d *D[T]) Must() T {
 	return v
 }
 
-// Instance returns a value
+// Instance returns a value or panics if error occurs during resolution
+// To avoid panics use InstanceError that returns value and error separately but
+// as well don't forget to declare dependencies using Resolver if instance requires other dependencies to be resolved first
 func (d *D[T]) Instance() T {
-	d.mx.Lock()
-	defer d.mx.Unlock()
-	if d.instanceRetrieved != nil {
-		d.instanceRetrieved()
+	i, err := d.InstanceError()
+	if err != nil {
+		panic(err)
 	}
-	var zero T
-	if !d.defined {
-		return zero
-	}
-	if d.resolve != nil && !d.resolved {
-		d.resolving = true
-		d.resolve()
-	}
-	return d.value
+	return i
 }
 
 // InstanceError returns and a value and the error
 func (d *D[T]) InstanceError() (T, error) {
-	v := d.Instance()
-	err := d.err
-	if !d.defined {
-		err = fmt.Errorf("instance %s not resolved", d.String())
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	if d.instanceRetrieved != nil {
+		d.instanceRetrieved()
 	}
-	return v, err
+	var zero T
+
+	if err := d.checkDefined(); err != nil {
+		return zero, err
+	}
+
+	if d.state.resolve != nil && !d.state.resolved {
+		d.resolving = true
+		d.state.resolve()
+	}
+
+	// Apply wrappers in the order they were registered. Each wrapper can modify the instance and return an error.
+	i := d.state.value
+	for _, w := range d.state.wrappers {
+		wrapperFunc, err := w.InstanceError()
+		if err != nil {
+			return zero, err
+		}
+		i = wrapperFunc(i)
+	}
+
+	return i, d.state.err
 }
 
 // Error returns and error
@@ -224,14 +291,55 @@ func (d *D[T]) Error() error {
 	return err
 }
 
+// InstanceErrorWrap returns a value and the error, applying wrappers on the spot.
+// Could be used when it is required to defined wrappers on the receiving side.
+func (d *D[T]) InstanceErrorWrap(wrappers ...Wrapper[T]) (T, error) {
+	i := d.InstanceWrap(wrappers...)
+	for _, w := range wrappers {
+		wrapperFunc, err := w.InstanceError()
+		if err != nil {
+			var zero T
+			return zero, err
+		}
+		i = wrapperFunc(i)
+	}
+	return i, d.Error()
+}
+
+// InstanceWrap returns a value, applying wrappers on the spot.
+// Could be used when it is required to defined wrappers on the receiving side.
+// It is expected that wrappers would be defined as dependency so the we don't need to handle error.
+// Panics if error occurs during wrapper evaluation.
+func (d *D[T]) InstanceWrap(wrappers ...Wrapper[T]) T {
+	i, err := d.InstanceErrorWrap(wrappers...)
+	if err != nil {
+		panic(fmt.Errorf("undeclared dependency caused unhandled dependency error during instance wrapping: %w", err))
+	}
+	return i
+}
+
+func (d *D[T]) checkDefined() error {
+	if !d.state.defined {
+		return fmt.Errorf("instance %s not resolved", d.String())
+	}
+	return nil
+}
+
 // MakeInstanceError builds new instance and returns a value and an error
 func (d *D[T]) MakeInstanceError() (T, error) {
-	return d.instanceErrorFunc()
+	var zero T
+	if err := d.checkDefined(); err != nil {
+		return zero, err
+	}
+	if d.makeInstanceErrorFunc == nil {
+		return zero, errors.New("no resolver or const defined")
+	}
+	return d.makeInstanceErrorFunc()
 }
 
 // MakeInstance builds new instance and returns a value if error occurs it panics
 func (d *D[T]) MakeInstance() T {
-	instance, err := d.instanceErrorFunc()
+	instance, err := d.MakeInstanceError()
 	if err != nil {
 		panic(err)
 	}
@@ -270,7 +378,7 @@ func (d *D[T]) dependencyErrors() []error {
 
 // Resolved returns true if dependency is resolved
 func (d *D[T]) Resolved() bool {
-	return d.resolved
+	return d.state.resolved
 }
 
 // Iterate iterates dependency graph, when callback returns true iterator will continue down stream
@@ -287,6 +395,52 @@ func (d *D[T]) Iterate(callback func(dep Dependency) bool) {
 	}
 }
 
+// resetResolved clears the resolved cache so that the next Instance() call
+// re-triggers the existing resolve function.
+func (d *D[T]) resetResolved() {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+	d.state.resolved = false
+	d.resolving = false
+	var zero T
+
+	d.state.value = zero
+	d.state.err = nil
+	d.once = sync.Once{} // Allow the define() logic to run again on the next Instance() call.
+	// If there is an existing resolution, re-register it to ensure it uses the current state and dependencies.
+	if d.state.resolution != nil {
+		d.Resolver(d.state.resolution.callback)
+	}
+}
+
+// savePoint creates a save point of the current state and returns a restore function that can be called to revert to that state.
+func (d *D[T]) savePoint() func() {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+	state := d.state
+	return func() {
+		d.state = state
+		if !d.state.defined {
+			d.once = sync.Once{} // Reset once if the restored state is not defined, allowing define() to run again.
+		}
+	}
+}
+
+// resetFull clears everything including sync.Once and defined flag,
+// allowing the dependency to be fully re-defined.
+func (d *D[T]) resetDefined() {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+	d.state.defined = false
+}
+
+// directDeps returns the direct dependencies declared via Require.
+func (d *D[T]) directDeps() []Dependency {
+	d.depMx.RLock()
+	defer d.depMx.RUnlock()
+	return d.deps
+}
+
 // Deprecated: Use Resolver instead
 func (d *D[T]) Resolve(callback func(*Resolution[T])) *D[T] {
 	return d.Resolver(callback)
@@ -295,16 +449,17 @@ func (d *D[T]) Resolve(callback func(*Resolution[T])) *D[T] {
 // Resolver returns a callback providing a resolution orchestrator
 // Using the orchestrator we can define dependencies between values
 func (d *D[T]) Resolver(callback func(*Resolution[T])) *D[T] {
-	r := Resolution[T]{
-		setInstance: func(v T) {
-			d.value = v
-		},
-		setError: func(err error) {
-			d.err = err
-		},
-		d: d,
+	r := &Resolution[T]{
+		callback: callback,
+		d:        d,
 	}
-	d.instanceErrorFunc = func() (value T, err error) {
+	r.setInstance = func(v T) {
+		d.state.value = v
+	}
+	r.setError = func(err error) {
+		d.state.err = err
+	}
+	d.makeInstanceErrorFunc = func() (value T, err error) {
 		localR := Resolution[T]{
 			setInstance: func(v T) {
 				value = v
@@ -318,11 +473,37 @@ func (d *D[T]) Resolver(callback func(*Resolution[T])) *D[T] {
 		return value, err
 	}
 	d.define(func() {
-		callback(&r)
+		callback(r)
 	}, func() {
-		d.resolution = &r
+		d.state.resolution = r
 	})
+	// Eagerly probe the resolver to discover declared dependencies (via Require)
+	// without actually resolving the value. This ensures that ResetDefinition
+	// can cascade resets to all dependents even when those dependents have not
+	// yet been resolved through a call to Instance().
+	d.probeDependencies(callback)
 	return d
+}
+
+// probeDependencies invokes the user-supplied resolver callback with a
+// "probing" Resolution. The probe records any dependencies declared via
+// Require but suppresses any further side effects: setInstance, setError,
+// and the Future.Then callback are all turned into no-ops. The probe is
+// guarded by the d.probing flag which is read by Future.Then.
+func (d *D[T]) probeDependencies(callback func(*Resolution[T])) {
+	d.probing = true
+	defer func() {
+		d.probing = false
+		// Probing must never leave an error behind.
+		d.state.err = nil
+	}()
+	probe := &Resolution[T]{
+		callback:    callback,
+		setInstance: func(T) {},
+		setError:    func(error) {},
+		d:           d,
+	}
+	callback(probe)
 }
 
 // WhenResolved registers a callback that will be triggered when dependency is resolved
@@ -334,8 +515,20 @@ func (d *D[T]) WhenResolved(callback func()) *D[T] {
 // Wrap registers a wrapping callback that will be triggered when dependency is resolved
 // The callback allows to augment the original value. Wrapping should be used mostly to
 // redefine the dependency for a different test environments
-func (d *D[T]) Wrap(wrappers ...func(T) T) *D[T] {
-	d.wrappers = append(d.wrappers, wrappers...)
+func (d *D[T]) Wrap(wrappers ...Wrapper[T]) *D[T] {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+	d.state.wrappers = append(d.state.wrappers, wrappers...)
+	return d
+}
+
+// As allows to reuse parent dependency definition and apply different wrappers based on the environment or other conditions.
+// It creates a new instance of same kind
+func (d *D[T]) As(parent *D[T]) *D[T] {
+	d.makeInstanceErrorFunc = parent.MakeInstanceError
+	d.define(func() {
+		d.state.value, d.state.err = parent.MakeInstanceError()
+	})
 	return d
 }
 
@@ -401,11 +594,16 @@ func (r *R[T]) setInstanceListener(listener func()) {
 // InstanceError returns and a value and the error
 func (r *R[T]) InstanceError() (T, error) {
 	v := r.d.Instance()
-	err := r.d.err
+	err := r.d.state.err
 	if err == nil {
 		err = r.Error()
 	}
 	return v, err
+}
+
+// MakeInstanceError builds new instance and returns a value and an error
+func (r *R[T]) MakeInstanceError() (T, error) {
+	return r.d.MakeInstanceError()
 }
 
 // Define allows to define value using callback that returns a value
@@ -469,6 +667,27 @@ func (r *R[T]) Iterate(callback func(dep Dependency) bool) {
 	r.d.Iterate(callback)
 }
 
+// resetResolved clears the resolved cache on the inner D[T] and nils the runnable.
+func (r *R[T]) resetResolved() {
+	r.d.resetResolved()
+	r.runnable = nil
+}
+
+func (r *R[T]) savePoint() func() {
+	return r.d.savePoint()
+}
+
+// resetFull clears everything including sync.Once and defined flag on the inner D[T].
+func (r *R[T]) resetDefined() {
+	r.d.resetDefined()
+	r.runnable = nil
+}
+
+// directDeps returns the direct dependencies declared via Require.
+func (r *R[T]) directDeps() []Dependency {
+	return r.d.directDeps()
+}
+
 // Close executes Close method on value and satisfies Closer interface
 func (r *R[T]) Close(ctx context.Context) error {
 	if err := r.d.Error(); err != nil {
@@ -487,8 +706,25 @@ func (r *R[T]) Ready() <-chan struct{} {
 	return RunnerReady(r.runnable)
 }
 
+// Wrap registers a wrapping callback that will be triggered when dependency is resolved
+// The order of wrappers is from first to last, so the first wrapper will be the closest to the original value.
+// Latest wrapper will be the evaluated first and will be the closest to the caller.
+//
+// value.Wrap(w1, w2, w3) will result in w3(w2(w1(value)))
+func (r *R[T]) Wrap(wrappers ...Wrapper[T]) *R[T] {
+	r.d.Wrap(wrappers...)
+	return r
+}
+
+// As allows to reuse parent dependency definition and apply different wrappers based on the environment or other conditions.
+func (r *R[T]) As(parent *R[T]) *R[T] {
+	r.d.As(&parent.d)
+	return r
+}
+
 // Resolution is value resolution orchestrator
 type Resolution[T any] struct {
+	callback    func(*Resolution[T])
 	setInstance func(T)
 	setError    func(error)
 	d           *D[T]

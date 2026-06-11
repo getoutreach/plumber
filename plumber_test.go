@@ -19,7 +19,8 @@ type Config struct {
 }
 
 func (c *Config) HelloMessage() *plumber.D[string] {
-	return c.helloMessage.Const("Hello message")
+	c.helloMessage.Const("Hello message")
+	return &c.helloMessage
 }
 
 type HTTP struct {
@@ -60,8 +61,8 @@ func TestDefineOnce(t *testing.T) {
 	a.D2.Define(func() int { return 3 })
 	a.D2.Define(func() int { return 4 })
 
-	assert.Equal(t, a.D1.Must(), 1)
-	assert.Equal(t, a.D2.Must(), 3)
+	assert.Equal(t, 1, a.D1.Must())
+	assert.Equal(t, 3, a.D2.Must())
 }
 
 func TestConcurrency(t *testing.T) {
