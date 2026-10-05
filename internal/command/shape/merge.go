@@ -1,6 +1,6 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
-// Description: This file implements inplace merging of generated declarations into existing Go source files using the DST AST.
+// Description: This file implements inplace merging of generated declarations into existing Go source files using the DST AST. Supported declaration kinds are functions/methods, structs, interfaces, named types whose underlying form is neither a struct nor an interface (basic-type definitions, slices, maps, channels, function types, generics, and aliases), package-level variables, and grouped or single constants.
 
 package shape
 
@@ -24,11 +24,22 @@ const annotationGenerateOnce = "generate:once"
 // Merge takes a model.Package and a dst.File representing the generated code, and merges the
 // generated declarations into the existing source files, returning every dst.File that was
 // modified. A single Merge call may touch multiple files because each entity (struct, func,
-// var) can live in a different file within the package; new files may also be created on
-// the fly when an entity does not yet exist anywhere in the package.
+// var, const) can live in a different file within the package; new files may also be created
+// on the fly when an entity does not yet exist anywhere in the package.
 //
 // Declarations annotated with generate:once are skipped if the entity already exists
 // in the target package.
+//
+// Constant declarations are merged at the GenDecl granularity: grouped const blocks (e.g.
+// `const ( A = iota; B; C )`) are preserved as a single declaration on insertion. The whole
+// group is skipped when any of its declared names is already present in the package, which
+// keeps iota-based numbering valid.
+//
+// Named types whose underlying form is neither a struct nor an interface (e.g. type
+// aliases, basic-type definitions, slices, maps, channels, function types, and generic
+// forms) are added when missing and otherwise reduced to a doc-comment merge: the existing
+// source is treated as the source of truth and the underlying type expression is never
+// rewritten on collision.
 //
 // The output parameter specifies the filename (relative to the package directory) to
 // append new declarations to when the target entity is not found in the existing
@@ -62,6 +73,17 @@ func Merge(pkg *model.Package, file *dst.File, output string) ([]*dst.File, erro
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *dst.GenDecl:
+			// Constants are handled at the GenDecl level so that grouped const
+			// blocks (notably iota-based ones) are preserved as a single unit
+			// when added. See mergeConst for the dedup semantics.
+			if d.Tok == token.CONST {
+				f, err := mergeConst(pkg, d, output, importMap)
+				if err != nil {
+					return nil, fmt.Errorf("failed to merge const: %w", err)
+				}
+				recordFile(f)
+				continue
+			}
 			for _, spec := range d.Specs {
 				switch s := spec.(type) {
 				case *dst.TypeSpec:
@@ -120,6 +142,42 @@ func Merge(pkg *model.Package, file *dst.File, output string) ([]*dst.File, erro
 						f, err := mergeInterface(currentType, d, s, t, importMap)
 						if err != nil {
 							return nil, fmt.Errorf("failed to merge interface %q: %w", s.Name.Name, err)
+						}
+						recordFile(f)
+					} else {
+						// Catch-all for named types whose underlying form is neither
+						// a struct nor an interface: aliases (`type Foo = bar`),
+						// definitions over basic / array / map / chan / func types,
+						// and generic forms. The existing source is the source of
+						// truth; we never rewrite the underlying type expression
+						// on collision, only adopt or merge doc comments.
+						if hasGenerateOnce(d.Decs.Start) {
+							_, found := lo.Find(pkg.Types, func(t *model.Type) bool {
+								return t.Name == s.Name.Name
+							})
+							if found {
+								continue
+							}
+						}
+
+						currentType, found := lo.Find(pkg.Types, func(t *model.Type) bool {
+							return t.Name == s.Name.Name
+						})
+						if !found {
+							// Named type not found — append the type declaration
+							// to the file specified by output (creating it if
+							// needed). addTypeDecl preserves TypeSpec.Assign and
+							// TypeSpec.TypeParams so aliases and generics survive.
+							f, err := addTypeDecl(pkg, d, s, output, importMap)
+							if err != nil {
+								return nil, fmt.Errorf("failed to add type %q: %w", s.Name.Name, err)
+							}
+							recordFile(f)
+							continue
+						}
+						f, err := mergeNamedType(currentType, d, s)
+						if err != nil {
+							return nil, fmt.Errorf("failed to merge type %q: %w", s.Name.Name, err)
 						}
 						recordFile(f)
 					}

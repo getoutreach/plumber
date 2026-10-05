@@ -143,6 +143,13 @@ func Macros(pkgs []*model.Package, macros []config.MacroConfig) error {
 			}
 			v.TypeNode.Annotations = anns
 		}
+		for _, c := range pkg.Consts {
+			anns, err := Annotations(pkg, c.TypeNode.Annotations, macroMap, macroSchemas)
+			if err != nil {
+				return err
+			}
+			c.TypeNode.Annotations = anns
+		}
 		for _, comment := range pkg.Comments {
 			anns, err := Annotations(pkg, comment.Annotations, macroMap, macroSchemas)
 			if err != nil {

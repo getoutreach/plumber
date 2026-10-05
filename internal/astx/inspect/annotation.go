@@ -84,11 +84,12 @@ func ParseAnnotations(doc string, source model.Node) []model.Annotation {
 	return parseAnnotations(doc, false, source)
 }
 
-// paragraphLine holds a trimmed line together with its 1-indexed position in the
-// original doc string, so that parsed annotations can record their source line.
+// paragraphLine holds a trimmed line together with its 0-indexed position in
+// the original doc string, so that parsed annotations can record their source
+// line.
 type paragraphLine struct {
 	text    string
-	docLine int // 1-indexed line number within the raw doc string
+	docLine int // 0-indexed line number within the raw doc string
 }
 
 func parseAnnotations(doc string, commented bool, source model.Node) []model.Annotation {
@@ -96,9 +97,24 @@ func parseAnnotations(doc string, commented bool, source model.Node) []model.Ann
 
 	// Split into paragraphs (groups of lines separated by blank lines).
 	// Annotations must be in their own paragraph, separated from prose by a blank line.
+	rawLines := strings.Split(doc, "\n")
+
+	// numDocLines is the count of meaningful lines in `doc` (i.e. excluding
+	// trailing empty entries produced by the trailing newline that
+	// (*ast.CommentGroup).Text() always appends). It represents the height of
+	// the doc block in the source file, which is needed to translate
+	// per-paragraph-line offsets into absolute source-file line numbers when
+	// the annotation source is a declaration node (TypeNode/Var) whose
+	// Position.Line points to the declaration line itself (i.e. the line
+	// directly below the doc block).
+	numDocLines := len(rawLines)
+	for numDocLines > 0 && strings.TrimSpace(rawLines[numDocLines-1]) == "" {
+		numDocLines--
+	}
+
 	var paragraphs [][]paragraphLine
 	var current []paragraphLine
-	for lineIdx, line := range strings.Split(doc, "\n") {
+	for lineIdx, line := range rawLines {
 		trimmed := strings.TrimSpace(line)
 		if commented {
 			trimmed = strings.TrimPrefix(trimmed, "//")
@@ -137,7 +153,7 @@ func parseAnnotations(doc string, commented bool, source model.Node) []model.Ann
 				Name:      tokens[0],
 				NamedArgs: make(map[string]string),
 				DocLine:   pl.docLine,
-				Position:  computeAnnotationPosition(source, pl.docLine),
+				Position:  computeAnnotationPosition(source, pl.docLine, numDocLines),
 			}
 			for _, token := range tokens[1:] {
 				if eqIdx := strings.Index(token, "="); eqIdx > 0 {
@@ -154,20 +170,32 @@ func parseAnnotations(doc string, commented bool, source model.Node) []model.Ann
 	return annotations
 }
 
-func computeAnnotationPosition(source model.Node, docLine int) *model.Position {
+// computeAnnotationPosition translates a 0-indexed `docLine` offset within the
+// raw doc string into an absolute source-file line number.
+//
+// Two source kinds are handled:
+//   - *model.CommentGroup: sourcePos.Line is the line of the first comment in
+//     the group, so the annotation's line is `sourcePos.Line + docLine`.
+//   - Declaration nodes (e.g. *model.TypeNode, *model.Var): sourcePos.Line is
+//     the line of the declaration itself, and the doc block sits directly
+//     above it occupying `numDocLines` source lines, so the annotation's line
+//     is `sourcePos.Line - numDocLines + docLine`.
+func computeAnnotationPosition(source model.Node, docLine, numDocLines int) *model.Position {
 	if source == nil {
 		return nil
 	}
-	var order = 1
 	sourcePos := source.GetPosition()
 
-	if _, ok := source.(*model.CommentGroup); !ok {
-		order = -1 // For comment groups, annotations are typically above the declaration, so we subtract docLine from the source line.
+	var line int
+	if _, ok := source.(*model.CommentGroup); ok {
+		line = sourcePos.Line + docLine
+	} else {
+		line = sourcePos.Line - numDocLines + docLine
 	}
 
 	return &model.Position{
 		Filename: sourcePos.Filename,
-		Line:     sourcePos.Line + (docLine * order), // docLine is 1-indexed
+		Line:     line,
 		Column:   sourcePos.Column,
 	}
 }

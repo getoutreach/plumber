@@ -1,11 +1,12 @@
 // Copyright 2026 Outreach Corporation. All Rights Reserved.
 
 // Description: Tests for the extended inplace merge logic covering functions, methods,
-// variables, statement-by-statement body merging, and call argument augmentation.
+// variables, constants, statement-by-statement body merging, and call argument augmentation.
 
 package shape
 
 import (
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2200,4 +2201,1035 @@ func findGenDeclForType(t *testing.T, file *dst.File, name string) *dst.GenDecl 
 	}
 	t.Fatalf("GenDecl for type %q not found in file", name)
 	return nil
+}
+
+// findGenDeclForConst locates the *dst.GenDecl in a file whose Tok is token.CONST
+// and that contains a ValueSpec declaring the given name. Returns nil when no
+// matching declaration is found (callers decide whether to fail the test).
+func findGenDeclForConst(file *dst.File, name string) *dst.GenDecl {
+	for _, decl := range file.Decls {
+		gd, ok := decl.(*dst.GenDecl)
+		if !ok || gd.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			vs, ok := spec.(*dst.ValueSpec)
+			if !ok {
+				continue
+			}
+			for _, ident := range vs.Names {
+				if ident != nil && ident.Name == name {
+					return gd
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// --- Const merging tests ---
+
+// TestMergeConst_AddsNewConst verifies that a generated single-spec const that
+// does not exist in the target package is appended to the output file as a
+// new token.CONST GenDecl.
+func TestMergeConst_AddsNewConst(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_const_add")
+
+	existingSrc := `package merge_const_add
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_const_add
+
+const Foo = "bar"
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "consts.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	gd := findGenDeclForConst(resultFiles[0], "Foo")
+	if gd == nil {
+		t.Fatal("expected Foo const declaration to be added to the result file")
+	}
+	if gd.Tok != token.CONST {
+		t.Fatalf("expected Tok == token.CONST, got %v", gd.Tok)
+	}
+}
+
+// TestMergeConst_SkipsExisting verifies that a generated const whose name already
+// exists in the target package is left alone and Merge returns no files.
+func TestMergeConst_SkipsExisting(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_const_skip")
+
+	existingSrc := `package merge_const_skip
+
+const Foo = "original"
+`
+	if err := os.WriteFile(filepath.Join(dir, "consts.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "consts.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_const_skip
+
+const Foo = "regenerated"
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "consts.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) != 0 {
+		t.Fatalf("expected no merged files (const already exists), got %d", len(resultFiles))
+	}
+}
+
+// TestMergeConst_GroupedAddedAsBlock verifies that an iota-based grouped const
+// declaration is added as a single GenDecl with parens and all specs preserved
+// in the original order.
+func TestMergeConst_GroupedAddedAsBlock(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_const_group_add")
+
+	existingSrc := `package merge_const_group_add
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_const_group_add
+
+const (
+	A = iota
+	B
+	C
+)
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "consts.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	gd := findGenDeclForConst(resultFiles[0], "A")
+	if gd == nil {
+		t.Fatal("expected grouped const declaration with A to be added")
+	}
+	if !gd.Lparen || !gd.Rparen {
+		t.Fatalf("expected grouped const block (Lparen=Rparen=true), got Lparen=%v Rparen=%v", gd.Lparen, gd.Rparen)
+	}
+	if len(gd.Specs) != 3 {
+		t.Fatalf("expected 3 specs in grouped const block, got %d", len(gd.Specs))
+	}
+	wantNames := []string{"A", "B", "C"}
+	for i, spec := range gd.Specs {
+		vs, ok := spec.(*dst.ValueSpec)
+		if !ok {
+			t.Fatalf("spec %d is not a ValueSpec, got %T", i, spec)
+		}
+		if len(vs.Names) != 1 || vs.Names[0].Name != wantNames[i] {
+			t.Fatalf("spec %d: expected name %q, got %v", i, wantNames[i], vs.Names)
+		}
+	}
+}
+
+// TestMergeConst_GroupedSkipsIfAnyNameExists verifies that the whole grouped
+// const block is skipped when any of the declared names is already present
+// in the target package (required to keep iota numbering valid).
+func TestMergeConst_GroupedSkipsIfAnyNameExists(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_const_group_skip")
+
+	existingSrc := `package merge_const_group_skip
+
+const B = 99
+`
+	if err := os.WriteFile(filepath.Join(dir, "consts.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "consts.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_const_group_skip
+
+const (
+	A = iota
+	B
+	C
+)
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) != 0 {
+		t.Fatalf("expected no merged files (existing name collides), got %d", len(resultFiles))
+	}
+
+	// Also ensure neither A nor C leaked into the existing file.
+	for _, f := range pkg.Package.Syntax {
+		if findGenDeclForConst(f, "A") != nil {
+			t.Fatal("did not expect A to be added when group was skipped")
+		}
+		if findGenDeclForConst(f, "C") != nil {
+			t.Fatal("did not expect C to be added when group was skipped")
+		}
+	}
+}
+
+// TestMergeConst_HydrationVisibleToSubsequentMerges verifies that after the first
+// Merge() call adds a const, a second Merge() call observes it via pkg.Consts
+// (populated by HydrateFile) and skips re-adding the same const.
+func TestMergeConst_HydrationVisibleToSubsequentMerges(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_const_hydrate")
+
+	existingSrc := `package merge_const_hydrate
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_const_hydrate
+
+const Foo = "bar"
+`
+
+	first, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+	resultFiles, err := Merge(pkg, first, "consts.go")
+	if err != nil {
+		t.Fatalf("first Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected first Merge() to add the const")
+	}
+
+	// Hydration should have appended Foo to pkg.Consts.
+	found := false
+	for _, c := range pkg.Consts {
+		if c.Name == "Foo" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected pkg.Consts to contain Foo after first Merge()")
+	}
+
+	// Second Merge with the same const must observe it and skip.
+	second, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+	resultFiles, err = Merge(pkg, second, "consts.go")
+	if err != nil {
+		t.Fatalf("second Merge() error = %v", err)
+	}
+	if len(resultFiles) != 0 {
+		t.Fatalf("expected second Merge() to skip (const already present), got %d files", len(resultFiles))
+	}
+}
+
+// --- Named-type merging tests ---
+//
+// These cover named types whose underlying form is neither a struct nor an
+// interface: basic-type definitions, slices, maps, channels, function types,
+// generics, and aliases. The dedup rule is by name only; underlying-form
+// divergence is intentionally tolerated silently. Doc comments follow the same
+// preserve-manual rule used by struct/interface merging.
+
+// countTypeSpecs returns how many TypeSpec entries with the given name exist
+// across all top-level decls in the file. Used by named-type tests to assert
+// that no duplicate declaration is appended on a name collision.
+func countTypeSpecs(file *dst.File, name string) int {
+	n := 0
+	for _, decl := range file.Decls {
+		gd, ok := decl.(*dst.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			ts, ok := spec.(*dst.TypeSpec)
+			if !ok {
+				continue
+			}
+			if ts.Name != nil && ts.Name.Name == name {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// findTypeSpec locates the first TypeSpec by name across all top-level decls
+// in the file. Returns nil when not found.
+func findTypeSpec(file *dst.File, name string) *dst.TypeSpec {
+	for _, decl := range file.Decls {
+		gd, ok := decl.(*dst.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			ts, ok := spec.(*dst.TypeSpec)
+			if !ok {
+				continue
+			}
+			if ts.Name != nil && ts.Name.Name == name {
+				return ts
+			}
+		}
+	}
+	return nil
+}
+
+// TestMergeNamedType_AddsBasicAlias verifies that a basic-type definition
+// (`type MyString string`) is appended to the output file when missing.
+func TestMergeNamedType_AddsBasicAlias(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_named_basic")
+
+	existingSrc := `package merge_named_basic
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_named_basic
+
+type MyString string
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "types.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	ts := findTypeSpec(resultFiles[0], "MyString")
+	if ts == nil {
+		t.Fatal("expected MyString TypeSpec to be added to the result file")
+	}
+	if ident, ok := ts.Type.(*dst.Ident); !ok || ident.Name != "string" {
+		t.Fatalf("expected MyString underlying type ident `string`, got %T %+v", ts.Type, ts.Type)
+	}
+}
+
+// TestMergeNamedType_AddsSlice verifies that a slice-type definition
+// (`type Names []string`) is appended via addTypeDecl when missing.
+func TestMergeNamedType_AddsSlice(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_named_slice")
+
+	existingSrc := `package merge_named_slice
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_named_slice
+
+type Names []string
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "types.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	ts := findTypeSpec(resultFiles[0], "Names")
+	if ts == nil {
+		t.Fatal("expected Names TypeSpec to be added to the result file")
+	}
+	arr, ok := ts.Type.(*dst.ArrayType)
+	if !ok {
+		t.Fatalf("expected ArrayType for Names, got %T", ts.Type)
+	}
+	if arr.Len != nil {
+		t.Fatalf("expected slice (Len == nil), got %+v", arr.Len)
+	}
+	if ident, ok := arr.Elt.(*dst.Ident); !ok || ident.Name != "string" {
+		t.Fatalf("expected element ident `string`, got %T %+v", arr.Elt, arr.Elt)
+	}
+}
+
+// TestMergeNamedType_AddsMap verifies that a map-type definition is appended
+// via addTypeDecl when missing.
+func TestMergeNamedType_AddsMap(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_named_map")
+
+	existingSrc := `package merge_named_map
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_named_map
+
+type Cache map[string]int
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "types.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	ts := findTypeSpec(resultFiles[0], "Cache")
+	if ts == nil {
+		t.Fatal("expected Cache TypeSpec to be added to the result file")
+	}
+	m, ok := ts.Type.(*dst.MapType)
+	if !ok {
+		t.Fatalf("expected MapType for Cache, got %T", ts.Type)
+	}
+	if k, ok := m.Key.(*dst.Ident); !ok || k.Name != "string" {
+		t.Fatalf("expected map key ident `string`, got %T %+v", m.Key, m.Key)
+	}
+	if v, ok := m.Value.(*dst.Ident); !ok || v.Name != "int" {
+		t.Fatalf("expected map value ident `int`, got %T %+v", m.Value, m.Value)
+	}
+}
+
+// TestMergeNamedType_AddsFuncType verifies that a function-type definition
+// is appended via addTypeDecl when missing.
+func TestMergeNamedType_AddsFuncType(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_named_func")
+
+	existingSrc := `package merge_named_func
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_named_func
+
+type Handler func(string) error
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "types.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	ts := findTypeSpec(resultFiles[0], "Handler")
+	if ts == nil {
+		t.Fatal("expected Handler TypeSpec to be added to the result file")
+	}
+	ft, ok := ts.Type.(*dst.FuncType)
+	if !ok {
+		t.Fatalf("expected FuncType for Handler, got %T", ts.Type)
+	}
+	if ft.Params == nil || len(ft.Params.List) != 1 {
+		t.Fatalf("expected 1 param, got %+v", ft.Params)
+	}
+	if ft.Results == nil || len(ft.Results.List) != 1 {
+		t.Fatalf("expected 1 result, got %+v", ft.Results)
+	}
+}
+
+// TestMergeNamedType_AddsTypeAlias verifies that a type alias (`type Alias = string`)
+// preserves its alias semantics — the resulting TypeSpec must have Assign != 0
+// because addTypeDecl reuses the original spec verbatim.
+func TestMergeNamedType_AddsTypeAlias(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_named_alias")
+
+	existingSrc := `package merge_named_alias
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_named_alias
+
+type Alias = string
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "types.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	ts := findTypeSpec(resultFiles[0], "Alias")
+	if ts == nil {
+		t.Fatal("expected Alias TypeSpec to be added to the result file")
+	}
+	if !ts.Assign {
+		t.Fatal("expected TypeSpec.Assign to be true (alias marker), got false")
+	}
+}
+
+// TestMergeNamedType_AddsGenericSlice verifies that a generic single-param
+// type definition retains its TypeParams field after merge.
+func TestMergeNamedType_AddsGenericSlice(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_named_generic1")
+
+	existingSrc := `package merge_named_generic1
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_named_generic1
+
+type Slice[T any] []T
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "types.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	ts := findTypeSpec(resultFiles[0], "Slice")
+	if ts == nil {
+		t.Fatal("expected Slice TypeSpec to be added to the result file")
+	}
+	if ts.TypeParams == nil {
+		t.Fatal("expected TypeSpec.TypeParams to be non-nil for generic type")
+	}
+	if got := len(ts.TypeParams.List); got != 1 {
+		t.Fatalf("expected 1 type param, got %d", got)
+	}
+}
+
+// TestMergeNamedType_AddsGenericMultiParam verifies that generic types with
+// multiple type parameters (which produce IndexListExpr in the underlying type
+// expression) survive addTypeDecl + RewriteExpr unchanged.
+func TestMergeNamedType_AddsGenericMultiParam(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_named_generic2")
+
+	existingSrc := `package merge_named_generic2
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_named_generic2
+
+type Map2[K comparable, V any] map[K]V
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "types.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	ts := findTypeSpec(resultFiles[0], "Map2")
+	if ts == nil {
+		t.Fatal("expected Map2 TypeSpec to be added to the result file")
+	}
+	if ts.TypeParams == nil {
+		t.Fatal("expected TypeSpec.TypeParams to be non-nil for generic type")
+	}
+	if got := len(ts.TypeParams.List); got != 2 {
+		t.Fatalf("expected 2 type params, got %d", got)
+	}
+	if _, ok := ts.Type.(*dst.MapType); !ok {
+		t.Fatalf("expected MapType underlying form, got %T", ts.Type)
+	}
+}
+
+// TestMergeNamedType_SkipsExistingByName verifies that when a named type with
+// the same name already exists, no new GenDecl is appended and the existing
+// underlying form is preserved unchanged (silent dedup-by-name policy).
+func TestMergeNamedType_SkipsExistingByName(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_named_skip")
+
+	existingSrc := `package merge_named_skip
+
+type Foo string
+`
+	if err := os.WriteFile(filepath.Join(dir, "foo.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "foo.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	// Generated form intentionally diverges from existing; merger must keep
+	// the existing definition (`string`) and never append a duplicate Foo.
+	generatedSrc := `package merge_named_skip
+
+type Foo []int
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+
+	// We expect at most one file to be touched (the existing one, returned
+	// by mergeNamedType for downstream import propagation). Inspect every
+	// file in the package to confirm exactly one Foo TypeSpec exists.
+	totalFoo := 0
+	for _, f := range pkg.Package.Syntax {
+		totalFoo += countTypeSpecs(f, "Foo")
+	}
+	if totalFoo != 1 {
+		t.Fatalf("expected exactly 1 Foo TypeSpec in the package, got %d", totalFoo)
+	}
+
+	// The underlying form must still be the original `string`.
+	var ts *dst.TypeSpec
+	for _, f := range pkg.Package.Syntax {
+		if got := findTypeSpec(f, "Foo"); got != nil {
+			ts = got
+			break
+		}
+	}
+	if ts == nil {
+		t.Fatal("Foo TypeSpec not found in any file")
+	}
+	if ident, ok := ts.Type.(*dst.Ident); !ok || ident.Name != "string" {
+		t.Fatalf("expected existing underlying form to remain `string`, got %T %+v", ts.Type, ts.Type)
+	}
+
+	// The single resultFile (if any) should be the existing one, not a
+	// freshly-created destination.
+	if len(resultFiles) > 1 {
+		t.Fatalf("expected at most 1 result file (the existing one), got %d", len(resultFiles))
+	}
+}
+
+// TestMergeNamedType_GenerateOnceSkips verifies that an existing named type
+// annotated with generate:once on the generated declaration short-circuits
+// before mergeNamedType runs — no doc merge, no result file recorded.
+func TestMergeNamedType_GenerateOnceSkips(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_named_once")
+
+	existingSrc := `package merge_named_once
+
+// Foo — manually documented, must survive.
+type Foo string
+`
+	if err := os.WriteFile(filepath.Join(dir, "foo.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "foo.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_named_once
+
+// generate:once
+//
+// Foo regenerated description that must NOT be applied.
+type Foo string
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) != 0 {
+		t.Fatalf("expected no merged files (generate:once on existing type), got %d", len(resultFiles))
+	}
+
+	// Verify the generated doc was NOT applied to the existing GenDecl.
+	for _, f := range pkg.Package.Syntax {
+		if findTypeSpec(f, "Foo") == nil {
+			continue
+		}
+		gd := findGenDeclForType(t, f, "Foo")
+		if containsCommentSubstring(gd.Decs.Start, "regenerated description") {
+			t.Fatalf("expected generate:once to suppress doc merge, but found generated doc: %v", gd.Decs.Start)
+		}
+		if !containsCommentSubstring(gd.Decs.Start, "manually documented") {
+			t.Fatalf("expected manual doc preserved, got %v", gd.Decs.Start)
+		}
+	}
+}
+
+// TestMergeNamedType_HydrationVisibleToSubsequentMerges verifies that after
+// the first Merge() adds a named type, a second Merge() observes it via
+// pkg.Types (populated by HydrateFile) and skips re-adding the same type.
+func TestMergeNamedType_HydrationVisibleToSubsequentMerges(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_named_hydrate")
+
+	existingSrc := `package merge_named_hydrate
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_named_hydrate
+
+type MyString string
+`
+
+	first, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+	resultFiles, err := Merge(pkg, first, "types.go")
+	if err != nil {
+		t.Fatalf("first Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected first Merge() to add the type")
+	}
+
+	// Hydration should have appended MyString to pkg.Types.
+	found := false
+	for _, tp := range pkg.Types {
+		if tp.Name == "MyString" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected pkg.Types to contain MyString after first Merge()")
+	}
+
+	// Second Merge with the same type must observe it and not append a
+	// duplicate. The existing TypeSpec count must remain 1.
+	second, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+	if _, err := Merge(pkg, second, "types.go"); err != nil {
+		t.Fatalf("second Merge() error = %v", err)
+	}
+	totalMyString := 0
+	for _, f := range pkg.Package.Syntax {
+		totalMyString += countTypeSpecs(f, "MyString")
+	}
+	if totalMyString != 1 {
+		t.Fatalf("expected exactly 1 MyString TypeSpec after repeated Merge(), got %d", totalMyString)
+	}
+}
+
+// TestMergeNamedType_DocAdoptsAndPreserves covers type-level doc merging on
+// an existing named type. (a) When the existing declaration has no doc, the
+// generated doc is adopted. (b) When the existing declaration has a manual
+// doc, the generated doc is appended without overwriting it.
+func TestMergeNamedType_DocAdoptsAndPreserves(t *testing.T) {
+	t.Run("adopts when existing has no doc", func(t *testing.T) {
+		dir := mergeTestFixtureDir(t, "merge_named_doc_adopt")
+
+		existingSrc := `package merge_named_doc_adopt
+
+type MyString string
+`
+		if err := os.WriteFile(filepath.Join(dir, "t.go"), []byte(existingSrc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "t.go")}, dir)
+		if err != nil {
+			t.Fatalf("inspect.Inspect failed: %v", err)
+		}
+		pkg := pkgs[0]
+
+		generatedSrc := `package merge_named_doc_adopt
+
+// MyString is the canonical string newtype.
+type MyString string
+`
+		generatedFile, err := decorator.Parse(generatedSrc)
+		if err != nil {
+			t.Fatalf("failed to parse generated src: %v", err)
+		}
+
+		resultFiles, err := Merge(pkg, generatedFile, "")
+		if err != nil {
+			t.Fatalf("Merge() error = %v", err)
+		}
+		if len(resultFiles) == 0 {
+			t.Fatal("expected a merged file, got none")
+		}
+
+		gd := findGenDeclForType(t, resultFiles[0], "MyString")
+		if !hasDocComment(gd.Decs.Start) {
+			t.Fatalf("expected doc on MyString GenDecl, got %v", gd.Decs.Start)
+		}
+		if !containsCommentSubstring(gd.Decs.Start, "canonical string newtype") {
+			t.Fatalf("expected generated doc adopted, got %v", gd.Decs.Start)
+		}
+	})
+
+	t.Run("appends generated to manual doc", func(t *testing.T) {
+		dir := mergeTestFixtureDir(t, "merge_named_doc_append")
+
+		existingSrc := `package merge_named_doc_append
+
+// MyString — hand-written description that must survive merges.
+type MyString string
+`
+		if err := os.WriteFile(filepath.Join(dir, "t.go"), []byte(existingSrc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "t.go")}, dir)
+		if err != nil {
+			t.Fatalf("inspect.Inspect failed: %v", err)
+		}
+		pkg := pkgs[0]
+
+		generatedSrc := `package merge_named_doc_append
+
+// MyString is a generated description.
+type MyString string
+`
+		generatedFile, err := decorator.Parse(generatedSrc)
+		if err != nil {
+			t.Fatalf("failed to parse generated src: %v", err)
+		}
+
+		resultFiles, err := Merge(pkg, generatedFile, "")
+		if err != nil {
+			t.Fatalf("Merge() error = %v", err)
+		}
+		if len(resultFiles) == 0 {
+			t.Fatal("expected a merged file, got none")
+		}
+
+		gd := findGenDeclForType(t, resultFiles[0], "MyString")
+		if !containsCommentSubstring(gd.Decs.Start, "hand-written") {
+			t.Fatalf("expected manual doc preserved, got %v", gd.Decs.Start)
+		}
+		if !containsCommentSubstring(gd.Decs.Start, "generated description") {
+			t.Fatalf("expected generated doc appended, got %v", gd.Decs.Start)
+		}
+	})
+}
+
+// TestMergeNamedType_AddsImportedSelector verifies that when a generated named
+// type references an imported package via a selector (`type Timeout
+// time.Duration`), the import is propagated to the destination file by the
+// recordFile path so the resulting source is buildable.
+func TestMergeNamedType_AddsImportedSelector(t *testing.T) {
+	dir := mergeTestFixtureDir(t, "merge_named_imported")
+
+	existingSrc := `package merge_named_imported
+
+type Marker struct{}
+`
+	if err := os.WriteFile(filepath.Join(dir, "marker.go"), []byte(existingSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := inspect.Inspect([]string{filepath.Join(dir, "marker.go")}, dir)
+	if err != nil {
+		t.Fatalf("inspect.Inspect failed: %v", err)
+	}
+	pkg := pkgs[0]
+
+	generatedSrc := `package merge_named_imported
+
+import "time"
+
+type Timeout time.Duration
+`
+	generatedFile, err := decorator.Parse(generatedSrc)
+	if err != nil {
+		t.Fatalf("failed to parse generated src: %v", err)
+	}
+
+	resultFiles, err := Merge(pkg, generatedFile, "types.go")
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(resultFiles) == 0 {
+		t.Fatal("expected a merged file, got none")
+	}
+
+	if findTypeSpec(resultFiles[0], "Timeout") == nil {
+		t.Fatal("expected Timeout TypeSpec to be added")
+	}
+
+	// Assert the time import was propagated to the destination file.
+	hasTime := false
+	for _, imp := range resultFiles[0].Imports {
+		if imp == nil || imp.Path == nil {
+			continue
+		}
+		if imp.Path.Value == `"time"` {
+			hasTime = true
+			break
+		}
+	}
+	if !hasTime {
+		t.Fatalf("expected `time` import propagated to destination file, got %d imports", len(resultFiles[0].Imports))
+	}
 }

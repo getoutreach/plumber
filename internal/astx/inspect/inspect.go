@@ -90,10 +90,10 @@ func Inspect(filenames []string, workingDir string) (pkgs model.Packages, err er
 }
 
 // HydrateFile walks the supplied dst.File and appends minimal model entries (Type, PackageVar,
-// Function/method) to the package model for every top-level declaration that isn't already
-// present. It is meant to be called after Merge() injects new declarations into a file (or
-// creates a new file via findOrCreateOutputFile) so that subsequent transformers in the same
-// run see the newly-added entities and don't try to create them again.
+// PackageConst, Function/method) to the package model for every top-level declaration that
+// isn't already present. It is meant to be called after Merge() injects new declarations into
+// a file (or creates a new file via findOrCreateOutputFile) so that subsequent transformers in
+// the same run see the newly-added entities and don't try to create them again.
 //
 // Hydration is intentionally lightweight: only the fields needed by the merge-side lookups
 // (Name, Position.Filename, Struct/Interface presence, methods) are populated. Re-running
@@ -119,8 +119,11 @@ func HydrateFile(pkg *model.Package, file *dst.File) {
 				case *dst.TypeSpec:
 					hydrateTypeSpec(pkg, s, filename)
 				case *dst.ValueSpec:
-					if d.Tok == token.VAR {
+					switch d.Tok {
+					case token.VAR:
 						hydrateValueSpec(pkg, s, filename)
+					case token.CONST:
+						hydrateConstSpec(pkg, s, filename)
 					}
 				}
 			}
@@ -173,6 +176,31 @@ func hydrateValueSpec(pkg *model.Package, spec *dst.ValueSpec, filename string) 
 			continue
 		}
 		pkg.Vars = append(pkg.Vars, &model.PackageVar{
+			TypeNode: model.TypeNode{
+				Package:  pkg,
+				Position: model.Position{Filename: filename},
+			},
+			Name: name,
+		})
+	}
+}
+
+// hydrateConstSpec appends a model.PackageConst for each name declared in the value spec
+// if the constant is not already present in pkg.Consts. Mirrors hydrateValueSpec so that
+// constants added by a Merge() call become visible to subsequent transformers in the same
+// run and dedup correctly across repeated Merge() invocations.
+func hydrateConstSpec(pkg *model.Package, spec *dst.ValueSpec, filename string) {
+	for _, ident := range spec.Names {
+		if ident == nil || ident.Name == "" {
+			continue
+		}
+		name := ident.Name
+		if _, found := lo.Find(pkg.Consts, func(c *model.PackageConst) bool {
+			return c.Name == name
+		}); found {
+			continue
+		}
+		pkg.Consts = append(pkg.Consts, &model.PackageConst{
 			TypeNode: model.TypeNode{
 				Package:  pkg,
 				Position: model.Position{Filename: filename},
@@ -307,6 +335,22 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 					Spec: model.NewTypeSpec(astx.FQNFromGoType(t.Type()), t.Type()),
 				},
 				VarType: t.Type(),
+			})
+		case *types.Const:
+			// Note: unexported constants are intentionally skipped to mirror the
+			// *types.Var handling above. This is a known parity caveat — merges
+			// targeting unexported constants will not detect pre-existing entries
+			// of the same name and may therefore generate duplicates.
+			if !t.Exported() {
+				continue
+			}
+			pkgModel.Consts = append(pkgModel.Consts, &model.PackageConst{
+				TypeNode: node,
+				Name:     t.Name(),
+				Type: &model.TypeDefinition{
+					Spec: model.NewTypeSpec(astx.FQNFromGoType(t.Type()), t.Type()),
+				},
+				ConstType: t.Type(),
 			})
 		case *types.TypeName:
 			if !t.Exported() {

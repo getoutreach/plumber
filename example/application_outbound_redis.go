@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/getoutreach/plumber"
+	"github.com/getoutreach/plumber/discovery"
 	"github.com/getoutreach/plumber/example/adapter/outbound/redis"
 )
 
@@ -29,9 +30,13 @@ func (c *OutboundRedis) Define(ctx context.Context, cf *Config, a *Container) {
 	c.Client.Resolver(func(r *plumber.Resolution[*redis.Client]) {
 		r.Require(
 			&c.Dep1,
+			&c.Dep1Named,
 		).Then(func() {
 			r.ResolveError(redis.NewClient(
-				c.Dep1.Instance(),
+				discovery.OneOf(
+					c.Dep1.Instance(),
+					c.Dep1Named.Instance(),
+				),
 			))
 		})
 	})

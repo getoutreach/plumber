@@ -75,6 +75,111 @@ func TestParseAnnotations(t *testing.T) {
 	}, ParseAnnotations(doc, cg))
 }
 
+// TestParseAnnotations_DeclarationSource exercises the non-CommentGroup branch
+// of computeAnnotationPosition, where the source's Position points to the
+// declaration line (e.g. `type Foo struct`) and the doc comment sits
+// immediately above it. The expected annotation Line values are the actual
+// source-file lines the annotations appear on, computed as
+// `declLine - numDocLines + docLineIndex`.
+func TestParseAnnotations_DeclarationSource(t *testing.T) {
+	tests := []struct {
+		name     string
+		doc      string
+		declLine int
+		want     []model.Annotation
+	}{
+		{
+			// Mirrors the user-reported bug:
+			//   // @blue.domain.entity      <- source line 9
+			//   // @blue.object.accessor    <- source line 10
+			//   type User struct {           <- source line 11
+			name:     "two consecutive annotations above declaration",
+			doc:      "@blue.domain.entity\n@blue.object.accessor\n",
+			declLine: 11,
+			want: []model.Annotation{
+				{
+					Name:      "@blue.domain.entity",
+					NamedArgs: map[string]string{},
+					DocLine:   0,
+					Position:  &model.Position{Line: 9},
+				},
+				{
+					Name:      "@blue.object.accessor",
+					NamedArgs: map[string]string{},
+					DocLine:   1,
+					Position:  &model.Position{Line: 10},
+				},
+			},
+		},
+		{
+			// Single annotation directly above the declaration.
+			//   // @only      <- source line 4
+			//   type Foo int  <- source line 5
+			name:     "single annotation above declaration",
+			doc:      "@only\n",
+			declLine: 5,
+			want: []model.Annotation{
+				{
+					Name:      "@only",
+					NamedArgs: map[string]string{},
+					DocLine:   0,
+					Position:  &model.Position{Line: 4},
+				},
+			},
+		},
+		{
+			// Description paragraph followed by a blank line then an annotation:
+			//   // Some description   <- source line 7
+			//   //                    <- source line 8 (blank line in doc)
+			//   // @annotation        <- source line 9
+			//   type X int            <- source line 10
+			name:     "description paragraph then annotation",
+			doc:      "Some description\n\n@annotation\n",
+			declLine: 10,
+			want: []model.Annotation{
+				{
+					Name:      "@annotation",
+					NamedArgs: map[string]string{},
+					DocLine:   2,
+					Position:  &model.Position{Line: 9},
+				},
+			},
+		},
+		{
+			// Annotation with args/kwargs at a known offset.
+			//   // plumber.shape arg1 key=val   <- source line 19
+			//   type Y struct {                 <- source line 20
+			name:     "annotation with args and kwargs",
+			doc:      "plumber.shape arg1 key=val\n",
+			declLine: 20,
+			want: []model.Annotation{
+				{
+					Name:      "plumber.shape",
+					Args:      []string{"arg1"},
+					NamedArgs: map[string]string{"key": "val"},
+					DocLine:   0,
+					Position:  &model.Position{Line: 19},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := &model.TypeNode{
+				Position: model.Position{Line: tt.declLine},
+				Doc:      tt.doc,
+			}
+			// Populate the expected source field on every annotation.
+			for i := range tt.want {
+				tt.want[i].Source = node
+			}
+			got := ParseAnnotations(tt.doc, node)
+			assert.DeepEqual(t, tt.want, got)
+		})
+	}
+}
+
 func TestParseTags(t *testing.T) {
 	tag := `json:"name,omitempty" yaml:"name,omitempty" validate:"required"`
 

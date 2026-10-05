@@ -85,6 +85,7 @@ type (
 		Types     []*Type         `json:"types" yaml:"types"`
 		Functions []*Function     `json:"functions" yaml:"functions"`
 		Vars      []*PackageVar   `json:"vars,omitempty" yaml:"vars,omitempty"`
+		Consts    []*PackageConst `json:"consts,omitempty" yaml:"consts,omitempty"`
 		Comments  []*CommentGroup `json:"comments" yaml:"comments"`
 	}
 
@@ -94,6 +95,17 @@ type (
 		Name     string          `json:"name" yaml:"name"`
 		Type     *TypeDefinition `json:"type" yaml:"type"`
 		VarType  types.Type      `json:"-" yaml:"-"`
+	}
+
+	// PackageConst represents a package-level constant declaration, including its name,
+	// type, documentation, annotations, and position. It mirrors PackageVar so that the
+	// inspect pipeline, annotation expansion, and inplace merge logic can treat
+	// constants uniformly alongside variables.
+	PackageConst struct {
+		TypeNode  `json:",inline" yaml:",inline"`
+		Name      string          `json:"name" yaml:"name"`
+		Type      *TypeDefinition `json:"type" yaml:"type"`
+		ConstType types.Type      `json:"-" yaml:"-"`
 	}
 
 	// Packages is a collection of Package, providing utility methods for looking up types by their fully qualified name (FQN).

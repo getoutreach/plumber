@@ -491,8 +491,6 @@ func restoreOutputs(ctx *contract.ShapingContext, output []*ManagerOutput) error
 		}
 
 		for _, o := range g.outputs {
-			fmt.Println("Re-parsing file ", o.Output.Filename, " with build tags ", g.tags)
-
 			content, pkg, err := parser.GetParsedFile(o.Output.Filename)
 			if err != nil {
 				return fmt.Errorf("failed to parse generated file %q: %w", o.Output.Filename, err)
