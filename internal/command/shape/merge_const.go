@@ -46,11 +46,16 @@ func mergeConst(
 
 	// Skip the whole group if any of the declared names already exists. This
 	// keeps grouped const blocks atomic, which is required for iota-based
-	// declarations to render correctly.
+	// declarations to render correctly. pkg.Consts only records exported
+	// constants, so the package syntax is scanned as well to detect unexported
+	// ones (and constants added earlier in the same run).
 	for _, name := range names {
 		if _, found := lo.Find(pkg.Consts, func(c *model.PackageConst) bool {
 			return c.Name == name
 		}); found {
+			return nil, nil
+		}
+		if findTopLevelValueSpec(pkg, token.CONST, name) != nil {
 			return nil, nil
 		}
 	}

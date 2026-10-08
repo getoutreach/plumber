@@ -194,6 +194,22 @@ func deepMergeStmt(existing, template dst.Stmt, importMap map[string]string) {
 		}
 		deepMergeExpr(e.X, t.X, importMap)
 
+	case *dst.DeclStmt:
+		e, ok := existing.(*dst.DeclStmt)
+		if !ok {
+			return
+		}
+		eDecl, ok1 := e.Decl.(*dst.GenDecl)
+		tDecl, ok2 := t.Decl.(*dst.GenDecl)
+		if !ok1 || !ok2 || len(eDecl.Specs) == 0 || len(tDecl.Specs) == 0 {
+			return
+		}
+		eSpec, ok1 := eDecl.Specs[0].(*dst.ValueSpec)
+		tSpec, ok2 := tDecl.Specs[0].(*dst.ValueSpec)
+		if ok1 && ok2 {
+			mergeValues(eSpec.Values, tSpec.Values, importMap)
+		}
+
 	case *dst.SwitchStmt:
 		e, ok := existing.(*dst.SwitchStmt)
 		if !ok {
@@ -203,72 +219,86 @@ func deepMergeStmt(existing, template dst.Stmt, importMap map[string]string) {
 	}
 }
 
-// deepMergeExpr recursively merges expressions, augmenting call args and composite lit fields.
-func deepMergeExpr(existing, template dst.Expr, importMap map[string]string) {
+// mergeValues deep-merges initializer expressions pairwise (used for `var x = ...`
+// declarations at package and function scope). It reports whether anything changed.
+func mergeValues(existing, template []dst.Expr, importMap map[string]string) bool {
+	changed := false
+	for i := range template {
+		if i < len(existing) && deepMergeExpr(existing[i], template[i], importMap) {
+			changed = true
+		}
+	}
+	return changed
+}
+
+// deepMergeExpr recursively merges expressions, augmenting call args and composite lit
+// fields. Calls are only merged when they target the same function and composite
+// literals only when they have the same type, so an initializer the user replaced
+// entirely is left untouched. It reports whether existing was modified.
+func deepMergeExpr(existing, template dst.Expr, importMap map[string]string) bool {
 	switch t := template.(type) {
 	case *dst.CallExpr:
 		e, ok := existing.(*dst.CallExpr)
-		if !ok {
-			return
+		if !ok || exprKey(e.Fun) != exprKey(t.Fun) {
+			return false
 		}
-		mergeCallArgs(e, t, importMap)
+		return mergeCallArgs(e, t, importMap)
 
 	case *dst.UnaryExpr:
 		e, ok := existing.(*dst.UnaryExpr)
-		if !ok {
-			return
+		if !ok || e.Op != t.Op {
+			return false
 		}
-		deepMergeExpr(e.X, t.X, importMap)
+		return deepMergeExpr(e.X, t.X, importMap)
+
+	case *dst.ParenExpr:
+		e, ok := existing.(*dst.ParenExpr)
+		if !ok {
+			return false
+		}
+		return deepMergeExpr(e.X, t.X, importMap)
 
 	case *dst.CompositeLit:
 		e, ok := existing.(*dst.CompositeLit)
-		if !ok {
-			return
+		if !ok || exprSig(e.Type) != exprSig(t.Type) {
+			return false
 		}
-		mergeCompositeLit(e, t, importMap)
+		return mergeCompositeLit(e, t, importMap)
 	}
+	return false
 }
 
-// mergeCallArgs ensures the existing call has at least all the arguments from the template.
-// Arguments are matched structurally by their expression key.
-func mergeCallArgs(existing, template *dst.CallExpr, importMap map[string]string) {
-	// First, recursively merge args that already match
-	for i, tArg := range template.Args {
-		if i < len(existing.Args) {
-			deepMergeExpr(existing.Args[i], tArg, importMap)
-		}
-	}
-
-	// Build set of existing argument keys
-	existingKeys := make(map[string]bool)
-	for _, arg := range existing.Args {
-		existingKeys[exprKey(arg)] = true
-	}
-
-	// Append missing arguments from template
-	for _, tArg := range template.Args {
-		key := exprKey(tArg)
-		if key == "" {
-			continue
-		}
-		if existingKeys[key] {
-			continue
-		}
-		newArg := dst.Clone(tArg).(dst.Expr)
-		annotateExpr(newArg, importMap)
-		newArg.Decorations().Before = dst.NewLine
-		newArg.Decorations().After = dst.NewLine
-		existing.Args = append(existing.Args, newArg)
-		existingKeys[key] = true
-	}
-
-	// Also recursively merge the function expression itself (for nested calls)
-	deepMergeExpr(existing.Fun, template.Fun, importMap)
+// mergeCallArgs ensures the existing call contains every argument of the template.
+// Arguments are matched structurally (see mergeExprList); matched arguments are
+// deep-merged and missing entries are inserted after the preceding matched argument.
+// Unmatched leaf arguments are treated as user edits of positional parameters and are
+// only inserted when the template passes more arguments than the existing call.
+// Calls using a spread argument (`f(xs...)`) are never extended. It reports whether
+// existing was modified.
+func mergeCallArgs(existing, template *dst.CallExpr, importMap map[string]string) bool {
+	allowInsert := !existing.Ellipsis && !template.Ellipsis
+	maxLeafInserts := max(len(template.Args)-len(existing.Args), 0)
+	args, changed := mergeExprList(existing.Args, template.Args, importMap, allowInsert, maxLeafInserts)
+	existing.Args = args
+	return changed
 }
 
 // mergeCompositeLit ensures the existing composite literal has at least all the
-// key-value entries from the template. Entries are matched by key name.
-func mergeCompositeLit(existing, template *dst.CompositeLit, importMap map[string]string) {
+// entries from the template. Keyed entries are matched by key name; unkeyed entries
+// (slice/array literals) are matched structurally like call arguments. It reports
+// whether existing was modified.
+func mergeCompositeLit(existing, template *dst.CompositeLit, importMap map[string]string) bool {
+	if len(template.Elts) == 0 {
+		return false
+	}
+	if _, keyed := template.Elts[0].(*dst.KeyValueExpr); !keyed {
+		elts, changed := mergeExprList(existing.Elts, template.Elts, importMap, true, -1)
+		existing.Elts = elts
+		return changed
+	}
+
+	changed := false
+
 	// Build set of existing keys
 	existingKeys := make(map[string]bool)
 	for _, elt := range existing.Elts {
@@ -290,7 +320,9 @@ func mergeCompositeLit(existing, template *dst.CompositeLit, importMap map[strin
 				continue
 			}
 			if exprKey(eKV.Key) == tKey {
-				deepMergeExpr(eKV.Value, tKV.Value, importMap)
+				if deepMergeExpr(eKV.Value, tKV.Value, importMap) {
+					changed = true
+				}
 				break
 			}
 		}
@@ -306,13 +338,14 @@ func mergeCompositeLit(existing, template *dst.CompositeLit, importMap map[strin
 		if existingKeys[tKey] {
 			continue
 		}
-		newElt := dst.Clone(tElt).(dst.Expr)
-		annotateExpr(newElt, importMap)
+		newElt := astx.RewriteExpr(dst.Clone(tElt).(dst.Expr), importMap)
 		newElt.Decorations().Before = dst.NewLine
 		newElt.Decorations().After = dst.NewLine
 		existing.Elts = append(existing.Elts, newElt)
 		existingKeys[tKey] = true
+		changed = true
 	}
+	return changed
 }
 
 // mergeSwitchCases ensures the existing switch statement has all case clauses from the template.
@@ -436,6 +469,8 @@ func exprKey(expr dst.Expr) string {
 		return exprKey(e.Fun) + "()"
 	case *dst.IndexExpr:
 		return exprKey(e.X) + "[" + exprKey(e.Index) + "]"
+	case *dst.IndexListExpr:
+		return exprKey(e.X) + "[...]"
 	case *dst.CompositeLit:
 		if e.Type != nil {
 			return exprKey(e.Type) + "{}"

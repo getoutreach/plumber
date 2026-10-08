@@ -174,6 +174,51 @@ func RewriteExpr(expr dst.Expr, importMap map[string]string) dst.Expr {
 			}
 		}
 		return e
+	// Value expressions — found in var/const initializers such as
+	// `mapping.NewSchema[entity.T, postgres.Column](...)` or `&pkg.T[U]{...}`.
+	case *dst.CallExpr:
+		e.Fun = RewriteExpr(e.Fun, importMap)
+		for i, arg := range e.Args {
+			e.Args[i] = RewriteExpr(arg, importMap)
+		}
+		return e
+	case *dst.CompositeLit:
+		e.Type = RewriteExpr(e.Type, importMap)
+		for i, elt := range e.Elts {
+			e.Elts[i] = RewriteExpr(elt, importMap)
+		}
+		return e
+	case *dst.KeyValueExpr:
+		e.Key = RewriteExpr(e.Key, importMap)
+		e.Value = RewriteExpr(e.Value, importMap)
+		return e
+	case *dst.UnaryExpr:
+		e.X = RewriteExpr(e.X, importMap)
+		return e
+	case *dst.BinaryExpr:
+		e.X = RewriteExpr(e.X, importMap)
+		e.Y = RewriteExpr(e.Y, importMap)
+		return e
+	case *dst.ParenExpr:
+		e.X = RewriteExpr(e.X, importMap)
+		return e
+	case *dst.SliceExpr:
+		e.X = RewriteExpr(e.X, importMap)
+		e.Low = RewriteExpr(e.Low, importMap)
+		e.High = RewriteExpr(e.High, importMap)
+		e.Max = RewriteExpr(e.Max, importMap)
+		return e
+	case *dst.TypeAssertExpr:
+		e.X = RewriteExpr(e.X, importMap)
+		e.Type = RewriteExpr(e.Type, importMap)
+		return e
+	case *dst.FuncLit:
+		// Only the signature is rewritten; function bodies may contain local
+		// identifiers that shadow import names.
+		if e.Type != nil {
+			e.Type = RewriteExpr(e.Type, importMap).(*dst.FuncType)
+		}
+		return e
 	default:
 		return e
 	}

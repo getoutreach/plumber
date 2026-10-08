@@ -183,7 +183,7 @@ func Merge(pkg *model.Package, file *dst.File, output string) ([]*dst.File, erro
 					}
 				case *dst.ValueSpec:
 					if d.Tok == token.VAR {
-						f, err := mergeVar(pkg, s, output, importMap)
+						f, err := mergeVar(pkg, d, s, output, importMap)
 						if err != nil {
 							return nil, fmt.Errorf("failed to merge var: %w", err)
 						}

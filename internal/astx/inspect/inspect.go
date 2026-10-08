@@ -338,9 +338,8 @@ func processScope(scope *types.Scope, pkgModel *model.Package) {
 			})
 		case *types.Const:
 			// Note: unexported constants are intentionally skipped to mirror the
-			// *types.Var handling above. This is a known parity caveat — merges
-			// targeting unexported constants will not detect pre-existing entries
-			// of the same name and may therefore generate duplicates.
+			// *types.Var handling above. Inplace merge compensates by scanning the
+			// package syntax for existing declarations (see shape.findTopLevelValueSpec).
 			if !t.Exported() {
 				continue
 			}
