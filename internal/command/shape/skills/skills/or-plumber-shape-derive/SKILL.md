@@ -228,7 +228,7 @@ placeholder, leading comments, the field-type wrapping) is preserved —
 only the per-field rendering is overridden.
 
 For the catalog of helpers callable inside these blocks (`type_wrap`,
-`filter_elements`, `comment`, `placeholder`, `expand_name`,
+`filter_elements`, `fields_match`, `comment`, `placeholder`, `expand_name`,
 `annotation_value`, `extend`, …) see `or-plumber-shape-functions`. For
 the matching scaffold on the `plumber:shape` side see
 `or-plumber-shape-shape`.

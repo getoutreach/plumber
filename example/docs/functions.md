@@ -1,4 +1,3 @@
-scripts/protoapi.gtpl
 # Shape Functions
 
 ## Annotation Value Expansion
@@ -10,6 +9,20 @@ Template functions available during annotation value expansion.
 Append a suffix to a filename.
 
 **Usage:** `{{ filename_suffixed "suffix" }}`
+
+**Parameters:**
+
+- `string`
+
+**Returns:**
+
+- `string`
+
+### filename_prefixed
+
+Prepend a prefix to a filename.
+
+**Usage:** `{{ filename_prefixed "prefix" }}`
 
 **Parameters:**
 
@@ -111,6 +124,23 @@ Filter elements based on certain criteria.
 - `any`
 - `error`
 
+### fields_match
+
+Return the fields of the first set that have a counterpart by name in the second set, preserving the order of the first set. Method "strict" (default when empty) requires identical names. Method "tolerant" compares names normalized to lowercase alphanumerics (UserID, userId, user_id match) and also the name part of struct tags (json:"user_id,omitempty"); tags with value "-" are ignored.
+
+**Usage:** `{{ range $f := fields_match $.Type.Struct.Fields $.Scope.Custom.Target.Struct.Fields "tolerant" }}{{ $f.Name }}{{ end }}`
+
+**Parameters:**
+
+- `[]*"github.com/getoutreach/plumber/query/model".Var`
+- `[]*"github.com/getoutreach/plumber/query/model".Var`
+- `string`
+
+**Returns:**
+
+- `[]*"github.com/getoutreach/plumber/query/model".Var`
+- `error`
+
 ### receiver
 
 Set the current type in the evaluation context.
@@ -168,6 +198,19 @@ package sample
 ```
 
 **Usage:** `{{ file_package_description "contains generated code for MyType and its methods." }}`
+
+### file_build_constraint
+
+Sets the build constraint for the current file. So second code gen pass that is responsible for file header can pick it up and render it as a go build constraint.
+Example:
+```golang
+
+//go:build !goverter
+
+package sample
+```
+
+**Usage:** `{{ file_build_constraint "!goverter" }}`
 
 ### comment_wrap
 

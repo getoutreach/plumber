@@ -458,8 +458,9 @@ func buildFunction(pkg *model.Package, obj *types.Func, node *model.TypeNode) *m
 	results := signature.Results().Len()
 
 	f := &model.Function{
-		TypeNode: *node,
-		Name:     obj.Name(),
+		TypeNode:   *node,
+		Name:       obj.Name(),
+		TypeParams: model.NewTypeParams(signature.TypeParams()),
 	}
 
 	if recv := signature.Recv(); recv != nil {

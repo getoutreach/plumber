@@ -89,11 +89,11 @@ func ResolveRefs(
 	refs []ContentConfig,
 ) ([]gen.RenderOptionsFunc, error) {
 	var opts []gen.RenderOptionsFunc
-	for _, ref := range refs {
+	for i, ref := range refs {
 		if ref.Content != "" {
-			// Inline content — use WithTemplateContent so that {{define}} blocks
+			// Inline content — use WithNamedTemplateContent so that {{define}} blocks
 			// are parsed into the root template with funcmaps already available.
-			opts = append(opts, gen.WithTemplateContent(ref.Content))
+			opts = append(opts, gen.WithNamedTemplateContent(inlineSourceName(ref.Name, i), ref.Content))
 		} else {
 			// Name reference — resolve from cache
 			resolved, err := cache.Load(ref.Name)
@@ -192,7 +192,7 @@ func resolveTemplate(
 				if err != nil {
 					return nil, fmt.Errorf("failed to read git template file %q: %w", filename, err)
 				}
-				opts = append(opts, gen.WithTemplateContent(string(data)))
+				opts = append(opts, gen.WithNamedTemplateContent(gitSourceName(s.Git, tpl.Path, filename), string(data)))
 			}
 		case s.Local != nil:
 			for _, tpl := range s.Local.Templates {
@@ -214,16 +214,37 @@ func resolveTemplate(
 			return nil, fmt.Errorf("Unsupported template configuration for %T", s)
 		}
 	}
-	for _, s := range content {
+	for i, s := range content {
 		if s.Name == name {
 			found = true
-			opts = append(opts, gen.WithTemplateContent(s.Content))
+			opts = append(opts, gen.WithNamedTemplateContent(inlineSourceName(s.Name, i), s.Content))
 		}
 	}
 	if !found {
 		return nil, fmt.Errorf("template %q not found", name)
 	}
 	return opts, nil
+}
+
+// gitSourceName builds the template parse name for a template file loaded from
+// a git source. It is reported in template error locations, so it contains the
+// repository, ref and path within the repository as well as the local file
+// that can be opened for inspection.
+func gitSourceName(g *GitSourceConfig, tplPath, filename string) string {
+	repo := g.Repository
+	if g.Ref != "" {
+		repo += "@" + g.Ref
+	}
+	return fmt.Sprintf("%s/%s (%s)", repo, strings.TrimPrefix(tplPath, "/"), filename)
+}
+
+// inlineSourceName builds the template parse name for inline template content
+// from the config. It is reported in template error locations.
+func inlineSourceName(name string, index int) string {
+	if name == "" {
+		return fmt.Sprintf("content[%d]", index)
+	}
+	return fmt.Sprintf("content[%s]", name)
 }
 
 // LoadTemplates resolves template names to render option functions by searching through

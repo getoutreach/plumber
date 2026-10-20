@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -171,7 +172,17 @@ type RenderOptions struct {
 	TemplateFuncs   []func(*template.Template) *template.Template
 	TemplateBundles []templateBundle
 	Templates       []*template.Template
-	TemplateContent []string
+	TemplateContent []templateContent
+}
+
+// templateContent is a raw template source together with the name it is
+// parsed under. The source name is what text/template reports in error
+// locations (e.g. "<source>:49:31"), so it should identify where the content
+// came from (file path, config entry, ...). An empty source parses the content
+// directly into the root template.
+type templateContent struct {
+	Source  string
+	Content string
 }
 
 func (op *RenderOptions) Apply(t *template.Template) (*template.Template, error) {
@@ -195,13 +206,130 @@ func (op *RenderOptions) Apply(t *template.Template) (*template.Template, error)
 		}
 	}
 	for _, c := range op.TemplateContent {
-		t, err = t.Parse(c)
+		if c.Source == "" {
+			t, err = t.Parse(c.Content)
+		} else {
+			// Parse into an associated template named after the source so that
+			// the parse name (used in error locations) points at the origin of
+			// the content instead of the generic "root". {{define}} blocks are
+			// still registered in the shared template set.
+			_, err = t.New(c.Source).Parse(c.Content)
+		}
 		if err != nil {
-			return nil, errors.Wrap(err, "renderoption: parse content")
+			return nil, errors.Wrap(err, fmt.Sprintf("renderoption: parse content [%s]", c.displaySource()))
 		}
 	}
 
 	return t, err
+}
+
+// displaySource returns a human readable name of the content source.
+func (c templateContent) displaySource() string {
+	if c.Source == "" {
+		return "root"
+	}
+	return c.Source
+}
+
+// sourceText returns the raw text of the template that was parsed under the
+// given parse name, if it is known. It is used to render source snippets for
+// template errors.
+func (op *RenderOptions) sourceText(parseName string) (string, bool) {
+	// Iterate backwards: later content overrides earlier one with the same name.
+	for i := len(op.TemplateContent) - 1; i >= 0; i-- {
+		if op.TemplateContent[i].displaySource() == parseName {
+			return op.TemplateContent[i].Content, true
+		}
+	}
+	for i := len(op.TemplateBundles) - 1; i >= 0; i-- {
+		b := op.TemplateBundles[i]
+		matches, err := fs.Glob(b.FS, b.Path)
+		if err != nil {
+			continue
+		}
+		for _, m := range matches {
+			// template.ParseFS uses the base name of the file as the parse name.
+			if path.Base(m) != parseName {
+				continue
+			}
+			data, err := fs.ReadFile(b.FS, m)
+			if err == nil {
+				return string(data), true
+			}
+		}
+	}
+	return "", false
+}
+
+// templateLocationRe matches "<parse name>:<line>:<col>: executing" locations
+// emitted by text/template execution errors. The parse name may itself contain
+// colons, so the match is anchored on the numeric suffix.
+var templateLocationRe = regexp.MustCompile(`template: (.+?):(\d+):(\d+): executing`)
+
+// snippetContextLines is the number of lines shown before and after the
+// failing line in template error snippets.
+const snippetContextLines = 3
+
+// templateErrorDetails builds a human readable description of where a template
+// execution error happened: the source name, and a snippet of the source with
+// a caret pointing at the failing column (when the source text is known).
+func (op *RenderOptions) templateErrorDetails(err error) string {
+	var sb strings.Builder
+	seen := map[string]bool{}
+	for _, m := range templateLocationRe.FindAllStringSubmatch(err.Error(), -1) {
+		loc := m[1] + ":" + m[2] + ":" + m[3]
+		if seen[loc] {
+			continue
+		}
+		seen[loc] = true
+
+		line, _ := strconv.Atoi(m[2]) //nolint: errcheck // Why: Regexp guarantees digits
+		col, _ := strconv.Atoi(m[3])  //nolint: errcheck // Why: Regexp guarantees digits
+
+		fmt.Fprintf(&sb, "\n  --> %s", loc)
+		text, ok := op.sourceText(m[1])
+		if !ok {
+			continue
+		}
+		sb.WriteString("\n")
+		sb.WriteString(sourceSnippet(text, line, col))
+	}
+	return sb.String()
+}
+
+// sourceSnippet renders lines around the given 1-based line with a caret under
+// the given 0-based byte column (text/template column convention).
+func sourceSnippet(text string, line, col int) string {
+	lines := strings.Split(text, "\n")
+	if line < 1 || line > len(lines) {
+		return ""
+	}
+	start := max(1, line-snippetContextLines)
+	end := min(len(lines), line+snippetContextLines)
+	width := len(strconv.Itoa(end))
+
+	var sb strings.Builder
+	for n := start; n <= end; n++ {
+		l := lines[n-1]
+		marker := " "
+		if n == line {
+			marker = ">"
+		}
+		fmt.Fprintf(&sb, "  %s %*d | %s\n", marker, width, n, l)
+		if n == line {
+			// Preserve tabs so the caret lines up with the source text.
+			var pad strings.Builder
+			for i := 0; i < col && i < len(l); i++ {
+				if l[i] == '\t' {
+					pad.WriteByte('\t')
+				} else {
+					pad.WriteByte(' ')
+				}
+			}
+			fmt.Fprintf(&sb, "  %s %*s | %s^\n", " ", width, "", pad.String())
+		}
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 // RenderOptionsFunc is a function type that implements the RenderOption interface, allowing for flexible
@@ -231,9 +359,18 @@ func WithTemplate(t *template.Template) RenderOptionsFunc {
 }
 
 func WithTemplateContent(content string) RenderOptionsFunc {
+	return WithNamedTemplateContent("", content)
+}
+
+// WithNamedTemplateContent adds raw template content parsed under the given
+// source name. The source name is reported in template error locations
+// (instead of the generic "root"), which makes it possible to tell which file
+// or config entry a failing template came from when templates are merged from
+// multiple sources.
+func WithNamedTemplateContent(source, content string) RenderOptionsFunc {
 	return RenderOptionsFunc(func(ro *RenderOptions) error {
 		if content != "" {
-			ro.TemplateContent = append(ro.TemplateContent, content)
+			ro.TemplateContent = append(ro.TemplateContent, templateContent{Source: source, Content: content})
 		}
 		return nil
 	})
@@ -353,7 +490,7 @@ func RenderContent(
 
 	err = tmpl.ExecuteTemplate(b, templateName, data)
 	if err != nil {
-		return fmt.Errorf("error during template %v rendering: %w", templateName, err)
+		return fmt.Errorf("error during template %v rendering: %w%s", templateName, err, renderOpts.templateErrorDetails(err))
 	}
 
 	_, err = output.Write(b.Bytes())

@@ -63,12 +63,26 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		},
 		{
 			Description: contract.FunctionDescription{
-				Name:        "filter_elements",
-				Description: `Filter elements based on certain criteria.`,
-				Usage:       `{{ filter_elements .Elements "criteria" }}`,
+				Name: "filter_elements",
+				Description: `Filter elements based on certain criteria.` +
+					`The function relies on filters defined using the plumber:filter annotation.`,
+				Usage: `{{ filter_elements .Elements "criteria" }}`,
 			},
 			Func: func(c *EvaluationContext) any {
 				return filterElements
+			},
+		},
+		{
+			Description: contract.FunctionDescription{
+				Name: "fields_match",
+				Description: `Return the fields of the first set that have a counterpart by name in the second set, ` +
+					`preserving the order of the first set. Method "strict" (default when empty) requires identical names. ` +
+					`Method "tolerant" compares names normalized to lowercase alphanumerics (UserID, userId, user_id match) ` +
+					`and also the name part of struct tags (json:"user_id,omitempty"); tags with value "-" are ignored.`,
+				Usage: `{{ range $f := fields_match $.Type.Struct.Fields $.Scope.Custom.Target.Struct.Fields "tolerant" }}{{ $f.Name }}{{ end }}`,
+			},
+			Func: func(c *EvaluationContext) any {
+				return fieldsMatch
 			},
 		},
 		{

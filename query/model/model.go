@@ -25,6 +25,21 @@ type (
 	// array, pointer, chan, or basic types like string, int, etc.
 	Kind string
 
+	// Is represents a set of boolean flags indicating the properties of a type,
+	Is struct {
+		Boolean  bool `json:"isBoolean" yaml:"boolean"`
+		Integer  bool `json:"isInteger" yaml:"integer"`
+		Unsigned bool `json:"isUnsigned" yaml:"unsigned"`
+		Float    bool `json:"isFloat" yaml:"float"`
+		Complex  bool `json:"isComplex" yaml:"complex"`
+		String   bool `json:"isString" yaml:"string"`
+		Untyped  bool `json:"isUntyped" yaml:"untyped"`
+
+		Ordered   bool `json:"isOrdered" yaml:"ordered"`
+		Numeric   bool `json:"isNumeric" yaml:"numeric"`
+		ConstType bool `json:"isConstType" yaml:"const_type"`
+	}
+
 	// Position represents the position of a node in the source code.
 	Position struct {
 		Filename string `json:"filename" yaml:"filename"`
@@ -131,11 +146,41 @@ type (
 	// TypeKind holds information about the kind of a type
 	// (struct, interface, func, map, slice, array, pointer, chan, or basic types)
 	// and its key/element types for composite types.
+	//
+	// Generic information:
+	//   - Instantiated generic types (`mapping.Schema[entity.Field, postgres.Column]`) carry
+	//     Origin (FQN of the generic declaration, e.g. `"pkg".Schema`) and TypeArgs.
+	//   - Generic declarations (`type Schema[K comparable, V any] struct{...}`) carry TypeParams.
+	//   - Usages of a type parameter (a field typed `K` inside a generic struct) have
+	//     Kind == KindTypeParam and carry Param.
 	TypeKind struct {
+		Is          Is        `json:"is" yaml:"is,omitempty"`
 		Kind        Kind      `json:"kind" yaml:"kind,omitempty"`
 		Key         *TypeKind `json:"key" yaml:"key,omitempty"`
 		Elem        *TypeKind `json:"elem" yaml:"elem,omitempty"`
 		Underlaying *TypeKind `json:"underlaying" yaml:"underlaying,omitempty"`
+
+		// Origin is the FQN of the generic declaration this type instantiates
+		// (empty for non-instantiated types).
+		Origin string `json:"origin,omitempty" yaml:"origin,omitempty"`
+		// TypeArgs are the type arguments of an instantiated generic type, in order.
+		TypeArgs []*TypeSpec `json:"typeArgs,omitempty" yaml:"typeArgs,omitempty"`
+		// TypeParams are the type parameters of a generic declaration, in order.
+		TypeParams []*TypeParam `json:"typeParams,omitempty" yaml:"typeParams,omitempty"`
+		// Param describes the type parameter when Kind == KindTypeParam.
+		Param *TypeParam `json:"param,omitempty" yaml:"param,omitempty"`
+	}
+
+	// TypeParam describes a type parameter of a generic type or function, e.g. `K comparable`.
+	TypeParam struct {
+		// Name is the parameter name (`K`).
+		Name string `json:"name" yaml:"name"`
+		// Index is the position of the parameter in its declaring list.
+		Index int `json:"index" yaml:"index"`
+		// Constraint is the parameter's constraint (`comparable`, `any`, `~int | ~string`, ...).
+		// It is nil for self-referencing constraints (e.g. `T interface{ Less(T) bool }` seen
+		// again while building T itself) to avoid infinite recursion.
+		Constraint *TypeSpec `json:"constraint,omitempty" yaml:"constraint,omitempty"`
 	}
 
 	// Type represents a Go type discovered in the AST, including its specification,
@@ -181,9 +226,13 @@ type (
 	Function struct {
 		TypeNode `json:",inline" yaml:",inline"`
 		Name     string `json:"name" yaml:"name"`
-		Receiver *Var   `json:"receiver,omitempty" yaml:"receiver,omitempty"`
-		Args     []*Var `json:"arguments,omitempty" yaml:"args,omitempty"`
-		Results  []*Var `json:"results,omitempty" yaml:"returns,omitempty"`
+		// TypeParams are the type parameters of a generic function (`func Map[T, R any](...)`).
+		// Methods of generic types have none; their receiver type carries the parameters as
+		// TypeArgs of kind KindTypeParam.
+		TypeParams []*TypeParam `json:"typeParams,omitempty" yaml:"typeParams,omitempty"`
+		Receiver   *Var         `json:"receiver,omitempty" yaml:"receiver,omitempty"`
+		Args       []*Var       `json:"arguments,omitempty" yaml:"args,omitempty"`
+		Results    []*Var       `json:"results,omitempty" yaml:"returns,omitempty"`
 	}
 
 	// Interface represents an interface type, including its underlying *types.Interface and its methods.
@@ -228,6 +277,8 @@ const (
 	KindFloat Kind = "float"
 	// KindBool represents a boolean type.
 	KindBool Kind = "bool"
+	// KindTypeParam represents a usage of a type parameter (e.g. `T` inside a generic type).
+	KindTypeParam Kind = "typeparam"
 )
 
 func (p Packages) TypeByFQN(fqn *astx.FQN) *Type {
@@ -519,65 +570,16 @@ func (t TypeKind) Indirect() *TypeKind {
 	return &t
 }
 
-func buildTypeKind(fqn *astx.FQN, t types.Type) TypeKind {
+func buildTypeKind(_ *astx.FQN, t types.Type) TypeKind {
 	if t == nil {
 		return TypeKind{}
 	}
-	return typeKindFromType(t)
+	return newKindBuilder().kind(t)
 }
 
-// typeKindFromType recursively maps a go/types.Type into a TypeKind tree,
-// filling Key/Elem for composite types and Underlaying for named types.
+// typeKindFromType maps a go/types.Type into a TypeKind tree. See kindBuilder.kind.
 func typeKindFromType(t types.Type) TypeKind {
-	switch v := t.(type) {
-	case *types.Basic:
-		return TypeKind{Kind: basicTypeKind(v)}
-
-	case *types.Named:
-		// The underlying type of a named type is always an unnamed type, so
-		// recursing here will never re-enter this case (no infinite loop).
-		underlying := v.Underlying()
-		underlyingTK := typeKindFromType(underlying)
-		return TypeKind{
-			Kind:        underlyingTK.Kind,
-			Key:         underlyingTK.Key,
-			Elem:        underlyingTK.Elem,
-			Underlaying: &underlyingTK,
-		}
-
-	case *types.Pointer:
-		elem := typeKindFromType(v.Elem())
-		return TypeKind{Kind: KindPointer, Elem: &elem}
-
-	case *types.Slice:
-		elem := typeKindFromType(v.Elem())
-		return TypeKind{Kind: KindSlice, Elem: &elem}
-
-	case *types.Array:
-		elem := typeKindFromType(v.Elem())
-		return TypeKind{Kind: KindArray, Elem: &elem}
-
-	case *types.Map:
-		key := typeKindFromType(v.Key())
-		elem := typeKindFromType(v.Elem())
-		return TypeKind{Kind: KindMap, Key: &key, Elem: &elem}
-
-	case *types.Chan:
-		elem := typeKindFromType(v.Elem())
-		return TypeKind{Kind: KindChan, Elem: &elem}
-
-	case *types.Interface:
-		return TypeKind{Kind: KindInterface}
-
-	case *types.Struct:
-		return TypeKind{Kind: KindStruct}
-
-	case *types.Signature:
-		return TypeKind{Kind: KindFunc}
-
-	default:
-		return TypeKind{}
-	}
+	return newKindBuilder().kind(t)
 }
 
 // basicTypeKind maps a *types.Basic to one of the scalar Kind constants.
@@ -594,6 +596,22 @@ func basicTypeKind(b *types.Basic) Kind {
 	default:
 		// Covers complex numbers, unsafe.Pointer, etc. – use the type name.
 		return Kind(b.Name())
+	}
+}
+
+func basicTypeIs(b *types.Basic) Is {
+	return Is{
+		Boolean:  b.Info()&types.IsBoolean != 0,
+		Integer:  b.Info()&types.IsInteger != 0,
+		Unsigned: b.Info()&types.IsUnsigned != 0,
+		Float:    b.Info()&types.IsFloat != 0,
+		Complex:  b.Info()&types.IsComplex != 0,
+		String:   b.Info()&types.IsString != 0,
+		Untyped:  b.Info()&types.IsUntyped != 0,
+
+		Ordered:   b.Info()&types.IsOrdered != 0,
+		Numeric:   b.Info()&types.IsNumeric != 0,
+		ConstType: b.Info()&types.IsConstType != 0,
 	}
 }
 

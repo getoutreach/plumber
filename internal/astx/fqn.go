@@ -509,6 +509,7 @@ func (f *FQN) Mask(maskFmt string) *FQN {
 // position. This allows generic type patterns like String["plumber".Any]
 // to match any instantiation such as String[string] or String[int].
 func (f *FQN) InstanceOf(other *FQN) bool {
+	fmt.Printf("Comparing FQN %s with pattern %s\n", f.String(), other.String())
 	return exprInstanceOf(f.Expression, other.Expression)
 }
 

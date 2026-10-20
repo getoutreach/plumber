@@ -40,6 +40,30 @@ func MatchRules(rules []config.MatchRuleConfig, t *model.TypeSpec, subject model
 			if subject != nil && subject.GetAnnotations().Find(annName) != nil {
 				return true
 			}
+		case strings.HasPrefix(rule, "type.is:"):
+			isFlag := strings.TrimPrefix(rule, "type.is:")
+			switch isFlag {
+			case "boolean":
+				return t.Is.Boolean
+			case "integer":
+				return t.Is.Integer
+			case "unsigned":
+				return t.Is.Unsigned
+			case "float":
+				return t.Is.Float
+			case "complex":
+				return t.Is.Complex
+			case "string":
+				return t.Is.String
+			case "untyped":
+				return t.Is.Untyped
+			case "ordered":
+				return t.Is.Ordered
+			case "numeric":
+				return t.Is.Numeric
+			case "const":
+				return t.Is.ConstType
+			}
 		}
 	}
 	return false

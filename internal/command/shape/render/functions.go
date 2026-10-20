@@ -174,6 +174,7 @@ func withRenderFuncMap(context *Context, output string) (opt gen.RenderOptionsFu
 		"expand_name":     expand.Name,
 		"comment":         comment,
 		"filter_elements": filterElements,
+		"fields_match":    fieldsMatch,
 		"receiver":        receiver,
 	}
 	return gen.WithFuncMap(functions)
