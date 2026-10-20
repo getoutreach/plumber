@@ -109,7 +109,7 @@ Wrap a given text into comment lines.
 
 ### filter_elements
 
-Filter elements based on certain criteria.
+Filter elements based on certain criteria.The function relies on filters defined using the plumber:filter annotation.
 
 **Usage:** `{{ filter_elements .Elements "criteria" }}`
 
@@ -275,6 +275,16 @@ Renderers the end of a fragment.
 Schedules a module for import, so in second pass it will be included in the imports section of the generated file. See module function for more details.
 
 **Usage:** `{{ module_import "module_name" }}`
+
+### module_path
+
+Returns the resolved module path without scheduling the module for import.
+Use it when you just need to print the module name (e.g. in comments, strings or configuration),
+as opposed to module_import / module which register the module in the imports section.
+
+It accepts the same paths as the module function (absolute, relative `../module` or `structure:domain.entity`).
+
+**Usage:** `{{ module_path "structure:domain.entity" }}`
 
 ### module
 

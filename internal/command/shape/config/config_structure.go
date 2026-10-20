@@ -124,4 +124,5 @@ type PlumberStructurePathConfig struct {
 	Template           string   `yaml:"template,omitempty"`
 	Templates          []string `yaml:"templates,omitempty"`
 	Required           bool     `yaml:"required,omitempty"`
+	Alias              string   `yaml:"alias,omitempty"`
 }

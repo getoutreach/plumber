@@ -174,30 +174,50 @@ func moduleImport(context Context) func(modulePath ...string) (string, error) {
 	}
 }
 
+// resolveModulePath resolves a module path the same way as the module function:
+// relative paths (./, ../) are resolved against the current package path and
+// the result is passed through the context path resolver (e.g. structure:
+// paths). It has no side effects - the module is not registered for import.
+func resolveModulePath(context Context, p string) (string, error) {
+	if strings.HasPrefix(p, "../") || strings.HasPrefix(p, "./") {
+		p = path.Clean(path.Join(context.GetPkgPath(), p))
+	}
+	if resolve := context.GetPathResolver(); resolve != nil {
+		resolved, err := resolve(p)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve path: %w", err)
+		}
+		p = resolved
+	}
+	return p, nil
+}
+
+// modulePath returns a template function that resolves a module path without
+// registering the module for import. Use it when only the module name should
+// be printed.
+func modulePath(context Context) func(modulePath string) (string, error) {
+	return func(modulePath string) (string, error) {
+		if modulePath == "" {
+			return "", fmt.Errorf("module path is required")
+		}
+		return resolveModulePath(context, modulePath)
+	}
+}
+
 func module(context Context) func(modulePath ...string) (ModuleRef, error) {
 	modules := context.GetModules()
 	return func(modulePath ...string) (ModuleRef, error) {
-		var err error
 		if len(modulePath) == 0 {
 			return ModuleRef{}, fmt.Errorf("module path is required")
 		}
-		p := modulePath[0]
 		alias := ""
 		if len(modulePath) > 1 {
 			alias = modulePath[1]
 		}
 
-		if strings.HasPrefix(p, "../") || strings.HasPrefix(p, "./") {
-			p = path.Clean(path.Join(context.GetPkgPath(), p))
-		}
-
-		resolve := context.GetPathResolver()
-
-		if resolve != nil {
-			p, err = resolve(p)
-			if err != nil {
-				return ModuleRef{}, fmt.Errorf("failed to resolve path: %w", err)
-			}
+		p, err := resolveModulePath(context, modulePath[0])
+		if err != nil {
+			return ModuleRef{}, err
 		}
 
 		if alias == "." {

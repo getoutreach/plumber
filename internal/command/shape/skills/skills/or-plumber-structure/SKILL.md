@@ -136,6 +136,14 @@ or, when you just need to declare an import statement without using the module h
 
 ```
 
+or, when you just need to print the resolved module path (e.g. in a comment,
+string literal or config) without adding it to the imports, use `module_path`.
+It resolves the path the same way as `module` but does not register the module:
+
+```gotemplate
+// Entities live in {{ module_path "structure:domain.entity" }}
+```
+
 ### 2. Template function `path_join`
 
 Joins multiple path segments and runs each segment through the structure

@@ -197,6 +197,22 @@ func FunctionsDescription() (desc contract.FunctionDescriptions, build func(
 		},
 		{
 			Description: contract.FunctionDescription{
+				Name: "module_path",
+				Description: `
+                Returns the resolved module path without scheduling the module for import.
+                Use it when you just need to print the module name (e.g. in comments, strings or configuration),
+                as opposed to module_import / module which register the module in the imports section.
+
+                It accepts the same paths as the module function (absolute, relative ` + "`../module`" + ` or ` + "`structure:domain.entity`" + `).
+                `,
+				Usage: `{{ module_path "structure:domain.entity" }}`,
+			},
+			Func: func(c *EvaluationContext) any {
+				return modulePath(c.Context)
+			},
+		},
+		{
+			Description: contract.FunctionDescription{
 				Name: "module",
 				Description: `
                 Schedules a module for import, so in second pass it will be included in the imports section of the generated file.
