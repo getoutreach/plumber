@@ -135,6 +135,22 @@ For each captured variable `X`, three template variables are derived:
 Template helpers: `capitalize` (PascalCase from path), `slug` (replace `/` with `_`),
 `upper`, `lower`, `title`.
 
+Every match also exposes `{{ .container }}` / `{{ .container_slug }}` / `{{ .container_path }}`.
+The value is the `dependency_container` of the structure path (`plumber.path`) whose
+directory equals the matched directory (structures resolved from the `plumber.shape`
+`structure` section of the same config), otherwise the first capture group value. Use it
+for short container names/filenames:
+
+```yaml
+name: "{{ .container }}"
+container:
+  path: ./application_{{ .container_slug }}.go
+```
+
+Several structure paths may share one `dependency_container`; matches of the same
+`plumber.container` entry hydrating to the same name and container path are merged
+into one container whose providers are discovered from all their source directories.
+
 ## Provider discovery
 
 A function is discovered as a constructor when:

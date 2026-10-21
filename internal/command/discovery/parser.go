@@ -80,8 +80,24 @@ func validateContainer(container *Container, prefix string) error {
 	return nil
 }
 
+// ContainerLookup returns the dependency container name configured for a
+// directory (e.g. structure path dependency_container), or false when none is
+// defined.
+type ContainerLookup func(dir string) (string, bool)
+
 // ProcessLoops processes loop configurations and expands containers
 func ProcessLoops(cfg *Config, baseDir string) error {
+	return ProcessLoopsWithContainers(cfg, baseDir, nil)
+}
+
+// ProcessLoopsWithContainers processes loop configurations and expands
+// containers. When lookup returns a dependency container for a matched
+// directory, it is exposed to the container templates as the "container"
+// variable (container, container_slug, container_path) instead of the first
+// captured group. Loop matches of the same plumber.container entry that hydrate
+// to the same container name and path are merged into a single container with
+// multiple sources.
+func ProcessLoopsWithContainers(cfg *Config, baseDir string, lookup ContainerLookup) error {
 	for appIdx := range cfg.Applications {
 		app := &cfg.Applications[appIdx]
 		var expandedContainers []Container
@@ -99,13 +115,15 @@ func ProcessLoops(cfg *Config, baseDir string) error {
 				loopBaseDir := container.Loop.BaseDir
 				paths := []string{container.Loop.Path}
 				paths = append(paths, container.Loop.Paths...)
+				var loopContainers []Container
 				for _, p := range paths {
-					expanded, err := processLoopPaths(plumberCfg, baseDir, loopBaseDir, app, p)
+					expanded, err := processLoopPaths(plumberCfg, baseDir, loopBaseDir, app, p, lookup)
 					if err != nil {
 						return err
 					}
-					expandedContainers = append(expandedContainers, expanded...)
+					loopContainers = append(loopContainers, expanded...)
 				}
+				expandedContainers = append(expandedContainers, mergeContainers(loopContainers)...)
 			} else {
 				expandedContainers = append(expandedContainers, container)
 			}
@@ -117,7 +135,46 @@ func ProcessLoops(cfg *Config, baseDir string) error {
 	return nil
 }
 
-func processLoopPaths(plumberCfg *PlumberContainerConfig, baseDir, loopBaseDir string, app *Application, path string) ([]Container, error) {
+// mergeContainers merges hydrated containers sharing the same name and
+// container path, keeping the first occurrence and appending the sources of the
+// others as AdditionalSources.
+func mergeContainers(containers []Container) []Container {
+	var (
+		merged []Container
+		index  = map[string]int{}
+	)
+	for _, c := range containers {
+		cfg := c.PlumberContainer
+		key := cfg.Name + "\x00" + cfg.Container.Path
+		i, exists := index[key]
+		if !exists {
+			index[key] = len(merged)
+			merged = append(merged, c)
+			continue
+		}
+		target := merged[i].PlumberContainer
+		for _, src := range cfg.Sources() {
+			if !containsSource(target.Sources(), src) {
+				target.AdditionalSources = append(target.AdditionalSources, src)
+			}
+		}
+	}
+	return merged
+}
+
+// containsSource reports whether sources already contain src.
+func containsSource(sources []SourcePathConfig, src SourcePathConfig) bool {
+	for _, s := range sources {
+		if s.Path == src.Path {
+			return true
+		}
+	}
+	return false
+}
+
+func processLoopPaths(
+	plumberCfg *PlumberContainerConfig, baseDir, loopBaseDir string, app *Application, path string, lookup ContainerLookup,
+) ([]Container, error) {
 	expandedContainers := []Container{}
 	if path == "" {
 		return expandedContainers, nil
@@ -135,6 +192,14 @@ func processLoopPaths(plumberCfg *PlumberContainerConfig, baseDir, loopBaseDir s
 
 	if len(matches) == 0 {
 		return nil, nil
+	}
+
+	if lookup != nil {
+		for i := range matches {
+			if name, ok := lookup(matches[i].Path); ok {
+				matches[i].Container = name
+			}
+		}
 	}
 
 	// Create hydrated configs

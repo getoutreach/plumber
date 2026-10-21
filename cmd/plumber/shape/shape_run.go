@@ -39,35 +39,13 @@ func RunCommand(name string, run func(*cli.Context, *contract.ShapingContext, *s
 
 		configPath := c.String("config")
 
-		// Start with embedded defaults so the shape command always has
-		// built-in annotation option definitions available.
-		defaultCfg, err := defaults.Load()
+		cfg, err := LoadConfig(configPath)
 		if err != nil {
-			return fmt.Errorf("failed to load embedded defaults: %w", err)
+			return err
 		}
-		shapeConfig := *defaultCfg
-
-		if configPath != "" {
-			// Resolve absolute path for config file
-			absConfigPath, err := filepath.Abs(configPath)
-			if err != nil {
-				return fmt.Errorf("failed to resolve config path: %w", err)
-			}
-
-			// Parse and merge configuration (includes resolved automatically)
-			cfg, err := configs.Load(absConfigPath)
-			if err != nil {
-				return fmt.Errorf("failed to parse config: %w", err)
-			}
-
-			shapeConfig.MergeShape(&cfg.Shape, true)
-		}
+		shapeConfig := *cfg
 
 		shapeConfig.Interactive = c.Bool("interactive")
-
-		if err := checkoutAndMergeIncludes(&shapeConfig); err != nil {
-			return fmt.Errorf("failed to checkout and merge includes: %w", err)
-		}
 
 		shapeConfig.Handlers = expand.Handlers(shapeConfig.Handlers)
 
@@ -81,18 +59,64 @@ func RunCommand(name string, run func(*cli.Context, *contract.ShapingContext, *s
 	}
 }
 
+// LoadConfig builds the effective shape configuration: embedded defaults merged
+// with the plumber.shape section of the config file at configPath (when set),
+// git source includes checked out and merged, and structure definitions
+// resolved.
+func LoadConfig(configPath string) (*shape.Config, error) {
+	// Start with embedded defaults so the shape command always has
+	// built-in annotation option definitions available.
+	defaultCfg, err := defaults.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load embedded defaults: %w", err)
+	}
+	shapeConfig := *defaultCfg
+
+	if configPath != "" {
+		// Resolve absolute path for config file
+		absConfigPath, err := filepath.Abs(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve config path: %w", err)
+		}
+
+		// Parse and merge configuration (includes resolved automatically)
+		cfg, err := configs.Load(absConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse config: %w", err)
+		}
+
+		shapeConfig.MergeShape(&cfg.Shape, true)
+	}
+
+	if err := checkoutAndMergeIncludes(&shapeConfig); err != nil {
+		return nil, fmt.Errorf("failed to checkout and merge includes: %w", err)
+	}
+	return &shapeConfig, nil
+}
+
+// LoadModules returns the repository module (nearest go.mod) and the module
+// info of the current working directory - the same pair the shape command uses
+// to expand and resolve structure paths.
+func LoadModules() (repoModule, module contract.ModuleInfo, err error) {
+	repoModule, err = loadRepoModuleInfo()
+	if err != nil {
+		return repoModule, module, fmt.Errorf("failed to load repo module info: %w", err)
+	}
+	module, err = loadModuleInfo(repoModule, "./")
+	if err != nil {
+		return repoModule, module, fmt.Errorf("failed to load module info: %w", err)
+	}
+	return repoModule, module, nil
+}
+
 func prepareContext(cfg *shape.Config) (shapingContext *contract.ShapingContext, cleanup func(), err error) {
 	templateCache := template.NewTemplateCache(cfg.Sources, cfg.Templates.Content, cfg.CacheDir, shaperender.EmbededTemplates)
 	reporter, wait := newReporter(cfg.Interactive)
 
 	baseDir := "./"
-	repoModule, err := loadRepoModuleInfo()
+	repoModule, module, err := LoadModules()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load repo module info: %w", err)
-	}
-	module, err := loadModuleInfo(repoModule, baseDir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load module info: %w", err)
+		return nil, nil, err
 	}
 
 	structureResolver, err := structure.NewResolver(cfg.StructureDefinitions, repoModule, module)

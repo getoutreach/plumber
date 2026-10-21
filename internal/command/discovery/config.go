@@ -55,6 +55,22 @@ type PlumberContainerConfig struct {
 	Container ContainerPathConfig `yaml:"container"`
 	Source    *SourcePathConfig   `yaml:"source,omitempty"`
 	Matchers  []Matcher           `yaml:"matchers,omitempty"`
+
+	// AdditionalSources holds source paths of other loop matches that were
+	// merged into this container because they hydrated to the same container
+	// name and path (e.g. multiple structure paths sharing one
+	// dependency_container). Not configurable.
+	AdditionalSources []SourcePathConfig `yaml:"-"`
+}
+
+// Sources returns all source paths of the container: the configured Source
+// followed by any AdditionalSources merged during loop expansion.
+func (c *PlumberContainerConfig) Sources() []SourcePathConfig {
+	var sources []SourcePathConfig
+	if c.Source != nil {
+		sources = append(sources, *c.Source)
+	}
+	return append(sources, c.AdditionalSources...)
 }
 
 // ContainerPathConfig specifies the path to the container definition

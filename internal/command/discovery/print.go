@@ -50,6 +50,10 @@ func printContainer(w io.Writer, idx int, container *Container, indent string) {
 
 		fmt.Fprintf(w, "%s├─ Path: %s\n", subIndent, cfg.Container.Path)
 
+		for _, src := range cfg.Sources() {
+			fmt.Fprintf(w, "%s├─ Source: %s\n", subIndent, src.Path)
+		}
+
 		if len(cfg.Matchers) > 0 {
 			fmt.Fprintf(w, "%s├─ Matchers: %d\n", subIndent, len(cfg.Matchers))
 			for k, matcher := range cfg.Matchers {

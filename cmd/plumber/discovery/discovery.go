@@ -16,10 +16,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	shapecmd "github.com/getoutreach/plumber/cmd/plumber/shape"
 	"github.com/getoutreach/plumber/internal/command/config"
 	"github.com/getoutreach/plumber/internal/command/discovery"
 	"github.com/getoutreach/plumber/internal/command/discovery/contract"
 	"github.com/getoutreach/plumber/internal/command/discovery/render"
+	"github.com/getoutreach/plumber/internal/command/shape/structure"
 	"github.com/getoutreach/plumber/internal/command/template"
 	"github.com/getoutreach/plumber/internal/genius/gen"
 	"github.com/urfave/cli/v2"
@@ -52,8 +54,15 @@ func Run(c *cli.Context) error {
 	}
 	cfg := &fileCfg.Discovery
 
+	// Resolve dependency containers defined on structure paths so loop matches
+	// can use them as the "container" variable.
+	lookup, err := dependencyContainerLookup(fileCfg, absConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve structure dependency containers: %w", err)
+	}
+
 	// Process loops to expand containers
-	if err := discovery.ProcessLoops(cfg, baseDir); err != nil {
+	if err := discovery.ProcessLoopsWithContainers(cfg, baseDir, lookup); err != nil {
 		return fmt.Errorf("failed to process loops: %w", err)
 	}
 
@@ -115,6 +124,31 @@ func Run(c *cli.Context) error {
 	}
 
 	return nil
+}
+
+// dependencyContainerLookup builds a lookup of structure path dependency
+// containers from the plumber.shape structure configuration of the config file
+// (resolved the same way as the shape command, including git includes). It
+// returns nil when no structures are configured.
+func dependencyContainerLookup(fileCfg *config.FileConfig, absConfigPath string) (discovery.ContainerLookup, error) {
+	sc := fileCfg.Shape.StructureConfig
+	if len(sc.Include) == 0 && len(sc.Extend) == 0 {
+		return nil, nil
+	}
+
+	shapeCfg, err := shapecmd.LoadConfig(absConfigPath)
+	if err != nil {
+		return nil, err
+	}
+	repoModule, module, err := shapecmd.LoadModules()
+	if err != nil {
+		return nil, err
+	}
+	lookup, err := structure.NewDependencyContainerLookup(shapeCfg.StructureDefinitions, repoModule, module)
+	if err != nil {
+		return nil, err
+	}
+	return discovery.ContainerLookup(lookup), nil
 }
 
 // containerInfo holds information about a container, including its configuration, file path, and associated source
@@ -276,10 +310,10 @@ func collectContainerInfo(
 		info.containerPath = containerPath
 		allPaths = append(allPaths, containerPath)
 
-		// Resolve source paths if specified
-		if containerCfg.Source != nil {
-			sourcePaths := resolveSourcePaths(baseDir, containerCfg)
-			info.sourcePaths = sourcePaths
+		// Resolve source paths of all (possibly merged) sources
+		for _, src := range containerCfg.Sources() {
+			sourcePaths := resolveSourcePaths(baseDir, containerCfg.Name, src.Path)
+			info.sourcePaths = append(info.sourcePaths, sourcePaths...)
 			allPaths = append(allPaths, sourcePaths...)
 		}
 
@@ -289,10 +323,9 @@ func collectContainerInfo(
 	return containers, allPaths
 }
 
-func resolveSourcePaths(baseDir string, cfg *discovery.PlumberContainerConfig) []string {
+func resolveSourcePaths(baseDir, containerName, sourcePath string) []string {
 	var sourcePaths []string
 
-	sourcePath := cfg.Source.Path
 	if !filepath.IsAbs(sourcePath) {
 		sourcePath = filepath.Join(baseDir, sourcePath)
 	}
@@ -300,7 +333,7 @@ func resolveSourcePaths(baseDir string, cfg *discovery.PlumberContainerConfig) [
 	// Check if source is a directory
 	fileInfo, err := os.Stat(sourcePath)
 	if err != nil {
-		fmt.Printf("\n  Container: %s\n", cfg.Name)
+		fmt.Printf("\n  Container: %s\n", containerName)
 		fmt.Printf("    ⚠ Warning: Source path does not exist at %s (skipping sources)\n", sourcePath)
 		return sourcePaths
 	}

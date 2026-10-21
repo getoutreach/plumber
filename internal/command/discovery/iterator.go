@@ -28,6 +28,11 @@ type PathIterator struct {
 type PathMatch struct {
 	Path      string
 	Variables map[string]string
+	// Container is the value exposed to templates as the "container" variable
+	// (with derived container_slug / container_path). It defaults to the value
+	// of the first named capture group and is replaced by the structure path
+	// dependency_container when the matched directory defines one.
+	Container string
 }
 
 // NewPathIterator creates a new PathIterator from a path pattern
@@ -103,11 +108,16 @@ func (pi *PathIterator) Iterate() ([]PathMatch, error) {
 		}
 
 		variables := make(map[string]string)
+		container := ""
+		hasContainer := false
 
 		// Extract named groups
 		for i, name := range pi.pattern.SubexpNames() {
 			if i > 0 && name != "" && i < len(submatches) {
 				variables[name] = submatches[i]
+				if !hasContainer {
+					container, hasContainer = submatches[i], true
+				}
 			}
 		}
 
@@ -123,6 +133,7 @@ func (pi *PathIterator) Iterate() ([]PathMatch, error) {
 			matches = append(matches, PathMatch{
 				Path:      path,
 				Variables: variables,
+				Container: container,
 			})
 		}
 
@@ -232,20 +243,40 @@ func HydrateTemplate(templateStr string, variables map[string]string) string {
 func DeriveVariables(raw map[string]string) map[string]string {
 	derived := make(map[string]string, len(raw)*3)
 	for k, v := range raw {
-		derived[k] = Capitalize(v)
-		derived[k+"_slug"] = Slug(v)
-		derived[k+"_path"] = v
+		deriveVariable(derived, k, v)
 	}
 	return derived
 }
 
+// deriveVariable sets the PascalCase, _slug and _path forms of variable k.
+func deriveVariable(vars map[string]string, k, v string) {
+	vars[k] = Capitalize(v)
+	vars[k+"_slug"] = Slug(v)
+	vars[k+"_path"] = v
+}
+
+// ContainerVariable is the name of the hydration variable holding the
+// container name of a loop match (see PathMatch.Container).
+const ContainerVariable = "container"
+
+// matchVariables returns all hydration variables of a match: derived capture
+// groups plus the derived "container" variable.
+func matchVariables(match PathMatch) map[string]string {
+	vars := DeriveVariables(match.Variables)
+	if match.Container != "" {
+		deriveVariable(vars, ContainerVariable, match.Container)
+	}
+	return vars
+}
+
 // HydrateConfig creates multiple container configs from a template and path matches.
-// Variables are automatically expanded with derived forms (_slug, _path) before hydration.
+// Variables are automatically expanded with derived forms (_slug, _path) before hydration,
+// and the "container" variable (see PathMatch.Container) is added.
 func HydrateConfig(cfg *PlumberContainerConfig, matches []PathMatch) []*PlumberContainerConfig {
 	var hydrated []*PlumberContainerConfig
 
 	for _, match := range matches {
-		vars := DeriveVariables(match.Variables)
+		vars := matchVariables(match)
 
 		// Create a copy of the config
 		newCfg := &PlumberContainerConfig{

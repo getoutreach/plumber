@@ -443,6 +443,51 @@ Go files):
 Each expanded container is processed independently — providers are discovered from its
 source path and the container file is augmented accordingly.
 
+### Container variable and structure `dependency_container`
+
+Besides the capture group variables, every loop match exposes a `container` variable
+(derived the same way: `{{ .container }}`, `{{ .container_slug }}`, `{{ .container_path }}`).
+Its value is:
+
+1. the `dependency_container` of the structure path (`plumber.path`) whose directory
+   (structure `path` + `plumber.path` `path`) equals the matched directory, when defined;
+2. otherwise the value of the **first** named capture group (e.g. `module`).
+
+Structure definitions are read from the `plumber.shape` `structure` section of the same
+config file (including git source includes), exactly as the shape command resolves them.
+
+```yaml
+plumber.shape:
+  structure:
+    include: [hexagonal.v1]
+    extend:
+      - plumber.structure:
+          name: hexagonal.v1
+          paths:
+            - plumber.path: { name: adapter.outbound.pgsql, path: adapter/outbound/pgsql, dependency_container: database }
+            - plumber.path: { name: adapter.outbound.mysql, path: adapter/outbound/mysql, dependency_container: database }
+
+plumber.discovery:
+  applications:
+    - containers:
+        - plumber.container:
+            name: "{{ .container }}"
+            container:
+              path: ./application_{{ .container_slug }}.go
+            source:
+              path: ./adapter/{{ .module_path }}/
+          loop:
+            path: adapter/(?P<module>[\w/]+)
+```
+
+Here `adapter/outbound/pgsql` and `adapter/outbound/mysql` both produce the `Database`
+container in `./application_database.go`, while `adapter/outbound/redis` (no
+`dependency_container`) still produces `OutboundRedis` in `./application_outbound_redis.go`.
+
+Loop matches of the same `plumber.container` entry that hydrate to the same container
+`name` and `container.path` are merged into one container; providers are discovered from
+all of their source paths.
+
 ---
 
 ## Template variables
@@ -461,6 +506,10 @@ automatically (see [Derived variables](#derived-variables) above):
 | `{{ .X }}` | PascalCase — suitable for Go identifiers (struct names) |
 | `{{ .X_slug }}` | Underscore-separated — suitable for filenames |
 | `{{ .X_path }}` | Raw captured value — suitable for filesystem paths |
+
+Additionally `{{ .container }}`, `{{ .container_slug }}` and `{{ .container_path }}` hold the
+structure path `dependency_container` (or the first capture group value when not defined),
+see [Container variable](#container-variable-and-structure-dependency_container).
 
 ### Variables in `templates.container`
 

@@ -124,5 +124,8 @@ type PlumberStructurePathConfig struct {
 	Template           string   `yaml:"template,omitempty"`
 	Templates          []string `yaml:"templates,omitempty"`
 	Required           bool     `yaml:"required,omitempty"`
-	Alias              string   `yaml:"alias,omitempty"`
+	// DependencyContainer names the discovery dependency container the path
+	// belongs to. Discovery exposes it as the "container" loop variable for the
+	// matching directory; multiple paths may share the same container.
+	DependencyContainer string `yaml:"dependency_container,omitempty"`
 }
