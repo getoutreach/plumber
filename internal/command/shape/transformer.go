@@ -116,6 +116,10 @@ type BasicTransformer struct {
 	AllowedOptions []string
 	Options        model.Annotation
 	Annotations    model.Annotations
+
+	// outputDefaulted is set when Validate had to add the default plumber:output
+	// because none was provided (annotation, macro or config).
+	outputDefaulted bool
 }
 
 func (t *BasicTransformer) GetName() string {
@@ -149,12 +153,12 @@ func (t *BasicTransformer) Validate(packager contract.Packager) error {
 	}
 
 	if t.Annotations.Find(contract.OptionOutput) == nil {
+		t.outputDefaulted = true
 		t.Annotations.Append(model.NewAnnotation(
 			contract.OptionOutput,
 			[]string{"generated.go"},
 		))
 	}
-	// path.Join(node.GetPackage().Dir
 
 	return nil
 }
@@ -175,6 +179,14 @@ func (t *BasicTransformer) Mode() string {
 // the intermediate fragment used during template rendering is independent of this value.
 func (t *BasicTransformer) Output() string {
 	return t.Annotations.Find(contract.OptionOutput).Value()
+}
+
+// OutputExplicit reports whether plumber:output was provided explicitly (directly,
+// through a macro or configuration) rather than defaulted by Validate. In inplace
+// mode an explicit output is preferred over the receiver type's file when adding new
+// methods.
+func (t *BasicTransformer) OutputExplicit() bool {
+	return !t.outputDefaulted && t.Annotations.Find(contract.OptionOutput) != nil
 }
 
 func (t *BasicTransformer) Accepts(annotation string) bool {

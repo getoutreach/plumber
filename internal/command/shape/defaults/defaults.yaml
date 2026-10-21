@@ -159,7 +159,12 @@ plumber.shape:
         description: >-
           Specifies the output file path for the generated code, allowing for
           flexible file organization and output management. Supports Go
-          template expansion.
+          template expansion. Relative paths are resolved against the directory
+          of the annotated source (for plumber:context blocks the file holding
+          the comment). In inplace mode an explicitly set output receives all
+          new declarations, including new methods whose receiver type lives in
+          another file (e.g. the plumber:context type); existing declarations
+          are merged where they are.
       schema:
         positional:
           type: array

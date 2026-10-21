@@ -46,9 +46,23 @@ const annotationGenerateOnce = "generate:once"
 // package. When empty, a default filename is derived from the package name. The same
 // output filename is used for every newly-added declaration, so when several missing
 // entities are added in one call they all land in the same created file.
+//
+// By default new methods are appended to the file declaring their receiver type and
+// only fall back to output. Passing MergeOption{PreferOutput: true} (used when
+// plumber:output is set explicitly) makes output the preferred destination for new
+// methods as well; existing declarations are always merged where they already live.
 // nolint: gocritic,gocyclo //Why: switch is not an option
-func Merge(pkg *model.Package, file *dst.File, output string) ([]*dst.File, error) {
+func Merge(pkg *model.Package, file *dst.File, output string, opts ...MergeOption) ([]*dst.File, error) {
 	importMap := astx.BuildImportMap(file)
+
+	var opt MergeOption
+	for _, o := range opts {
+		opt.PreferOutput = opt.PreferOutput || o.PreferOutput
+	}
+	fopts := funcMergeOptions{
+		preferOutput:   opt.PreferOutput,
+		generatedTypes: declaredTypeNames(file),
+	}
 
 	// fileSet records every file we touched while preserving the order in which they
 	// were first encountered. Sub-mergers always return nil OR the destination file;
@@ -197,7 +211,7 @@ func Merge(pkg *model.Package, file *dst.File, output string) ([]*dst.File, erro
 				continue
 			}
 
-			f, err := mergeFunc(pkg, d, output, importMap)
+			f, err := mergeFunc(pkg, d, output, importMap, fopts)
 			if err != nil {
 				return nil, fmt.Errorf("failed to merge func %q: %w", d.Name.Name, err)
 			}
@@ -214,6 +228,31 @@ func Merge(pkg *model.Package, file *dst.File, output string) ([]*dst.File, erro
 		inspect.HydrateFile(pkg, f)
 	}
 	return ordered, nil
+}
+
+// MergeOption configures Merge behaviour.
+type MergeOption struct {
+	// PreferOutput places new methods into the output file instead of the file
+	// declaring their receiver type. It should be set when the output was
+	// configured explicitly (plumber:output).
+	PreferOutput bool
+}
+
+// declaredTypeNames returns the names of all types declared in file.
+func declaredTypeNames(file *dst.File) map[string]bool {
+	names := map[string]bool{}
+	for _, decl := range file.Decls {
+		gd, ok := decl.(*dst.GenDecl)
+		if !ok || gd.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			if ts, ok := spec.(*dst.TypeSpec); ok {
+				names[ts.Name.Name] = true
+			}
+		}
+	}
+	return names
 }
 
 // mergeImports copies every import declared in source into target, preserving aliases

@@ -225,7 +225,8 @@ func (m *InplaceManager) Render(
 					Err:     fmt.Errorf("failed to parse generated content for transformation %q: %w", t.Transformer.GetName(), err),
 				}
 			}
-			mergedFiles, err := Merge(m.Package, f, t.Transformer.Output())
+			mergedFiles, err := Merge(m.Package, f, t.Transformer.Output(),
+				MergeOption{PreferOutput: t.Transformer.OutputExplicit()})
 			if err != nil {
 				return fmt.Errorf("failed to merge generated content for transformation %q: %w", t.Transformer.GetName(), err)
 			}

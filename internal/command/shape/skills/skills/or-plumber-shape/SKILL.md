@@ -232,6 +232,12 @@ composite literals / switch cases) are documented in the
 `or-plumber-shape-derive` skill — they apply identically to
 `plumber:shape`.
 
+In `inplace` mode an **explicit `plumber:output` wins** for new
+declarations: new methods on the `plumber:context` type are written to
+the output file (relative to the comment's directory) instead of the
+file declaring that type. Existing declarations are merged where they
+are. Without an explicit output, new methods go next to their receiver.
+
 **Do not edit lines outside `plumber::Block` fences** in generated
 files — they will be overwritten on re-generation.
 

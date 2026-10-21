@@ -14,6 +14,7 @@ func TestOutput(t *testing.T) {
 		name        string
 		position    model.Position
 		expected    string
+		explicit    bool
 		annotations []model.Annotation
 	}{
 		{
@@ -29,6 +30,7 @@ func TestOutput(t *testing.T) {
 				Filename: "example.go",
 			},
 			expected: "pkg/example_generated.go",
+			explicit: true,
 			annotations: []model.Annotation{
 				model.NewAnnotation(contract.OptionOutput, []string{`{{ .Output.Name }}_generated{{ .Output.Ext }}`}),
 			},
@@ -39,6 +41,7 @@ func TestOutput(t *testing.T) {
 				Filename: "example.go",
 			},
 			expected: "pkg/example_generated.go",
+			explicit: true,
 			annotations: []model.Annotation{
 				model.NewAnnotation(contract.OptionOutput, []string{`{{ filename_suffixed "generated" }}`}),
 			},
@@ -49,6 +52,7 @@ func TestOutput(t *testing.T) {
 				Filename: "example.go",
 			},
 			expected: "pkg/example.go.bak",
+			explicit: true,
 			annotations: []model.Annotation{
 				model.NewAnnotation(contract.OptionOutput, []string{`{{ .Output.Filename }}.bak`}),
 			},
@@ -59,6 +63,7 @@ func TestOutput(t *testing.T) {
 				Filename: "example.go",
 			},
 			expected: "pkg/merged.go",
+			explicit: true,
 			annotations: []model.Annotation{
 				model.NewAnnotation(contract.OptionMode, []string{"inplace"}),
 				model.NewAnnotation(contract.OptionOutput, []string{"merged.go"}),
@@ -108,6 +113,7 @@ func TestOutput(t *testing.T) {
 			if output != tt.expected {
 				t.Errorf("expected %s, got %s", tt.expected, output)
 			}
+			assert.Equal(t, transformer.OutputExplicit(), tt.explicit)
 		})
 	}
 }

@@ -9,6 +9,7 @@ package shape
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -68,8 +69,9 @@ func Run(ctx *contract.ShapingContext, cfg *Config, targets []FileTarget) error 
 		return err
 	}
 
-	if err := expandTransformations(ctx, cfg, pkgs, transformations); err != nil {
-		return err
+	transformations, expandErr := expandTransformations(ctx, cfg, pkgs, transformations)
+	if expandErr != nil && !errors.Is(expandErr, errTransformationsSkipped) {
+		return expandErr
 	}
 
 	if err := executeTransformations(ctx, cfg, pkgs, transformations); err != nil {
@@ -81,7 +83,9 @@ func Run(ctx *contract.ShapingContext, cfg *Config, targets []FileTarget) error 
 		return err
 	}
 
-	return nil
+	// Report transformations skipped because their expansion failed, after the
+	// remaining ones have been processed.
+	return expandErr
 }
 
 // RunTarget is the entry point for the shape target subcommand, which processes a single specified type with a named macro,
@@ -548,16 +552,26 @@ func partitionByMode(transformations []Transformation) (inplace, generated []Tra
 	return
 }
 
+// errTransformationsSkipped is returned (wrapped) by expandTransformations when some
+// transformations failed to expand and were skipped. The remaining transformations
+// are still executed.
+var errTransformationsSkipped = errors.New("transformations skipped")
+
+// expandTransformations expands the annotations of every transformation (templates,
+// output path, output package) and validates them against the option schemas.
+// Transformations failing to expand are reported, skipped and summarized in an error
+// wrapping errTransformationsSkipped; the successfully expanded transformations are
+// returned. Schema validation errors abort immediately.
 func expandTransformations(
 	ctx *contract.ShapingContext,
 	cfg *Config,
 	pkgs []*model.Package,
 	transformations []Transformation,
-) error {
+) ([]Transformation, error) {
 	// Compile option schemas once for validating annotations after template expansion.
 	optionSchemas, err := validate.CompileSchemas(cfg.Options)
 	if err != nil {
-		return fmt.Errorf("compiling option schemas: %w", err)
+		return nil, fmt.Errorf("compiling option schemas: %w", err)
 	}
 
 	// Build the set of singular option names for deduplication.
@@ -568,21 +582,31 @@ func expandTransformations(
 		}
 	}
 
-	scope := render.Scope{}
+	var (
+		scope    = render.Scope{}
+		expanded = make([]Transformation, 0, len(transformations))
+		failures []string
+	)
 	for _, t := range transformations {
 		if err := t.Transformer.Expand(ctx, pkgs, t.Node, scope, singularNames); err != nil {
 			ctx.TransformerError(t.Transformer, t.Node, err)
-			return nil
+			failures = append(failures, fmt.Sprintf("%s at %s: %v", t.Transformer.GetName(), t.Transformer.GetPosition(), err))
+			continue
 		}
 
 		// Validate fully-expanded annotations against their option schemas.
 		if err := validate.Annotations(t.Transformer.GetAnnotations(), optionSchemas); err != nil {
-			return fmt.Errorf("transformer %s at %s: %w", t.Transformer.GetName(), t.Transformer.GetPosition(), err)
+			return nil, fmt.Errorf("transformer %s at %s: %w", t.Transformer.GetName(), t.Transformer.GetPosition(), err)
 		}
 
 		ctx.TransformerAdded(t.Transformer, t.Node)
+		expanded = append(expanded, t)
 	}
-	return nil
+	if len(failures) > 0 {
+		return expanded, fmt.Errorf("%w: %d transformation(s) failed to expand:\n  %s",
+			errTransformationsSkipped, len(failures), strings.Join(failures, "\n  "))
+	}
+	return expanded, nil
 }
 
 // executeTransformations runs all transformations in dependency-safe order:

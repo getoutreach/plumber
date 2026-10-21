@@ -1,0 +1,6 @@
+package fixture
+
+// Describe returns the worker name.
+func (w *Worker) Describe() string {
+	return w.Name
+}

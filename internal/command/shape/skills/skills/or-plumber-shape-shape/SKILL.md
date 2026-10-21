@@ -299,6 +299,12 @@ codegen annotations, or to drive shape transformations on third-party
 types you cannot edit. The schema of `plumber:context` is documented
 under `or-plumber-shape-annotations`.
 
+Combined with `plumber:mode inplace`, set `plumber:output` to choose
+where new methods on the context type are written — an explicit output
+is preferred over the file declaring the context type (relative paths
+resolve against the comment's directory). Existing methods are merged
+in place.
+
 ## Single-type mode
 
 Bypass annotation scanning entirely with `shape target`:

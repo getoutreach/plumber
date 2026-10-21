@@ -91,6 +91,9 @@ type Transformer interface {
 	GetPosition() model.Position
 	GetPackage() *model.Package
 	Output() string
+	// OutputExplicit reports whether the output was configured explicitly
+	// rather than defaulted.
+	OutputExplicit() bool
 	GetName() string
 	Mode() string
 }
