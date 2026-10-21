@@ -328,6 +328,10 @@ With macro config:
       - { name: plumber:comment, args: ["derived from {{ .Type.Name }}"] }
 ```
 
+`.Source.NamedArgs` is a `map[string]any` (values are strings). Accessing a
+missing key fails (`missingkey=error`); read optional arguments with sprig
+`dig`: `{{ dig "file" "generated.go" .Source.NamedArgs }}`.
+
 ### Mixins
 
 Referenced with `plumber:mixin <name>`. Expand **during** transformer building. Can only
@@ -415,7 +419,7 @@ plumber.shape:
         command: "goverter gen {{ .Source.NamedArgs.path | join \" \" }}"
 ```
 
-The command is a Go `text/template` with access to `.Source.NamedArgs` (`map[string][]string`).
+The command is a Go `text/template` with access to `.Source.NamedArgs` (`map[string]any`, string values of the notification; use `dig` for optional keys).
 Sprig and plumber generic functions are available. Commands execute via `sh -c`; failures
 cause the shape command to fail.
 

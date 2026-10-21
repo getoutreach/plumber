@@ -47,9 +47,11 @@ type sourceTemplateData struct {
 
 // sourceAnnotationData carries the positional and named arguments of the
 // annotation that triggered the expansion (the macro or mixin invocation).
+// NamedArgs is a map[string]any (values are strings) so that sprig dict
+// functions such as dig can be used on it.
 type sourceAnnotationData struct {
 	Args      []string
-	NamedArgs map[string]string
+	NamedArgs map[string]any
 }
 
 // sourcePackageData exposes the basic identity of the package whose annotations

@@ -3,9 +3,10 @@
 {{ range $f := $.Type.Struct.Fields -}}
     {{ with $scope := extend $ "Field" $f "Receiver" (receiver $.Scope.Subject) -}}
         {{template "plumber/command/shape/struct/field/method" $scope -}}{{- end -}}
-        {{ if all ($embedded $f.Embedded) }}
-        func {{ $f.Name }}IsEmbedded() {}
+        {{ if all (eq $embedded true) (eq $f.Embedded true) }}
+        func {{ $f.Name }}IsEmbedded() { }
         {{ end }}
+    {{ end }}
 {{ end }}
 {{define "plumber/command/shape/struct/field/method/getter"}}
     {{ $methodName := printf "Get%s" $.Scope.Field.Name -}}

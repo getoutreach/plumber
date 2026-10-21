@@ -364,6 +364,18 @@ func WithNamedArgs(namedArgs map[string]string) AnnotationOption {
 	}
 }
 
+// NamedArgsTemplateData converts named arguments into the map[string]any form
+// exposed to templates as .Source.NamedArgs. The generic map type allows sprig
+// dict functions such as dig to be used on it, e.g.
+// {{ dig "file" "generated.go" .Source.NamedArgs }}. The result is never nil.
+func NamedArgsTemplateData(namedArgs map[string]string) map[string]any {
+	result := make(map[string]any, len(namedArgs))
+	for k, v := range namedArgs {
+		result[k] = v
+	}
+	return result
+}
+
 // WithImpliedBy returns an AnnotationOption that records the annotation that
 // caused this annotation to be created (e.g., the @macro or plumber:mixin
 // annotation it was expanded from). When implied is nil the option is a no-op.

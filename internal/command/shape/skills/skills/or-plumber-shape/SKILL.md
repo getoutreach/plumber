@@ -368,6 +368,10 @@ type Order struct { ... }
       - { name: plumber:comment, args: ["derived from {{ .Type.Name }}"] }
 ```
 
+`.Source.NamedArgs` is a `map[string]any` (values are strings). Accessing a
+missing key fails (`missingkey=error`); read optional arguments with sprig
+`dig`: `{{ dig "file" "generated.go" .Source.NamedArgs }}`.
+
 ### Mixins
 
 Referenced with `plumber:mixin <name>`. Expand **during** transformer

@@ -23,6 +23,7 @@ import (
 	"github.com/getoutreach/plumber/internal/command/shape/config"
 	"github.com/getoutreach/plumber/internal/command/shape/contract"
 	"github.com/getoutreach/plumber/internal/render"
+	"github.com/getoutreach/plumber/query/model"
 )
 
 // Notification represents a single plumber:notify annotation that was processed
@@ -66,10 +67,11 @@ type handlerTemplateData struct {
 	Source *handlerSourceData
 }
 
-// handlerSourceData exposes the aggregated named arguments from all notifications
-// targeting a handler, with each key mapping to a slice of all collected values.
+// handlerSourceData exposes the named arguments of the notification being
+// executed. NamedArgs is a map[string]any (values are strings) so that sprig
+// dict functions such as dig can be used on it.
 type handlerSourceData struct {
-	NamedArgs map[string]string
+	NamedArgs map[string]any
 }
 
 // Execute runs all handlers that received notifications. For each configured handler
@@ -169,7 +171,7 @@ func expandCommand(commandTemplate string, args []string, namedArgs map[string]s
 func expandValue(value string, namedArgs map[string]string) (string, error) {
 	data := handlerTemplateData{
 		Source: &handlerSourceData{
-			NamedArgs: namedArgs,
+			NamedArgs: model.NamedArgsTemplateData(namedArgs),
 		},
 	}
 

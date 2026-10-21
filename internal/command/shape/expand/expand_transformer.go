@@ -106,7 +106,7 @@ func expandAnnotationValue(
 		impliedBy = ann.ImpliedBy.Name
 		data.Source = &sourceAnnotationData{
 			Args:      ann.ImpliedBy.Args,
-			NamedArgs: ann.ImpliedBy.NamedArgs,
+			NamedArgs: model.NamedArgsTemplateData(ann.ImpliedBy.NamedArgs),
 		}
 	}
 

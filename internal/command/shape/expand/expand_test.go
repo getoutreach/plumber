@@ -159,6 +159,40 @@ func TestTransformerAnnotations_TemplateNamedArgs(t *testing.T) {
 	assert.Equal(t, result[1].NamedArgs["dir"], "out/generated")
 }
 
+// TestTransformerAnnotations_DigNamedArgs verifies that sprig's dig function can be
+// used on .Source.NamedArgs to read optional macro arguments with a default.
+func TestTransformerAnnotations_DigNamedArgs(t *testing.T) {
+	macroMap := map[string]*config.PlumberMacroConfig{
+		"@gen": {
+			AnnotationSchemaConfig: config.AnnotationSchemaConfig{Name: "@gen"},
+			Annotations: []config.AnnotationConfig{
+				{Name: "plumber:output", Args: []string{`{{ dig "file" "generated.go" .Source.NamedArgs }}`}},
+			},
+		},
+	}
+
+	tests := []struct {
+		name      string
+		namedArgs map[string]string
+		expected  string
+	}{
+		{name: "arg set", namedArgs: map[string]string{"file": "custom.go"}, expected: "custom.go"},
+		{name: "arg missing uses default", namedArgs: map[string]string{"other": "x"}, expected: "generated.go"},
+		{name: "no named args", namedArgs: nil, expected: "generated.go"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := model.Annotations{
+				model.NewAnnotation("@gen", nil, model.WithNamedArgs(tt.namedArgs)),
+			}
+			result, err := expandAndTransform(t, fixtureNode(), input, macroMap)
+			assert.NilError(t, err)
+			assert.Equal(t, len(result), 2)
+			assert.Equal(t, result[1].Args[0], tt.expected)
+		})
+	}
+}
+
 // TestTransformerAnnotations_PackageContext verifies that .Package.Name and
 // .Package.Path are exposed to the macro template context during the deferred
 // transformer-stage expansion.

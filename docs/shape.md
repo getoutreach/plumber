@@ -230,7 +230,7 @@ The handler command template has access to:
 
 | Field | Type | Description |
 |---|---|---|
-| `.Source.NamedArgs` | `map[string][]string` | All named arguments aggregated from every `plumber:notify` targeting this handler. Each key maps to a slice of all collected values (duplicates are preserved). |
+| `.Source.NamedArgs` | `map[string]any` | Named arguments of the `plumber:notify` being executed (values are strings). The command runs once per distinct set of named arguments. Use `{{ dig "key" "default" .Source.NamedArgs }}` for optional arguments. |
 
 Standard [sprig](https://masterminds.github.io/sprig/) template functions and plumber
 generic functions are available in the template.
@@ -605,7 +605,7 @@ plumber.shape:
           - name: plumber:derive
             args: ['{{ index .Source.Args 0 }}']
           - name: plumber:output
-            args: ['{{ .Source.NamedArgs.file | default "generated.go" }}']
+            args: ['{{ dig "file" "generated.go" .Source.NamedArgs }}']
 
   # ---------- mixins ----------
   # Mixins are named bundles of modifier annotations that can be referenced
@@ -830,10 +830,20 @@ The template data context exposes:
 | Field                | Type                | Description                                                                |
 |----------------------|---------------------|----------------------------------------------------------------------------|
 | `.Source.Args`       | `[]string`          | Positional arguments from the triggering annotation (macro/mixin)          |
-| `.Source.NamedArgs`  | `map[string]string` | Named arguments (`key=value`) from the triggering annotation               |
+| `.Source.NamedArgs`  | `map[string]any`    | Named arguments (`key=value`) from the triggering annotation; values are strings. Works with sprig `dig` |
 | `.Package.Name`      | `string`            | Name of the Go package the annotation is being expanded in                 |
 | `.Package.Path`      | `string`            | Import path of the Go package the annotation is being expanded in          |
 | `.Type`              | `model.Node`        | The AST node being processed (typically a `*model.Type`). Exposes methods such as `.Type.Name`, `.Type.GetPosition.Filename`, `.Type.GetAnnotations`. |
+
+Templates run with `missingkey=error`, so `{{ .Source.NamedArgs.file }}` fails when the
+invocation does not pass `file=`. Use sprig's `dig` to read optional named arguments
+with a default:
+
+```yaml
+- { name: plumber:output, args: ['{{ dig "file" "generated.go" .Source.NamedArgs }}'] }
+```
+
+`dig` looks up one level only — named argument values are plain strings.
 
 #### Defining a macro with templates
 
